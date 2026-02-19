@@ -1,0 +1,90 @@
+{
+  "resourceType": "StructureDefinition",
+  "id": "us-core-relatedperson",
+  "url": "http://hl7.org/fhir/us/core/StructureDefinition/us-core-relatedperson",
+  "version": "5.0.1",
+  "name": "USCoreRelatedPersonProfile",
+  "title": "US Core RelatedPerson Profile",
+  "status": "active",
+  "experimental": false,
+  "date": "2022-04-20",
+  "publisher": "HL7 International - Cross-Group Projects",
+  "contact": [
+    {
+      "name": "HL7 International - Cross-Group Projects",
+      "telecom": [
+        {
+          "system": "url",
+          "value": "http://www.hl7.org/Special/committees/cgp"
+        }
+      ]
+    }
+  ],
+  "description": "The US Core RelatedPerson Profile meets the U.S. Core Data for Interoperability (USCDI) requirements. This profile sets minimum expectations for the RelatedPerson resource to record, search, and fetch related persons.",
+  "copyright": "Used by permission of HL7 International, all rights reserved Creative Commons License",
+  "fhirVersion": "4.0.1",
+  "kind": "resource",
+  "abstract": false,
+  "type": "RelatedPerson",
+  "baseDefinition": "http://hl7.org/fhir/StructureDefinition/RelatedPerson",
+  "derivation": "constraint",
+  "differential": {
+    "element": [
+      {
+        "id": "RelatedPerson",
+        "path": "RelatedPerson",
+        "mustSupport": false
+      },
+      {
+        "id": "RelatedPerson.active",
+        "path": "RelatedPerson.active",
+        "min": 0,
+        "max": "1",
+        "mustSupport": true
+      },
+      {
+        "id": "RelatedPerson.patient",
+        "path": "RelatedPerson.patient",
+        "min": 1,
+        "max": "1",
+        "type": [
+          {
+            "code": "Reference",
+            "targetProfile": [
+              "http://hl7.org/fhir/us/core/StructureDefinition/us-core-patient"
+            ]
+          }
+        ],
+        "mustSupport": true
+      },
+      {
+        "id": "RelatedPerson.relationship",
+        "path": "RelatedPerson.relationship",
+        "min": 1,
+        "max": "*",
+        "mustSupport": true
+      },
+      {
+        "id": "RelatedPerson.name",
+        "path": "RelatedPerson.name",
+        "min": 1,
+        "max": "*",
+        "mustSupport": true
+      },
+      {
+        "id": "RelatedPerson.telecom",
+        "path": "RelatedPerson.telecom",
+        "min": 0,
+        "max": "*",
+        "mustSupport": true
+      },
+      {
+        "id": "RelatedPerson.address",
+        "path": "RelatedPerson.address",
+        "min": 0,
+        "max": "*",
+        "mustSupport": true
+      }
+    ]
+  }
+}

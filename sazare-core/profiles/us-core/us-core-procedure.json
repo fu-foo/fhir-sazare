@@ -1,0 +1,88 @@
+{
+  "resourceType": "StructureDefinition",
+  "id": "us-core-procedure",
+  "url": "http://hl7.org/fhir/us/core/StructureDefinition/us-core-procedure",
+  "version": "5.0.1",
+  "name": "USCoreProcedureProfile",
+  "title": "US Core Procedure Profile",
+  "status": "active",
+  "experimental": false,
+  "date": "2022-04-20",
+  "publisher": "HL7 International - Cross-Group Projects",
+  "contact": [
+    {
+      "name": "HL7 International - Cross-Group Projects",
+      "telecom": [
+        {
+          "system": "url",
+          "value": "http://www.hl7.org/Special/committees/cgp"
+        }
+      ]
+    }
+  ],
+  "description": "The US Core Procedure Profile meets the U.S. Core Data for Interoperability (USCDI) 'Procedures' requirements. This profile sets minimum expectations for the Procedure resource to record, search, and fetch procedures associated with a patient.",
+  "copyright": "Used by permission of HL7 International, all rights reserved Creative Commons License",
+  "fhirVersion": "4.0.1",
+  "kind": "resource",
+  "abstract": false,
+  "type": "Procedure",
+  "baseDefinition": "http://hl7.org/fhir/StructureDefinition/Procedure",
+  "derivation": "constraint",
+  "differential": {
+    "element": [
+      {
+        "id": "Procedure",
+        "path": "Procedure",
+        "mustSupport": false
+      },
+      {
+        "id": "Procedure.status",
+        "path": "Procedure.status",
+        "min": 1,
+        "max": "1",
+        "mustSupport": true
+      },
+      {
+        "id": "Procedure.code",
+        "path": "Procedure.code",
+        "min": 1,
+        "max": "1",
+        "mustSupport": true,
+        "binding": {
+          "strength": "extensible",
+          "valueSet": "http://hl7.org/fhir/us/core/ValueSet/us-core-procedure-code"
+        }
+      },
+      {
+        "id": "Procedure.subject",
+        "path": "Procedure.subject",
+        "min": 1,
+        "max": "1",
+        "type": [
+          {
+            "code": "Reference",
+            "targetProfile": [
+              "http://hl7.org/fhir/us/core/StructureDefinition/us-core-patient"
+            ]
+          }
+        ],
+        "mustSupport": true
+      },
+      {
+        "id": "Procedure.performed[x]",
+        "path": "Procedure.performed[x]",
+        "min": 0,
+        "max": "1",
+        "type": [
+          {
+            "code": "dateTime"
+          },
+          {
+            "code": "Period"
+          }
+        ],
+        "mustSupport": true
+      }
+    ]
+  }
+}

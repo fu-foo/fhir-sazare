@@ -1,0 +1,30 @@
+# Build artifacts
+target/
+
+# Data and databases
+data/
+
+# TLS certificates (mount at runtime)
+certs/
+
+# Git
+.git/
+.gitignore
+
+# GitHub
+.github/
+
+# Config with credentials
+config.yaml
+
+# Claude Code
+.claude/
+
+# Documentation and examples
+memo.txt
+examples/
+README.md
+
+# OS files
+.DS_Store
+Thumbs.db

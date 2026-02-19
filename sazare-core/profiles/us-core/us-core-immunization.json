@@ -1,0 +1,102 @@
+{
+  "resourceType": "StructureDefinition",
+  "id": "us-core-immunization",
+  "url": "http://hl7.org/fhir/us/core/StructureDefinition/us-core-immunization",
+  "version": "5.0.1",
+  "name": "USCoreImmunizationProfile",
+  "title": "US Core Immunization Profile",
+  "status": "active",
+  "experimental": false,
+  "date": "2022-04-20",
+  "publisher": "HL7 International - Cross-Group Projects",
+  "contact": [
+    {
+      "name": "HL7 International - Cross-Group Projects",
+      "telecom": [
+        {
+          "system": "url",
+          "value": "http://www.hl7.org/Special/committees/cgp"
+        }
+      ]
+    }
+  ],
+  "description": "The US Core Immunization Profile meets the U.S. Core Data for Interoperability (USCDI) 'Immunizations' requirements. This profile sets minimum expectations for the Immunization resource to record, search, and fetch immunizations associated with a patient.",
+  "copyright": "Used by permission of HL7 International, all rights reserved Creative Commons License",
+  "fhirVersion": "4.0.1",
+  "kind": "resource",
+  "abstract": false,
+  "type": "Immunization",
+  "baseDefinition": "http://hl7.org/fhir/StructureDefinition/Immunization",
+  "derivation": "constraint",
+  "differential": {
+    "element": [
+      {
+        "id": "Immunization",
+        "path": "Immunization",
+        "mustSupport": false
+      },
+      {
+        "id": "Immunization.status",
+        "path": "Immunization.status",
+        "min": 1,
+        "max": "1",
+        "mustSupport": true
+      },
+      {
+        "id": "Immunization.statusReason",
+        "path": "Immunization.statusReason",
+        "min": 0,
+        "max": "1",
+        "mustSupport": true
+      },
+      {
+        "id": "Immunization.vaccineCode",
+        "path": "Immunization.vaccineCode",
+        "min": 1,
+        "max": "1",
+        "mustSupport": true,
+        "binding": {
+          "strength": "extensible",
+          "valueSet": "http://hl7.org/fhir/us/core/ValueSet/us-core-vaccines-cvx"
+        }
+      },
+      {
+        "id": "Immunization.patient",
+        "path": "Immunization.patient",
+        "min": 1,
+        "max": "1",
+        "type": [
+          {
+            "code": "Reference",
+            "targetProfile": [
+              "http://hl7.org/fhir/us/core/StructureDefinition/us-core-patient"
+            ]
+          }
+        ],
+        "mustSupport": true
+      },
+      {
+        "id": "Immunization.occurrence[x]",
+        "path": "Immunization.occurrence[x]",
+        "min": 1,
+        "max": "1",
+        "type": [
+          {
+            "code": "dateTime"
+          },
+          {
+            "code": "string"
+          }
+        ],
+        "mustSupport": true
+      },
+      {
+        "id": "Immunization.primarySource",
+        "path": "Immunization.primarySource",
+        "min": 0,
+        "max": "1",
+        "mustSupport": true
+      }
+    ]
+  }
+}

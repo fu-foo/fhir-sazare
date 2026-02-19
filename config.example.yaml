@@ -1,0 +1,43 @@
+# fhir-sazare Server Configuration Example
+# Copy this file to config.yaml and customize as needed
+
+server:
+  host: "0.0.0.0"
+  port: 8080
+
+auth:
+  # Set enabled to true to require authentication
+  enabled: false
+
+  # API keys for Bearer token authentication
+  # Replace with your own secret keys before use
+  api_keys:
+    - name: "my-app"
+      key: "CHANGE-ME-to-a-random-secret"
+
+  # Basic authentication users
+  # Replace with your own credentials before use
+  basic_auth:
+    - username: "admin"
+      password: "CHANGE-ME"
+
+storage:
+  data_dir: "data"
+  resources_db: "resources.sqlite"
+  search_index_db: "search_index.sqlite"
+  audit_db: "audit.sqlite"
+
+log:
+  # Log level: trace, debug, info, warn, error
+  level: "info"
+
+webhook:
+  enabled: false
+  endpoints:
+    - url: "https://example.com/webhook"
+      events:
+        - "BundleCreated"
+        - "TaskCompleted"
+      headers:
+        Authorization: "Bearer your-webhook-secret"
+        Content-Type: "application/json"

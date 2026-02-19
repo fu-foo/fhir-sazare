@@ -1,0 +1,90 @@
+{
+  "resourceType": "StructureDefinition",
+  "id": "us-core-allergyintolerance",
+  "url": "http://hl7.org/fhir/us/core/StructureDefinition/us-core-allergyintolerance",
+  "version": "5.0.1",
+  "name": "USCoreAllergyIntoleranceProfile",
+  "title": "US Core AllergyIntolerance Profile",
+  "status": "active",
+  "experimental": false,
+  "date": "2022-04-20",
+  "publisher": "HL7 International - Cross-Group Projects",
+  "contact": [
+    {
+      "name": "HL7 International - Cross-Group Projects",
+      "telecom": [
+        {
+          "system": "url",
+          "value": "http://www.hl7.org/Special/committees/cgp"
+        }
+      ]
+    }
+  ],
+  "description": "The US Core AllergyIntolerance Profile meets the U.S. Core Data for Interoperability (USCDI) 'Allergies and Intolerances' requirements. This profile sets minimum expectations for the AllergyIntolerance resource to record, search, and fetch allergies/adverse reactions associated with a patient.",
+  "copyright": "Used by permission of HL7 International, all rights reserved Creative Commons License",
+  "fhirVersion": "4.0.1",
+  "kind": "resource",
+  "abstract": false,
+  "type": "AllergyIntolerance",
+  "baseDefinition": "http://hl7.org/fhir/StructureDefinition/AllergyIntolerance",
+  "derivation": "constraint",
+  "differential": {
+    "element": [
+      {
+        "id": "AllergyIntolerance",
+        "path": "AllergyIntolerance",
+        "mustSupport": false
+      },
+      {
+        "id": "AllergyIntolerance.clinicalStatus",
+        "path": "AllergyIntolerance.clinicalStatus",
+        "min": 0,
+        "max": "1",
+        "mustSupport": true
+      },
+      {
+        "id": "AllergyIntolerance.verificationStatus",
+        "path": "AllergyIntolerance.verificationStatus",
+        "min": 0,
+        "max": "1",
+        "mustSupport": true
+      },
+      {
+        "id": "AllergyIntolerance.code",
+        "path": "AllergyIntolerance.code",
+        "min": 1,
+        "max": "1",
+        "mustSupport": true
+      },
+      {
+        "id": "AllergyIntolerance.patient",
+        "path": "AllergyIntolerance.patient",
+        "min": 1,
+        "max": "1",
+        "type": [
+          {
+            "code": "Reference",
+            "targetProfile": [
+              "http://hl7.org/fhir/us/core/StructureDefinition/us-core-patient"
+            ]
+          }
+        ],
+        "mustSupport": true
+      },
+      {
+        "id": "AllergyIntolerance.reaction",
+        "path": "AllergyIntolerance.reaction",
+        "min": 0,
+        "max": "*",
+        "mustSupport": true
+      },
+      {
+        "id": "AllergyIntolerance.reaction.manifestation",
+        "path": "AllergyIntolerance.reaction.manifestation",
+        "min": 1,
+        "max": "*",
+        "mustSupport": true
+      }
+    ]
+  }
+}

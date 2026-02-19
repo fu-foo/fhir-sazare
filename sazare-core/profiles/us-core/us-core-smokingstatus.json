@@ -1,0 +1,100 @@
+{
+  "resourceType": "StructureDefinition",
+  "id": "us-core-smokingstatus",
+  "url": "http://hl7.org/fhir/us/core/StructureDefinition/us-core-smokingstatus",
+  "version": "5.0.1",
+  "name": "USCoreSmokingStatusProfile",
+  "title": "US Core Smoking Status Observation Profile",
+  "status": "active",
+  "experimental": false,
+  "date": "2022-04-20",
+  "publisher": "HL7 International - Cross-Group Projects",
+  "contact": [
+    {
+      "name": "HL7 International - Cross-Group Projects",
+      "telecom": [
+        {
+          "system": "url",
+          "value": "http://www.hl7.org/Special/committees/cgp"
+        }
+      ]
+    }
+  ],
+  "description": "The US Core Smoking Status Observation Profile meets the U.S. Core Data for Interoperability (USCDI) requirements. This profile sets minimum expectations for the Observation resource to record, search, and fetch smoking status observations.",
+  "copyright": "Used by permission of HL7 International, all rights reserved Creative Commons License",
+  "fhirVersion": "4.0.1",
+  "kind": "resource",
+  "abstract": false,
+  "type": "Observation",
+  "baseDefinition": "http://hl7.org/fhir/StructureDefinition/Observation",
+  "derivation": "constraint",
+  "differential": {
+    "element": [
+      {
+        "id": "Observation",
+        "path": "Observation",
+        "mustSupport": false
+      },
+      {
+        "id": "Observation.status",
+        "path": "Observation.status",
+        "min": 1,
+        "max": "1",
+        "mustSupport": true
+      },
+      {
+        "id": "Observation.code",
+        "path": "Observation.code",
+        "min": 1,
+        "max": "1",
+        "patternCodeableConcept": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "72166-2"
+            }
+          ]
+        },
+        "mustSupport": true
+      },
+      {
+        "id": "Observation.subject",
+        "path": "Observation.subject",
+        "min": 1,
+        "max": "1",
+        "type": [
+          {
+            "code": "Reference",
+            "targetProfile": [
+              "http://hl7.org/fhir/us/core/StructureDefinition/us-core-patient"
+            ]
+          }
+        ],
+        "mustSupport": true
+      },
+      {
+        "id": "Observation.issued",
+        "path": "Observation.issued",
+        "min": 1,
+        "max": "1",
+        "mustSupport": true
+      },
+      {
+        "id": "Observation.value[x]",
+        "path": "Observation.value[x]",
+        "min": 1,
+        "max": "1",
+        "type": [
+          {
+            "code": "CodeableConcept"
+          }
+        ],
+        "mustSupport": true,
+        "binding": {
+          "strength": "required",
+          "valueSet": "http://hl7.org/fhir/us/core/ValueSet/us-core-smoking-status-observation-codes"
+        }
+      }
+    ]
+  }
+}

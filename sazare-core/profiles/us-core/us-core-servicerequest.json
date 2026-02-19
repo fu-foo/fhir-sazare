@@ -1,0 +1,130 @@
+{
+  "resourceType": "StructureDefinition",
+  "id": "us-core-servicerequest",
+  "url": "http://hl7.org/fhir/us/core/StructureDefinition/us-core-servicerequest",
+  "version": "5.0.1",
+  "name": "USCoreServiceRequestProfile",
+  "title": "US Core ServiceRequest Profile",
+  "status": "active",
+  "experimental": false,
+  "date": "2022-04-20",
+  "publisher": "HL7 International - Cross-Group Projects",
+  "contact": [
+    {
+      "name": "HL7 International - Cross-Group Projects",
+      "telecom": [
+        {
+          "system": "url",
+          "value": "http://www.hl7.org/Special/committees/cgp"
+        }
+      ]
+    }
+  ],
+  "description": "The US Core ServiceRequest Profile meets the U.S. Core Data for Interoperability (USCDI) requirements. This profile sets minimum expectations for the ServiceRequest resource to record, search, and fetch service requests and referrals.",
+  "copyright": "Used by permission of HL7 International, all rights reserved Creative Commons License",
+  "fhirVersion": "4.0.1",
+  "kind": "resource",
+  "abstract": false,
+  "type": "ServiceRequest",
+  "baseDefinition": "http://hl7.org/fhir/StructureDefinition/ServiceRequest",
+  "derivation": "constraint",
+  "differential": {
+    "element": [
+      {
+        "id": "ServiceRequest",
+        "path": "ServiceRequest",
+        "mustSupport": false
+      },
+      {
+        "id": "ServiceRequest.status",
+        "path": "ServiceRequest.status",
+        "min": 1,
+        "max": "1",
+        "mustSupport": true
+      },
+      {
+        "id": "ServiceRequest.intent",
+        "path": "ServiceRequest.intent",
+        "min": 1,
+        "max": "1",
+        "mustSupport": true
+      },
+      {
+        "id": "ServiceRequest.category",
+        "path": "ServiceRequest.category",
+        "min": 1,
+        "max": "*",
+        "mustSupport": true,
+        "binding": {
+          "strength": "extensible",
+          "valueSet": "http://hl7.org/fhir/us/core/ValueSet/us-core-servicerequest-category"
+        }
+      },
+      {
+        "id": "ServiceRequest.code",
+        "path": "ServiceRequest.code",
+        "min": 1,
+        "max": "1",
+        "mustSupport": true,
+        "binding": {
+          "strength": "extensible",
+          "valueSet": "http://hl7.org/fhir/us/core/ValueSet/us-core-procedure-code"
+        }
+      },
+      {
+        "id": "ServiceRequest.subject",
+        "path": "ServiceRequest.subject",
+        "min": 1,
+        "max": "1",
+        "type": [
+          {
+            "code": "Reference",
+            "targetProfile": [
+              "http://hl7.org/fhir/us/core/StructureDefinition/us-core-patient"
+            ]
+          }
+        ],
+        "mustSupport": true
+      },
+      {
+        "id": "ServiceRequest.occurrence[x]",
+        "path": "ServiceRequest.occurrence[x]",
+        "min": 0,
+        "max": "1",
+        "type": [
+          {
+            "code": "dateTime"
+          },
+          {
+            "code": "Period"
+          }
+        ],
+        "mustSupport": true
+      },
+      {
+        "id": "ServiceRequest.authoredOn",
+        "path": "ServiceRequest.authoredOn",
+        "min": 0,
+        "max": "1",
+        "mustSupport": true
+      },
+      {
+        "id": "ServiceRequest.requester",
+        "path": "ServiceRequest.requester",
+        "min": 0,
+        "max": "1",
+        "type": [
+          {
+            "code": "Reference",
+            "targetProfile": [
+              "http://hl7.org/fhir/us/core/StructureDefinition/us-core-practitioner",
+              "http://hl7.org/fhir/us/core/StructureDefinition/us-core-organization",
+              "http://hl7.org/fhir/us/core/StructureDefinition/us-core-patient"
+            ]
+          }
+        ],
+        "mustSupport": true
+      }
+    ]
+  }
+}

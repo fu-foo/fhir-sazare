@@ -1,0 +1,89 @@
+{
+  "resourceType": "StructureDefinition",
+  "id": "us-core-organization",
+  "url": "http://hl7.org/fhir/us/core/StructureDefinition/us-core-organization",
+  "version": "5.0.1",
+  "name": "USCoreOrganizationProfile",
+  "title": "US Core Organization Profile",
+  "status": "active",
+  "experimental": false,
+  "date": "2022-04-20",
+  "publisher": "HL7 International - Cross-Group Projects",
+  "contact": [
+    {
+      "name": "HL7 International - Cross-Group Projects",
+      "telecom": [
+        {
+          "system": "url",
+          "value": "http://www.hl7.org/Special/committees/cgp"
+        }
+      ]
+    }
+  ],
+  "description": "The US Core Organization Profile meets the U.S. Core Data for Interoperability (USCDI) 'Organization' requirements. This profile sets minimum expectations for the Organization resource to record, search, and fetch basic information about an organization.",
+  "copyright": "Used by permission of HL7 International, all rights reserved Creative Commons License",
+  "fhirVersion": "4.0.1",
+  "kind": "resource",
+  "abstract": false,
+  "type": "Organization",
+  "baseDefinition": "http://hl7.org/fhir/StructureDefinition/Organization",
+  "derivation": "constraint",
+  "differential": {
+    "element": [
+      {
+        "id": "Organization",
+        "path": "Organization",
+        "mustSupport": false
+      },
+      {
+        "id": "Organization.identifier",
+        "path": "Organization.identifier",
+        "min": 1,
+        "max": "*",
+        "mustSupport": true
+      },
+      {
+        "id": "Organization.identifier.system",
+        "path": "Organization.identifier.system",
+        "min": 1,
+        "max": "1",
+        "mustSupport": true
+      },
+      {
+        "id": "Organization.identifier.value",
+        "path": "Organization.identifier.value",
+        "min": 1,
+        "max": "1",
+        "mustSupport": true
+      },
+      {
+        "id": "Organization.active",
+        "path": "Organization.active",
+        "min": 1,
+        "max": "1",
+        "mustSupport": true
+      },
+      {
+        "id": "Organization.name",
+        "path": "Organization.name",
+        "min": 1,
+        "max": "1",
+        "mustSupport": true
+      },
+      {
+        "id": "Organization.telecom",
+        "path": "Organization.telecom",
+        "min": 0,
+        "max": "*",
+        "mustSupport": true
+      },
+      {
+        "id": "Organization.address",
+        "path": "Organization.address",
+        "min": 0,
+        "max": "*",
+        "mustSupport": true
+      }
+    ]
+  }
+}

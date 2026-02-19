@@ -1,0 +1,113 @@
+{
+  "resourceType": "StructureDefinition",
+  "id": "us-core-practitionerrole",
+  "url": "http://hl7.org/fhir/us/core/StructureDefinition/us-core-practitionerrole",
+  "version": "5.0.1",
+  "name": "USCorePractitionerRoleProfile",
+  "title": "US Core PractitionerRole Profile",
+  "status": "active",
+  "experimental": false,
+  "date": "2022-04-20",
+  "publisher": "HL7 International - Cross-Group Projects",
+  "contact": [
+    {
+      "name": "HL7 International - Cross-Group Projects",
+      "telecom": [
+        {
+          "system": "url",
+          "value": "http://www.hl7.org/Special/committees/cgp"
+        }
+      ]
+    }
+  ],
+  "description": "The US Core PractitionerRole Profile meets the U.S. Core Data for Interoperability (USCDI) requirements. This profile sets minimum expectations for the PractitionerRole resource to record, search, and fetch the practitioner role for a practitioner.",
+  "copyright": "Used by permission of HL7 International, all rights reserved Creative Commons License",
+  "fhirVersion": "4.0.1",
+  "kind": "resource",
+  "abstract": false,
+  "type": "PractitionerRole",
+  "baseDefinition": "http://hl7.org/fhir/StructureDefinition/PractitionerRole",
+  "derivation": "constraint",
+  "differential": {
+    "element": [
+      {
+        "id": "PractitionerRole",
+        "path": "PractitionerRole",
+        "mustSupport": false
+      },
+      {
+        "id": "PractitionerRole.practitioner",
+        "path": "PractitionerRole.practitioner",
+        "min": 1,
+        "max": "1",
+        "type": [
+          {
+            "code": "Reference",
+            "targetProfile": [
+              "http://hl7.org/fhir/us/core/StructureDefinition/us-core-practitioner"
+            ]
+          }
+        ],
+        "mustSupport": true
+      },
+      {
+        "id": "PractitionerRole.organization",
+        "path": "PractitionerRole.organization",
+        "min": 0,
+        "max": "1",
+        "type": [
+          {
+            "code": "Reference",
+            "targetProfile": [
+              "http://hl7.org/fhir/us/core/StructureDefinition/us-core-organization"
+            ]
+          }
+        ],
+        "mustSupport": true
+      },
+      {
+        "id": "PractitionerRole.code",
+        "path": "PractitionerRole.code",
+        "min": 0,
+        "max": "*",
+        "mustSupport": true
+      },
+      {
+        "id": "PractitionerRole.specialty",
+        "path": "PractitionerRole.specialty",
+        "min": 0,
+        "max": "*",
+        "mustSupport": true
+      },
+      {
+        "id": "PractitionerRole.location",
+        "path": "PractitionerRole.location",
+        "min": 0,
+        "max": "*",
+        "type": [
+          {
+            "code": "Reference",
+            "targetProfile": [
+              "http://hl7.org/fhir/us/core/StructureDefinition/us-core-location"
+            ]
+          }
+        ],
+        "mustSupport": true
+      },
+      {
+        "id": "PractitionerRole.telecom",
+        "path": "PractitionerRole.telecom",
+        "min": 0,
+        "max": "*",
+        "mustSupport": true
+      },
+      {
+        "id": "PractitionerRole.endpoint",
+        "path": "PractitionerRole.endpoint",
+        "min": 0,
+        "max": "*",
+        "mustSupport": true
+      }
+    ]
+  }
+}

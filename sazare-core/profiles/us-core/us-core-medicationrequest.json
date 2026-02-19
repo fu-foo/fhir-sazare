@@ -1,0 +1,153 @@
+{
+  "resourceType": "StructureDefinition",
+  "id": "us-core-medicationrequest",
+  "url": "http://hl7.org/fhir/us/core/StructureDefinition/us-core-medicationrequest",
+  "version": "5.0.1",
+  "name": "USCoreMedicationRequestProfile",
+  "title": "US Core MedicationRequest Profile",
+  "status": "active",
+  "experimental": false,
+  "date": "2022-04-20",
+  "publisher": "HL7 International - Cross-Group Projects",
+  "contact": [
+    {
+      "name": "HL7 International - Cross-Group Projects",
+      "telecom": [
+        {
+          "system": "url",
+          "value": "http://www.hl7.org/Special/committees/cgp"
+        }
+      ]
+    }
+  ],
+  "description": "The US Core MedicationRequest Profile meets the U.S. Core Data for Interoperability (USCDI) 'Medications' requirements. This profile sets minimum expectations for the MedicationRequest resource to record, search, and fetch medications associated with a patient.",
+  "copyright": "Used by permission of HL7 International, all rights reserved Creative Commons License",
+  "fhirVersion": "4.0.1",
+  "kind": "resource",
+  "abstract": false,
+  "type": "MedicationRequest",
+  "baseDefinition": "http://hl7.org/fhir/StructureDefinition/MedicationRequest",
+  "derivation": "constraint",
+  "differential": {
+    "element": [
+      {
+        "id": "MedicationRequest",
+        "path": "MedicationRequest",
+        "mustSupport": false
+      },
+      {
+        "id": "MedicationRequest.status",
+        "path": "MedicationRequest.status",
+        "min": 1,
+        "max": "1",
+        "mustSupport": true
+      },
+      {
+        "id": "MedicationRequest.intent",
+        "path": "MedicationRequest.intent",
+        "min": 1,
+        "max": "1",
+        "mustSupport": true
+      },
+      {
+        "id": "MedicationRequest.reported[x]",
+        "path": "MedicationRequest.reported[x]",
+        "min": 0,
+        "max": "1",
+        "mustSupport": true
+      },
+      {
+        "id": "MedicationRequest.medication[x]",
+        "path": "MedicationRequest.medication[x]",
+        "min": 1,
+        "max": "1",
+        "type": [
+          {
+            "code": "CodeableConcept"
+          },
+          {
+            "code": "Reference",
+            "targetProfile": [
+              "http://hl7.org/fhir/us/core/StructureDefinition/us-core-medication"
+            ]
+          }
+        ],
+        "mustSupport": true,
+        "binding": {
+          "strength": "extensible",
+          "valueSet": "http://hl7.org/fhir/us/core/ValueSet/us-core-medication-codes"
+        }
+      },
+      {
+        "id": "MedicationRequest.subject",
+        "path": "MedicationRequest.subject",
+        "min": 1,
+        "max": "1",
+        "type": [
+          {
+            "code": "Reference",
+            "targetProfile": [
+              "http://hl7.org/fhir/us/core/StructureDefinition/us-core-patient"
+            ]
+          }
+        ],
+        "mustSupport": true
+      },
+      {
+        "id": "MedicationRequest.encounter",
+        "path": "MedicationRequest.encounter",
+        "min": 0,
+        "max": "1",
+        "type": [
+          {
+            "code": "Reference",
+            "targetProfile": [
+              "http://hl7.org/fhir/us/core/StructureDefinition/us-core-encounter"
+            ]
+          }
+        ],
+        "mustSupport": true
+      },
+      {
+        "id": "MedicationRequest.authoredOn",
+        "path": "MedicationRequest.authoredOn",
+        "min": 1,
+        "max": "1",
+        "mustSupport": true
+      },
+      {
+        "id": "MedicationRequest.requester",
+        "path": "MedicationRequest.requester",
+        "min": 1,
+        "max": "1",
+        "type": [
+          {
+            "code": "Reference",
+            "targetProfile": [
+              "http://hl7.org/fhir/us/core/StructureDefinition/us-core-practitioner",
+              "http://hl7.org/fhir/us/core/StructureDefinition/us-core-practitionerrole",
+              "http://hl7.org/fhir/us/core/StructureDefinition/us-core-organization",
+              "http://hl7.org/fhir/us/core/StructureDefinition/us-core-patient",
+              "http://hl7.org/fhir/us/core/StructureDefinition/us-core-relatedperson"
+            ]
+          }
+        ],
+        "mustSupport": true
+      },
+      {
+        "id": "MedicationRequest.dosageInstruction",
+        "path": "MedicationRequest.dosageInstruction",
+        "min": 0,
+        "max": "*",
+        "mustSupport": true
+      },
+      {
+        "id": "MedicationRequest.dosageInstruction.text",
+        "path": "MedicationRequest.dosageInstruction.text",
+        "min": 0,
+        "max": "1",
+        "mustSupport": true
+      }
+    ]
+  }
+}

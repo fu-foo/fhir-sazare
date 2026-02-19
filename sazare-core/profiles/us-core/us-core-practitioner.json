@@ -1,0 +1,75 @@
+{
+  "resourceType": "StructureDefinition",
+  "id": "us-core-practitioner",
+  "url": "http://hl7.org/fhir/us/core/StructureDefinition/us-core-practitioner",
+  "version": "5.0.1",
+  "name": "USCorePractitionerProfile",
+  "title": "US Core Practitioner Profile",
+  "status": "active",
+  "experimental": false,
+  "date": "2022-04-20",
+  "publisher": "HL7 International - Cross-Group Projects",
+  "contact": [
+    {
+      "name": "HL7 International - Cross-Group Projects",
+      "telecom": [
+        {
+          "system": "url",
+          "value": "http://www.hl7.org/Special/committees/cgp"
+        }
+      ]
+    }
+  ],
+  "description": "The US Core Practitioner Profile meets the U.S. Core Data for Interoperability (USCDI) 'Practitioner' requirements. This profile sets minimum expectations for the Practitioner resource to record, search, and fetch basic demographics and other administrative information about a practitioner.",
+  "copyright": "Used by permission of HL7 International, all rights reserved Creative Commons License",
+  "fhirVersion": "4.0.1",
+  "kind": "resource",
+  "abstract": false,
+  "type": "Practitioner",
+  "baseDefinition": "http://hl7.org/fhir/StructureDefinition/Practitioner",
+  "derivation": "constraint",
+  "differential": {
+    "element": [
+      {
+        "id": "Practitioner",
+        "path": "Practitioner",
+        "mustSupport": false
+      },
+      {
+        "id": "Practitioner.identifier",
+        "path": "Practitioner.identifier",
+        "min": 1,
+        "max": "*",
+        "mustSupport": true
+      },
+      {
+        "id": "Practitioner.identifier.system",
+        "path": "Practitioner.identifier.system",
+        "min": 1,
+        "max": "1",
+        "mustSupport": true
+      },
+      {
+        "id": "Practitioner.identifier.value",
+        "path": "Practitioner.identifier.value",
+        "min": 1,
+        "max": "1",
+        "mustSupport": true
+      },
+      {
+        "id": "Practitioner.name",
+        "path": "Practitioner.name",
+        "min": 1,
+        "max": "*",
+        "mustSupport": true
+      },
+      {
+        "id": "Practitioner.name.family",
+        "path": "Practitioner.name.family",
+        "min": 1,
+        "max": "1",
+        "mustSupport": true
+      }
+    ]
+  }
+}

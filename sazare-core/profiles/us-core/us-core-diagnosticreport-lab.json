@@ -1,0 +1,158 @@
+{
+  "resourceType": "StructureDefinition",
+  "id": "us-core-diagnosticreport-lab",
+  "url": "http://hl7.org/fhir/us/core/StructureDefinition/us-core-diagnosticreport-lab",
+  "version": "5.0.1",
+  "name": "USCoreDiagnosticReportProfileLaboratoryReporting",
+  "title": "US Core DiagnosticReport Profile for Laboratory Results Reporting",
+  "status": "active",
+  "experimental": false,
+  "date": "2022-04-20",
+  "publisher": "HL7 International - Cross-Group Projects",
+  "contact": [
+    {
+      "name": "HL7 International - Cross-Group Projects",
+      "telecom": [
+        {
+          "system": "url",
+          "value": "http://www.hl7.org/Special/committees/cgp"
+        }
+      ]
+    }
+  ],
+  "description": "The US Core DiagnosticReport Profile for Laboratory Results Reporting meets the U.S. Core Data for Interoperability (USCDI) 'Laboratory' requirements. This profile sets minimum expectations for the DiagnosticReport resource to record, search, and fetch laboratory results.",
+  "copyright": "Used by permission of HL7 International, all rights reserved Creative Commons License",
+  "fhirVersion": "4.0.1",
+  "kind": "resource",
+  "abstract": false,
+  "type": "DiagnosticReport",
+  "baseDefinition": "http://hl7.org/fhir/StructureDefinition/DiagnosticReport",
+  "derivation": "constraint",
+  "differential": {
+    "element": [
+      {
+        "id": "DiagnosticReport",
+        "path": "DiagnosticReport",
+        "mustSupport": false
+      },
+      {
+        "id": "DiagnosticReport.status",
+        "path": "DiagnosticReport.status",
+        "min": 1,
+        "max": "1",
+        "mustSupport": true
+      },
+      {
+        "id": "DiagnosticReport.category",
+        "path": "DiagnosticReport.category",
+        "slicing": {
+          "discriminator": [
+            {
+              "type": "pattern",
+              "path": "$this"
+            }
+          ],
+          "rules": "open"
+        },
+        "min": 1,
+        "max": "*",
+        "mustSupport": true
+      },
+      {
+        "id": "DiagnosticReport.category:LaboratorySlice",
+        "path": "DiagnosticReport.category",
+        "sliceName": "LaboratorySlice",
+        "min": 1,
+        "max": "1",
+        "patternCodeableConcept": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/v2-0074",
+              "code": "LAB"
+            }
+          ]
+        },
+        "mustSupport": true
+      },
+      {
+        "id": "DiagnosticReport.code",
+        "path": "DiagnosticReport.code",
+        "min": 1,
+        "max": "1",
+        "mustSupport": true,
+        "binding": {
+          "strength": "extensible",
+          "valueSet": "http://hl7.org/fhir/us/core/ValueSet/us-core-diagnosticreport-lab-codes"
+        }
+      },
+      {
+        "id": "DiagnosticReport.subject",
+        "path": "DiagnosticReport.subject",
+        "min": 1,
+        "max": "1",
+        "type": [
+          {
+            "code": "Reference",
+            "targetProfile": [
+              "http://hl7.org/fhir/us/core/StructureDefinition/us-core-patient"
+            ]
+          }
+        ],
+        "mustSupport": true
+      },
+      {
+        "id": "DiagnosticReport.effective[x]",
+        "path": "DiagnosticReport.effective[x]",
+        "min": 0,
+        "max": "1",
+        "type": [
+          {
+            "code": "dateTime"
+          },
+          {
+            "code": "Period"
+          }
+        ],
+        "mustSupport": true
+      },
+      {
+        "id": "DiagnosticReport.issued",
+        "path": "DiagnosticReport.issued",
+        "min": 0,
+        "max": "1",
+        "mustSupport": true
+      },
+      {
+        "id": "DiagnosticReport.performer",
+        "path": "DiagnosticReport.performer",
+        "min": 0,
+        "max": "*",
+        "type": [
+          {
+            "code": "Reference",
+            "targetProfile": [
+              "http://hl7.org/fhir/us/core/StructureDefinition/us-core-practitioner",
+              "http://hl7.org/fhir/us/core/StructureDefinition/us-core-organization"
+            ]
+          }
+        ],
+        "mustSupport": true
+      },
+      {
+        "id": "DiagnosticReport.result",
+        "path": "DiagnosticReport.result",
+        "min": 0,
+        "max": "*",
+        "type": [
+          {
+            "code": "Reference",
+            "targetProfile": [
+              "http://hl7.org/fhir/us/core/StructureDefinition/us-core-observation-lab"
+            ]
+          }
+        ],
+        "mustSupport": true
+      }
+    ]
+  }
+}

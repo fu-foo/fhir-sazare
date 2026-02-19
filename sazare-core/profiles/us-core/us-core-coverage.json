@@ -1,0 +1,139 @@
+{
+  "resourceType": "StructureDefinition",
+  "id": "us-core-coverage",
+  "url": "http://hl7.org/fhir/us/core/StructureDefinition/us-core-coverage",
+  "version": "5.0.1",
+  "name": "USCoreCoverageProfile",
+  "title": "US Core Coverage Profile",
+  "status": "active",
+  "experimental": false,
+  "date": "2022-04-20",
+  "publisher": "HL7 International - Cross-Group Projects",
+  "contact": [
+    {
+      "name": "HL7 International - Cross-Group Projects",
+      "telecom": [
+        {
+          "system": "url",
+          "value": "http://www.hl7.org/Special/committees/cgp"
+        }
+      ]
+    }
+  ],
+  "description": "The US Core Coverage Profile meets the U.S. Core Data for Interoperability (USCDI) 'Health Insurance Information' requirements. This profile sets minimum expectations for the Coverage resource to record, search, and fetch health insurance information associated with a patient.",
+  "copyright": "Used by permission of HL7 International, all rights reserved Creative Commons License",
+  "fhirVersion": "4.0.1",
+  "kind": "resource",
+  "abstract": false,
+  "type": "Coverage",
+  "baseDefinition": "http://hl7.org/fhir/StructureDefinition/Coverage",
+  "derivation": "constraint",
+  "differential": {
+    "element": [
+      {
+        "id": "Coverage",
+        "path": "Coverage",
+        "mustSupport": false
+      },
+      {
+        "id": "Coverage.status",
+        "path": "Coverage.status",
+        "min": 1,
+        "max": "1",
+        "mustSupport": true
+      },
+      {
+        "id": "Coverage.type",
+        "path": "Coverage.type",
+        "min": 0,
+        "max": "1",
+        "mustSupport": true,
+        "binding": {
+          "strength": "extensible",
+          "valueSet": "http://cts.nlm.nih.gov/fhir/ValueSet/2.16.840.1.114222.4.11.3591"
+        }
+      },
+      {
+        "id": "Coverage.subscriber",
+        "path": "Coverage.subscriber",
+        "min": 0,
+        "max": "1",
+        "mustSupport": true
+      },
+      {
+        "id": "Coverage.subscriberId",
+        "path": "Coverage.subscriberId",
+        "min": 0,
+        "max": "1",
+        "mustSupport": true
+      },
+      {
+        "id": "Coverage.beneficiary",
+        "path": "Coverage.beneficiary",
+        "min": 1,
+        "max": "1",
+        "type": [
+          {
+            "code": "Reference",
+            "targetProfile": [
+              "http://hl7.org/fhir/us/core/StructureDefinition/us-core-patient"
+            ]
+          }
+        ],
+        "mustSupport": true
+      },
+      {
+        "id": "Coverage.relationship",
+        "path": "Coverage.relationship",
+        "min": 0,
+        "max": "1",
+        "mustSupport": true
+      },
+      {
+        "id": "Coverage.payor",
+        "path": "Coverage.payor",
+        "min": 1,
+        "max": "*",
+        "type": [
+          {
+            "code": "Reference",
+            "targetProfile": [
+              "http://hl7.org/fhir/us/core/StructureDefinition/us-core-organization",
+              "http://hl7.org/fhir/us/core/StructureDefinition/us-core-patient",
+              "http://hl7.org/fhir/us/core/StructureDefinition/us-core-relatedperson"
+            ]
+          }
+        ],
+        "mustSupport": true
+      },
+      {
+        "id": "Coverage.class",
+        "path": "Coverage.class",
+        "min": 0,
+        "max": "*",
+        "mustSupport": true
+      },
+      {
+        "id": "Coverage.class.type",
+        "path": "Coverage.class.type",
+        "min": 1,
+        "max": "1",
+        "mustSupport": true
+      },
+      {
+        "id": "Coverage.class.value",
+        "path": "Coverage.class.value",
+        "min": 1,
+        "max": "1",
+        "mustSupport": true
+      },
+      {
+        "id": "Coverage.class.name",
+        "path": "Coverage.class.name",
+        "min": 0,
+        "max": "1",
+        "mustSupport": true
+      }
+    ]
+  }
+}

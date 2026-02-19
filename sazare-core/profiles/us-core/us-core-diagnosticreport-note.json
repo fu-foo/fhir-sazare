@@ -1,0 +1,151 @@
+{
+  "resourceType": "StructureDefinition",
+  "id": "us-core-diagnosticreport-note",
+  "url": "http://hl7.org/fhir/us/core/StructureDefinition/us-core-diagnosticreport-note",
+  "version": "5.0.1",
+  "name": "USCoreDiagnosticReportProfileNoteExchange",
+  "title": "US Core DiagnosticReport Profile for Report and Note Exchange",
+  "status": "active",
+  "experimental": false,
+  "date": "2022-04-20",
+  "publisher": "HL7 International - Cross-Group Projects",
+  "contact": [
+    {
+      "name": "HL7 International - Cross-Group Projects",
+      "telecom": [
+        {
+          "system": "url",
+          "value": "http://www.hl7.org/Special/committees/cgp"
+        }
+      ]
+    }
+  ],
+  "description": "The US Core DiagnosticReport Profile for Report and Note Exchange meets the U.S. Core Data for Interoperability (USCDI) 'Clinical Notes' requirements. This profile sets minimum expectations for the DiagnosticReport resource to record, search, and fetch diagnostic reports with clinical notes.",
+  "copyright": "Used by permission of HL7 International, all rights reserved Creative Commons License",
+  "fhirVersion": "4.0.1",
+  "kind": "resource",
+  "abstract": false,
+  "type": "DiagnosticReport",
+  "baseDefinition": "http://hl7.org/fhir/StructureDefinition/DiagnosticReport",
+  "derivation": "constraint",
+  "differential": {
+    "element": [
+      {
+        "id": "DiagnosticReport",
+        "path": "DiagnosticReport",
+        "mustSupport": false
+      },
+      {
+        "id": "DiagnosticReport.status",
+        "path": "DiagnosticReport.status",
+        "min": 1,
+        "max": "1",
+        "mustSupport": true
+      },
+      {
+        "id": "DiagnosticReport.category",
+        "path": "DiagnosticReport.category",
+        "min": 1,
+        "max": "*",
+        "mustSupport": true,
+        "binding": {
+          "strength": "extensible",
+          "valueSet": "http://hl7.org/fhir/us/core/ValueSet/us-core-diagnosticreport-category"
+        }
+      },
+      {
+        "id": "DiagnosticReport.code",
+        "path": "DiagnosticReport.code",
+        "min": 1,
+        "max": "1",
+        "mustSupport": true,
+        "binding": {
+          "strength": "extensible",
+          "valueSet": "http://hl7.org/fhir/us/core/ValueSet/us-core-diagnosticreport-report-and-note-codes"
+        }
+      },
+      {
+        "id": "DiagnosticReport.subject",
+        "path": "DiagnosticReport.subject",
+        "min": 1,
+        "max": "1",
+        "type": [
+          {
+            "code": "Reference",
+            "targetProfile": [
+              "http://hl7.org/fhir/us/core/StructureDefinition/us-core-patient"
+            ]
+          }
+        ],
+        "mustSupport": true
+      },
+      {
+        "id": "DiagnosticReport.encounter",
+        "path": "DiagnosticReport.encounter",
+        "min": 0,
+        "max": "1",
+        "type": [
+          {
+            "code": "Reference",
+            "targetProfile": [
+              "http://hl7.org/fhir/us/core/StructureDefinition/us-core-encounter"
+            ]
+          }
+        ],
+        "mustSupport": true
+      },
+      {
+        "id": "DiagnosticReport.effective[x]",
+        "path": "DiagnosticReport.effective[x]",
+        "min": 0,
+        "max": "1",
+        "type": [
+          {
+            "code": "dateTime"
+          },
+          {
+            "code": "Period"
+          }
+        ],
+        "mustSupport": true
+      },
+      {
+        "id": "DiagnosticReport.issued",
+        "path": "DiagnosticReport.issued",
+        "min": 0,
+        "max": "1",
+        "mustSupport": true
+      },
+      {
+        "id": "DiagnosticReport.performer",
+        "path": "DiagnosticReport.performer",
+        "min": 0,
+        "max": "*",
+        "type": [
+          {
+            "code": "Reference",
+            "targetProfile": [
+              "http://hl7.org/fhir/us/core/StructureDefinition/us-core-practitioner",
+              "http://hl7.org/fhir/us/core/StructureDefinition/us-core-organization"
+            ]
+          }
+        ],
+        "mustSupport": true
+      },
+      {
+        "id": "DiagnosticReport.media",
+        "path": "DiagnosticReport.media",
+        "min": 0,
+        "max": "*",
+        "mustSupport": true
+      },
+      {
+        "id": "DiagnosticReport.presentedForm",
+        "path": "DiagnosticReport.presentedForm",
+        "min": 0,
+        "max": "*",
+        "mustSupport": true
+      }
+    ]
+  }
+}
