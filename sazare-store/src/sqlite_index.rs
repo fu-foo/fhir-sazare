@@ -324,7 +324,7 @@ mod tests {
 
         // Prefix match search
         let results = index
-            .search_string("Patient", "family", "yama", false)
+            .search_string("Patient", "family", "do", false)
             .unwrap();
 
         assert_eq!(results.len(), 2);
