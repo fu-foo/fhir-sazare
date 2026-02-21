@@ -177,6 +177,12 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
   .json-view { background: #1e1e1e; color: #d4d4d4; padding: 16px; border-radius: 6px;
                font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 13px;
                overflow-x: auto; max-height: 600px; overflow-y: auto; white-space: pre; line-height: 1.5; }
+  .json-view .jk { color: #9cdcfe; }
+  .json-view .js { color: #ce9178; }
+  .json-view .jn { color: #b5cea8; }
+  .json-view .jb { color: #569cd6; }
+  .json-view .jl { color: #569cd6; }
+  .json-view .jp { color: #d4d4d4; }
   .pagination { display: flex; justify-content: space-between; align-items: center;
                 margin-top: 12px; font-size: 13px; color: #95a5a6; }
   .pagination button { background: #fff; border: 1px solid #ddd; border-radius: 4px;
@@ -384,6 +390,31 @@ function getSummary(r) {
   return '';
 }
 
+function highlightJson(obj, indent) {
+  indent = indent || 0;
+  var pad = '  '.repeat(indent);
+  var pad1 = '  '.repeat(indent + 1);
+  if (obj === null) return '<span class="jl">null</span>';
+  if (typeof obj === 'boolean') return '<span class="jb">' + obj + '</span>';
+  if (typeof obj === 'number') return '<span class="jn">' + obj + '</span>';
+  if (typeof obj === 'string') {
+    var escaped = obj.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    return '<span class="js">"' + escaped + '"</span>';
+  }
+  if (Array.isArray(obj)) {
+    if (obj.length === 0) return '<span class="jp">[]</span>';
+    var items = obj.map(function(v) { return pad1 + highlightJson(v, indent + 1); });
+    return '<span class="jp">[</span>\n' + items.join('<span class="jp">,</span>\n') + '\n' + pad + '<span class="jp">]</span>';
+  }
+  var keys = Object.keys(obj);
+  if (keys.length === 0) return '<span class="jp">{}</span>';
+  var entries = keys.map(function(k) {
+    var ek = k.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    return pad1 + '<span class="jk">"' + ek + '"</span><span class="jp">: </span>' + highlightJson(obj[k], indent + 1);
+  });
+  return '<span class="jp">{</span>\n' + entries.join('<span class="jp">,</span>\n') + '\n' + pad + '<span class="jp">}</span>';
+}
+
 async function showResource(type, id) {
   document.getElementById('resource-detail-title').textContent = type + '/' + id;
   document.getElementById('resource-detail').classList.remove('hidden');
@@ -394,7 +425,7 @@ async function showResource(type, id) {
   try {
     const res = await fetch('/$browse/' + type + '/' + id);
     const data = await res.json();
-    pre.textContent = JSON.stringify(data, null, 2);
+    pre.innerHTML = highlightJson(data, 0);
   } catch (err) {
     pre.textContent = 'Error: ' + err.message;
   }
