@@ -151,14 +151,15 @@ pub async fn auth_middleware(
         return Ok(next.run(request).await);
     }
 
-    // Allow public endpoints without auth
+    // Allow public endpoints without auth (FHIR spec requirements)
     let path = request.uri().path();
-    if path == "/" || path == "/$status" || path == "/health" || path == "/metadata"
+    if path == "/health" || path == "/metadata"
         || path.starts_with("/.well-known/")
-        || path.starts_with("/$browse")
     {
         return Ok(next.run(request).await);
     }
+
+    let is_dashboard = path == "/" || path == "/$status" || path.starts_with("/$browse");
 
     // Extract authorization header
     let auth_header = request
@@ -167,12 +168,37 @@ pub async fn auth_middleware(
         .and_then(|h| h.to_str().ok());
 
     let Some(auth_header) = auth_header else {
+        if is_dashboard {
+            // Browser will show native login dialog
+            return Err(Response::builder()
+                .status(StatusCode::UNAUTHORIZED)
+                .header(header::WWW_AUTHENTICATE, "Basic realm=\"sazare\"")
+                .body(Body::empty())
+                .unwrap());
+        }
         let outcome = OperationOutcome::unauthorized("Missing Authorization header");
         return Err((StatusCode::UNAUTHORIZED, axum::Json(outcome)).into_response());
     };
 
     // Attempt to authenticate
-    let auth_user = if auth_header.starts_with("Bearer ") {
+    let auth_user = if is_dashboard {
+        // Dashboard only accepts Basic auth (browser dialog)
+        if auth_header.starts_with("Basic ") {
+            authenticate_basic(&state.config, auth_header).map_err(|_| {
+                Response::builder()
+                    .status(StatusCode::UNAUTHORIZED)
+                    .header(header::WWW_AUTHENTICATE, "Basic realm=\"sazare\"")
+                    .body(Body::empty())
+                    .unwrap()
+            })?
+        } else {
+            return Err(Response::builder()
+                .status(StatusCode::UNAUTHORIZED)
+                .header(header::WWW_AUTHENTICATE, "Basic realm=\"sazare\"")
+                .body(Body::empty())
+                .unwrap());
+        }
+    } else if auth_header.starts_with("Bearer ") {
         authenticate_bearer(&state, auth_header).await?
     } else if auth_header.starts_with("Basic ") {
         authenticate_basic(&state.config, auth_header)?
