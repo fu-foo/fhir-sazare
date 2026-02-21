@@ -104,6 +104,9 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         // Dashboard
         .route("/", get(dashboard::dashboard_page).post(bundle::process_bundle))
         .route("/$status", get(dashboard::status_api))
+        // Dashboard browse (auth-free)
+        .route("/$browse/{resource_type}", get(dashboard::browse_list))
+        .route("/$browse/{resource_type}/{id}", get(dashboard::browse_read))
         // Bulk operations
         .route("/$export", get(bulk::export))
         .route("/$import", post(bulk::import))

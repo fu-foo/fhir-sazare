@@ -6,13 +6,24 @@
 use crate::AppState;
 
 use axum::{
-    extract::State,
+    extract::{Path, Query, State},
     http::{header, StatusCode},
     response::IntoResponse,
     Json,
 };
-use serde_json::json;
+use sazare_core::SearchQuery;
+use sazare_store::SearchExecutor;
+use serde::Deserialize;
+use serde_json::{json, Value};
 use std::sync::Arc;
+
+#[derive(Deserialize, Default)]
+pub struct BrowseParams {
+    #[serde(default)]
+    pub _count: Option<usize>,
+    #[serde(default)]
+    pub _offset: Option<usize>,
+}
 
 /// GET / — serve the HTML dashboard page
 pub async fn dashboard_page() -> impl IntoResponse {
@@ -63,6 +74,67 @@ pub async fn status_api(
     }))
 }
 
+/// GET /$browse/{resource_type} — list resources for dashboard
+pub async fn browse_list(
+    State(state): State<Arc<AppState>>,
+    Path(resource_type): Path<String>,
+    Query(params): Query<BrowseParams>,
+) -> impl IntoResponse {
+    let count = params._count.unwrap_or(20);
+    let offset = params._offset.unwrap_or(0);
+
+    let query_str = format!("_count={}&_offset={}", count, offset);
+    let query = match SearchQuery::parse(&query_str) {
+        Ok(q) => q,
+        Err(e) => return Json(json!({"error": e})).into_response(),
+    };
+
+    let index = state.index.lock().await;
+    let executor = SearchExecutor::new(&state.store, &index);
+
+    let (ids, total) = match executor.search_with_total(&resource_type, &query) {
+        Ok(r) => r,
+        Err(e) => return Json(json!({"error": e})).into_response(),
+    };
+
+    let resources = executor.load_resources(&resource_type, &ids).unwrap_or_default();
+
+    let entries: Vec<Value> = resources
+        .into_iter()
+        .map(|r| {
+            json!({
+                "id": r.get("id").and_then(|v| v.as_str()).unwrap_or(""),
+                "lastUpdated": r.get("meta").and_then(|m| m.get("lastUpdated")).and_then(|v| v.as_str()).unwrap_or(""),
+                "resource": r
+            })
+        })
+        .collect();
+
+    Json(json!({
+        "total": total,
+        "offset": offset,
+        "count": count,
+        "entries": entries
+    })).into_response()
+}
+
+/// GET /$browse/{resource_type}/{id} — single resource for dashboard
+pub async fn browse_read(
+    State(state): State<Arc<AppState>>,
+    Path((resource_type, id)): Path<(String, String)>,
+) -> impl IntoResponse {
+    match state.store.get(&resource_type, &id) {
+        Ok(Some(data)) => {
+            match serde_json::from_slice::<Value>(&data) {
+                Ok(resource) => Json(resource).into_response(),
+                Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))).into_response(),
+            }
+        }
+        Ok(None) => (StatusCode::NOT_FOUND, Json(json!({"error": "Not found"}))).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))).into_response(),
+    }
+}
+
 const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -86,8 +158,31 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
   .dot { width: 10px; height: 10px; border-radius: 50%; background: #27ae60; }
   .stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
   .stat { background: #f8f9fa; border-radius: 6px; padding: 12px 16px; text-align: center; }
+  .stat.clickable { cursor: pointer; transition: background 0.15s, transform 0.15s; }
+  .stat.clickable:hover { background: #e8f4fd; transform: translateY(-1px); }
   .stat .num { font-size: 28px; font-weight: 700; color: #2c3e50; }
   .stat .label { font-size: 12px; color: #95a5a6; margin-top: 2px; }
+  .hidden { display: none; }
+  .back-btn { background: none; border: 1px solid #ddd; border-radius: 4px; padding: 4px 12px;
+              cursor: pointer; font-size: 13px; color: #555; margin-right: 12px; }
+  .back-btn:hover { background: #f0f0f0; }
+  .panel-header { display: flex; align-items: center; margin-bottom: 12px; }
+  .panel-header h2 { margin-bottom: 0; }
+  .resource-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .resource-table th { text-align: left; padding: 8px 12px; border-bottom: 2px solid #eee;
+                       color: #95a5a6; font-weight: 600; }
+  .resource-table td { padding: 6px 12px; border-bottom: 1px solid #f0f0f0; }
+  .resource-table tr.clickable-row { cursor: pointer; }
+  .resource-table tr.clickable-row:hover { background: #f0f7ff; }
+  .json-view { background: #1e1e1e; color: #d4d4d4; padding: 16px; border-radius: 6px;
+               font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 13px;
+               overflow-x: auto; max-height: 600px; overflow-y: auto; white-space: pre; line-height: 1.5; }
+  .pagination { display: flex; justify-content: space-between; align-items: center;
+                margin-top: 12px; font-size: 13px; color: #95a5a6; }
+  .pagination button { background: #fff; border: 1px solid #ddd; border-radius: 4px;
+                       padding: 4px 14px; cursor: pointer; font-size: 13px; }
+  .pagination button:hover { background: #f0f0f0; }
+  .pagination button:disabled { opacity: 0.4; cursor: default; }
   .log-table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .log-table th { text-align: left; padding: 8px 12px; border-bottom: 2px solid #eee;
                   color: #95a5a6; font-weight: 600; }
@@ -130,7 +225,30 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
     </div>
   </div>
 
-  <div class="card">
+  <div class="card hidden" id="resource-list">
+    <div class="panel-header">
+      <button class="back-btn" onclick="hideResourceList()">&larr; Back</button>
+      <h2 id="resource-list-title">Resources</h2>
+    </div>
+    <table class="resource-table">
+      <thead>
+        <tr><th>ID</th><th>Last Updated</th><th>Summary</th></tr>
+      </thead>
+      <tbody id="resource-list-body">
+      </tbody>
+    </table>
+    <div class="pagination" id="resource-list-pagination"></div>
+  </div>
+
+  <div class="card hidden" id="resource-detail">
+    <div class="panel-header">
+      <button class="back-btn" onclick="hideResourceDetail()">&larr; Back</button>
+      <h2 id="resource-detail-title">Resource</h2>
+    </div>
+    <pre class="json-view" id="resource-detail-json"></pre>
+  </div>
+
+  <div class="card" id="activity-card">
     <h2>Recent Activity</h2>
     <table class="log-table">
       <thead>
@@ -181,8 +299,8 @@ async function refresh() {
     let statsHtml = '<div class="stat"><div class="num">' + data.totalResources +
                     '</div><div class="label">Total</div></div>';
     for (const rc of data.resourceCounts) {
-      statsHtml += '<div class="stat"><div class="num">' + rc.count +
-                   '</div><div class="label">' + rc.type + '</div></div>';
+      statsHtml += '<div class="stat clickable" onclick="showResourceList(\'' + rc.type + '\')">' +
+                   '<div class="num">' + rc.count + '</div><div class="label">' + rc.type + '</div></div>';
     }
     statsEl.innerHTML = statsHtml;
 
@@ -210,6 +328,86 @@ async function refresh() {
 
 refresh();
 setInterval(refresh, 5000);
+
+let currentType = '';
+let currentOffset = 0;
+const PAGE_SIZE = 20;
+
+async function showResourceList(type, offset) {
+  currentType = type;
+  currentOffset = offset || 0;
+  document.getElementById('resource-list-title').textContent = type;
+  document.getElementById('resource-list').classList.remove('hidden');
+  document.getElementById('resource-detail').classList.add('hidden');
+
+  const body = document.getElementById('resource-list-body');
+  body.innerHTML = '<tr><td colspan="3" style="color:#bbb">Loading...</td></tr>';
+
+  try {
+    const res = await fetch('/$browse/' + type + '?_count=' + PAGE_SIZE + '&_offset=' + currentOffset);
+    const data = await res.json();
+    const entries = data.entries || [];
+    const total = data.total || 0;
+
+    if (entries.length === 0) {
+      body.innerHTML = '<tr><td colspan="3" style="color:#bbb">No resources</td></tr>';
+    } else {
+      body.innerHTML = entries.map(e => {
+        const id = e.id || '-';
+        const updated = e.lastUpdated ? new Date(e.lastUpdated).toLocaleString() : '-';
+        const summary = getSummary(e.resource);
+        return '<tr class="clickable-row" onclick="showResource(\'' + type + '\',\'' + id + '\')">' +
+               '<td><code>' + id + '</code></td><td>' + updated + '</td><td>' + summary + '</td></tr>';
+      }).join('');
+    }
+
+    // Pagination
+    const pag = document.getElementById('resource-list-pagination');
+    const showing = Math.min(currentOffset + PAGE_SIZE, total);
+    pag.innerHTML =
+      '<button ' + (currentOffset === 0 ? 'disabled' : 'onclick="showResourceList(\'' + type + '\',' + (currentOffset - PAGE_SIZE) + ')"') + '>&larr; Prev</button>' +
+      '<span>' + (currentOffset + 1) + '–' + showing + ' of ' + total + '</span>' +
+      '<button ' + (currentOffset + PAGE_SIZE >= total ? 'disabled' : 'onclick="showResourceList(\'' + type + '\',' + (currentOffset + PAGE_SIZE) + ')"') + '>Next &rarr;</button>';
+  } catch (err) {
+    body.innerHTML = '<tr><td colspan="3" style="color:#c00">Error: ' + err.message + '</td></tr>';
+  }
+}
+
+function getSummary(r) {
+  if (r.name && r.name[0]) {
+    const n = r.name[0];
+    return [].concat(n.given || []).join(' ') + ' ' + (n.family || '');
+  }
+  if (r.code && r.code.text) return r.code.text;
+  if (r.code && r.code.coding && r.code.coding[0]) return r.code.coding[0].display || r.code.coding[0].code || '';
+  if (r.status) return 'status: ' + r.status;
+  return '';
+}
+
+async function showResource(type, id) {
+  document.getElementById('resource-detail-title').textContent = type + '/' + id;
+  document.getElementById('resource-detail').classList.remove('hidden');
+  document.getElementById('resource-list').classList.add('hidden');
+  const pre = document.getElementById('resource-detail-json');
+  pre.textContent = 'Loading...';
+
+  try {
+    const res = await fetch('/$browse/' + type + '/' + id);
+    const data = await res.json();
+    pre.textContent = JSON.stringify(data, null, 2);
+  } catch (err) {
+    pre.textContent = 'Error: ' + err.message;
+  }
+}
+
+function hideResourceList() {
+  document.getElementById('resource-list').classList.add('hidden');
+}
+
+function hideResourceDetail() {
+  document.getElementById('resource-detail').classList.add('hidden');
+  document.getElementById('resource-list').classList.remove('hidden');
+}
 </script>
 </body>
 </html>

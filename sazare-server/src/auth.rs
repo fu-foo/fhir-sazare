@@ -151,8 +151,12 @@ pub async fn auth_middleware(
         return Ok(next.run(request).await);
     }
 
-    // Allow .well-known endpoints without auth
-    if request.uri().path().starts_with("/.well-known/") {
+    // Allow public endpoints without auth
+    let path = request.uri().path();
+    if path == "/" || path == "/$status" || path == "/health" || path == "/metadata"
+        || path.starts_with("/.well-known/")
+        || path.starts_with("/$browse")
+    {
         return Ok(next.run(request).await);
     }
 
