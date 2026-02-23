@@ -111,6 +111,16 @@ async fn main() {
         }
     );
 
+    match config.plugin_dir() {
+        Some(ref dir) => {
+            let count = std::fs::read_dir(dir)
+                .map(|e| e.filter_map(|e| e.ok()).filter(|e| e.path().is_dir()).count())
+                .unwrap_or(0);
+            tracing::info!("Plugins: {} plugin(s) in {:?}", count, dir);
+        }
+        None => tracing::info!("Plugins: disabled (no plugin directory found)"),
+    }
+
     // Start server (HTTPS or HTTP)
     if let Some(ref tls_config) = config.server.tls {
         let acceptor = sazare_server::tls::load_tls_acceptor(

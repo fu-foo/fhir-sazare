@@ -155,6 +155,7 @@ pub async fn auth_middleware(
     let path = request.uri().path();
     if path == "/health" || path == "/metadata"
         || path.starts_with("/.well-known/")
+        || path.starts_with("/plugins")
     {
         return Ok(next.run(request).await);
     }
@@ -414,7 +415,7 @@ fn extract_resource_action(method: &Method, path: &str) -> Option<(String, Strin
     let first = segments[0];
     if matches!(
         first,
-        "health" | "metadata" | "$export" | "$import" | "$status" | ".well-known"
+        "health" | "metadata" | "$export" | "$import" | "$status" | ".well-known" | "plugins"
     ) {
         return None;
     }

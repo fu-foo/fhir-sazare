@@ -10,6 +10,7 @@ pub struct ServerConfig {
     pub storage: StorageSettings,
     pub log: LogSettings,
     pub webhook: WebhookSettings,
+    pub plugins: PluginSettings,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -88,6 +89,12 @@ pub struct WebhookEndpoint {
     pub headers: std::collections::HashMap<String, String>,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PluginSettings {
+    pub dir: Option<PathBuf>,
+}
+
 impl Default for ServerSettings {
     fn default() -> Self {
         Self {
@@ -148,6 +155,10 @@ impl ServerConfig {
             config.storage.data_dir = PathBuf::from(data_dir);
         }
 
+        if let Ok(plugin_dir) = std::env::var("SAZARE_PLUGIN_DIR") {
+            config.plugins.dir = Some(PathBuf::from(plugin_dir));
+        }
+
         Ok(config)
     }
 
@@ -164,6 +175,18 @@ impl ServerConfig {
     /// Get the full path to the audit database
     pub fn audit_db_path(&self) -> PathBuf {
         self.storage.data_dir.join(&self.storage.audit_db)
+    }
+
+    /// Get the resolved plugin directory path, if configured and the directory exists.
+    pub fn plugin_dir(&self) -> Option<PathBuf> {
+        match &self.plugins.dir {
+            Some(dir) if dir.is_dir() => Some(dir.clone()),
+            Some(_) => None,
+            None => {
+                let default = PathBuf::from("plugins");
+                default.is_dir().then_some(default)
+            }
+        }
     }
 }
 

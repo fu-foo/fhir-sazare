@@ -10,6 +10,7 @@ pub mod compartment_check;
 pub mod config;
 pub mod dashboard;
 pub mod handlers;
+pub mod plugins;
 pub mod subscription;
 pub mod tls;
 #[allow(dead_code)]
@@ -107,6 +108,11 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         // Dashboard browse (auth-free)
         .route("/$browse/{resource_type}", get(dashboard::browse_list))
         .route("/$browse/{resource_type}/{id}", get(dashboard::browse_read))
+        // Plugin static file serving
+        .route("/plugins", get(plugins::list_plugins))
+        .route("/plugins/{name}", get(plugins::plugin_redirect))
+        .route("/plugins/{name}/", get(plugins::serve_plugin_index))
+        .route("/plugins/{name}/{*path}", get(plugins::serve_plugin_file))
         // Bulk operations
         .route("/$export", get(bulk::export))
         .route("/$import", post(bulk::import))

@@ -128,6 +128,13 @@ impl SearchQuery {
                 continue;
             }
 
+            // Skip other standard result parameters that start with "_"
+            // (e.g. _sort, _total, _contained, _containedType)
+            // These are not search filters and should be ignored if unsupported.
+            if key.starts_with('_') {
+                continue;
+            }
+
             // Parse parameter name and modifier
             let (param_name, modifier) = if let Some(idx) = key.find(':') {
                 let (name, mod_part) = key.split_at(idx);

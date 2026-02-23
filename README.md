@@ -20,6 +20,7 @@
 - **Resource filtering** — `_summary` (5 modes) and `_elements` support
 - **Validation** — Multi-phase validation with US-Core profile support
 - **Bulk data** — NDJSON `$export` and `$import`
+- **Plugin system** — Serve domain-specific SPAs from a plugin directory (`/plugins/`)
 - **Web dashboard** — Browser-based server monitoring at `/`
 - **Audit logging** — All operations recorded to dedicated SQLite database
 - **PATCH** — JSON Patch (RFC 6902)
@@ -147,6 +148,14 @@ If no `config.yaml` is found, the server runs with sensible defaults (port 8080,
 | `GET` | `/` | Web dashboard (browser) |
 | `GET` | `/$status` | Server status JSON API |
 
+### Plugins
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/plugins` | List installed plugins (JSON) |
+| `GET` | `/plugins/{name}/` | Serve plugin SPA |
+| `GET` | `/plugins/{name}/{path}` | Serve plugin static files (SPA fallback) |
+
 ---
 
 ## Search
@@ -273,6 +282,47 @@ curl -X POST http://localhost:8080/\$import \
 
 ---
 
+## Plugins
+
+sazare can serve domain-specific SPAs (Single Page Applications) as plugins. Each plugin is a directory under the plugin directory containing static files (HTML, JS, CSS). Plugins access FHIR data through sazare's REST API on the same origin, so no CORS configuration is needed.
+
+### Configuration
+
+```yaml
+plugins:
+  dir: "plugins"    # Directory containing plugin subdirectories
+```
+
+Or via environment variable: `SAZARE_PLUGIN_DIR=./plugins`
+
+If no `plugins` section is configured, sazare looks for a `./plugins` directory by default.
+
+### Directory Structure
+
+```
+plugins/
+  my-app/
+    index.html    # Entry point
+    style.css
+    app.js
+  another-app/
+    index.html
+    ...
+```
+
+### Behavior
+
+- **SPA fallback** — Requests for non-existent paths return `index.html` (client-side routing)
+- **Cache-Control** — `index.html` is served with `no-cache`; other assets with `max-age=604800` (1 week)
+- **No authentication** — Plugin static files are served without auth; data access goes through FHIR API which has its own auth
+- **Security** — Path traversal is blocked; symlinks are rejected
+
+### Sample Plugin
+
+A sample plugin (`plugins/sample-patient-register/`) is included that demonstrates a Patient registration form with a list view.
+
+---
+
 ## Architecture
 
 ```
@@ -365,6 +415,7 @@ Licensed under the [Apache License, Version 2.0](LICENSE).
 - `_summary` / `_elements` によるリソースフィルタリング
 - US-Core プロファイルによるバリデーション
 - NDJSON 形式での一括エクスポート / インポート
+- プラグインシステム（SPA を `/plugins/` で配信）
 - ブラウザで確認できる Web ダッシュボード
 - 監査ログ（全操作を SQLite に記録）
 - API キー / Basic 認証 / JWT (HS256/RS256/JWK URL) / SMART on FHIR スコープ

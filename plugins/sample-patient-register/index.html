@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Patient Register</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="container">
+  <header>
+    <h1>Patient Register</h1>
+    <p class="subtitle">FHIR R4 Patient Registration</p>
+  </header>
+
+  <form id="patient-form">
+    <div class="form-row">
+      <div class="form-group">
+        <label for="family">Family Name <span class="required">*</span></label>
+        <input type="text" id="family" required placeholder="Yamada">
+      </div>
+      <div class="form-group">
+        <label for="given">Given Name <span class="required">*</span></label>
+        <input type="text" id="given" required placeholder="Taro">
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label for="gender">Gender <span class="required">*</span></label>
+        <select id="gender" required>
+          <option value="">-- Select --</option>
+          <option value="male">Male</option>
+          <option value="female">Female</option>
+          <option value="other">Other</option>
+          <option value="unknown">Unknown</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="birthdate">Birth Date</label>
+        <input type="date" id="birthdate">
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label for="phone">Phone</label>
+        <input type="tel" id="phone" placeholder="03-1234-5678">
+      </div>
+      <div class="form-group">
+        <label for="email">Email</label>
+        <input type="email" id="email" placeholder="taro@example.com">
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label for="address">Address</label>
+      <input type="text" id="address" placeholder="Tokyo, Chiyoda-ku ...">
+    </div>
+
+    <button type="submit" id="submit-btn">Register Patient</button>
+  </form>
+
+  <div id="result" class="result hidden"></div>
+
+  <section id="patient-list-section">
+    <h2>Registered Patients</h2>
+    <table id="patient-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Name</th>
+          <th>Gender</th>
+          <th>Birth Date</th>
+          <th>Phone</th>
+        </tr>
+      </thead>
+      <tbody id="patient-tbody"></tbody>
+    </table>
+    <p id="no-patients" class="muted">No patients registered yet.</p>
+  </section>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
