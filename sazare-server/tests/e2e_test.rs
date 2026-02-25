@@ -31,6 +31,7 @@ async fn start_test_server() -> (String, TempDir) {
         search_param_registry: SearchParamRegistry::new(),
         compartment_def: CompartmentDef::patient_compartment(),
         jwk_cache: tokio::sync::RwLock::new(sazare_server::auth::JwkCache::new()),
+        plugin_names: Vec::new(),
     });
 
     let app = build_router(state);

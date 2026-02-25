@@ -153,9 +153,11 @@ pub async fn auth_middleware(
 
     // Allow public endpoints without auth (FHIR spec requirements)
     let path = request.uri().path();
-    if path == "/health" || path == "/metadata"
+    if path == "/health" || path == "/metadata" || path == "/$plugins"
         || path.starts_with("/.well-known/")
-        || path.starts_with("/plugins")
+        || state.plugin_names.iter().any(|name| {
+            path == format!("/{name}") || path.starts_with(&format!("/{name}/"))
+        })
     {
         return Ok(next.run(request).await);
     }
@@ -512,6 +514,7 @@ mod tests {
             search_param_registry: sazare_core::SearchParamRegistry::new(),
             compartment_def: sazare_core::CompartmentDef::patient_compartment(),
             jwk_cache: RwLock::new(JwkCache::new()),
+            plugin_names: Vec::new(),
         })
     }
 

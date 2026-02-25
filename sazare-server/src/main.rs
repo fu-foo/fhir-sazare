@@ -11,7 +11,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use sazare_server::{build_router, config::ServerConfig, AppState};
+use sazare_server::{build_router, config::ServerConfig, plugins, AppState};
 
 #[tokio::main]
 async fn main() {
@@ -78,6 +78,8 @@ async fn main() {
 
     let bind_addr = format!("{}:{}", config.server.host, config.server.port);
 
+    let plugin_names = plugins::discover_plugin_names(&config);
+
     let state = Arc::new(AppState {
         store,
         index: Mutex::new(index),
@@ -88,7 +90,27 @@ async fn main() {
         search_param_registry: SearchParamRegistry::new(),
         compartment_def: CompartmentDef::patient_compartment(),
         jwk_cache: tokio::sync::RwLock::new(sazare_server::auth::JwkCache::new()),
+        plugin_names,
     });
+
+    tracing::info!(
+        "Auth: {}",
+        if config.auth.enabled {
+            "enabled"
+        } else {
+            "disabled"
+        }
+    );
+
+    if state.plugin_names.is_empty() {
+        tracing::info!("Plugins: disabled (no plugin directory found)");
+    } else {
+        tracing::info!(
+            "Plugins: {} plugin(s) → /{}",
+            state.plugin_names.len(),
+            state.plugin_names.join("/, /")
+        );
+    }
 
     // Build router
     let app = build_router(state);
@@ -101,25 +123,6 @@ async fn main() {
             std::process::exit(1);
         }
     };
-
-    tracing::info!(
-        "Auth: {}",
-        if config.auth.enabled {
-            "enabled"
-        } else {
-            "disabled"
-        }
-    );
-
-    match config.plugin_dir() {
-        Some(ref dir) => {
-            let count = std::fs::read_dir(dir)
-                .map(|e| e.filter_map(|e| e.ok()).filter(|e| e.path().is_dir()).count())
-                .unwrap_or(0);
-            tracing::info!("Plugins: {} plugin(s) in {:?}", count, dir);
-        }
-        None => tracing::info!("Plugins: disabled (no plugin directory found)"),
-    }
 
     // Start server (HTTPS or HTTP)
     if let Some(ref tls_config) = config.server.tls {

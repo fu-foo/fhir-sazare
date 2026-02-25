@@ -46,6 +46,8 @@ pub struct AppState {
     pub search_param_registry: SearchParamRegistry,
     pub compartment_def: CompartmentDef,
     pub jwk_cache: tokio::sync::RwLock<auth::JwkCache>,
+    /// Discovered plugin names (for auth bypass and routing)
+    pub plugin_names: Vec<String>,
 }
 
 /// Conditional create result
@@ -99,7 +101,11 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         ])
         .allow_headers(Any);
 
-    Router::new()
+    // Build plugin routes (explicit per-plugin paths, e.g. /sample-patient-register/)
+    let plugin_router = plugins::plugin_routes(&state);
+
+    plugin_router
+        .merge(Router::new()
         // Health check
         .route("/health", get(handlers::metadata::health_check))
         // Dashboard
@@ -108,11 +114,8 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         // Dashboard browse (auth-free)
         .route("/$browse/{resource_type}", get(dashboard::browse_list))
         .route("/$browse/{resource_type}/{id}", get(dashboard::browse_read))
-        // Plugin static file serving
-        .route("/plugins", get(plugins::list_plugins))
-        .route("/plugins/{name}", get(plugins::plugin_redirect))
-        .route("/plugins/{name}/", get(plugins::serve_plugin_index))
-        .route("/plugins/{name}/{*path}", get(plugins::serve_plugin_file))
+        // Plugin listing
+        .route("/$plugins", get(plugins::list_plugins))
         // Bulk operations
         .route("/$export", get(bulk::export))
         .route("/$import", post(bulk::import))
@@ -141,6 +144,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         // History
         .route("/{resource_type}/{id}/_history", get(handlers::history::history))
         .route("/{resource_type}/{id}/_history/{vid}", get(handlers::history::vread))
+        )
         // Middleware
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
