@@ -1202,7 +1202,7 @@ checksum = "a50f4cf475b65d88e057964e0e9bb1f0aa9bbb2036dc65c64596b42932536984"
 
 [[package]]
 name = "sazare-core"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1215,7 +1215,7 @@ dependencies = [
 
 [[package]]
 name = "sazare-server"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "axum",
  "base64",
@@ -1242,7 +1242,7 @@ dependencies = [
 
 [[package]]
 name = "sazare-store"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "redb",
  "rusqlite",
