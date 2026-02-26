@@ -228,6 +228,7 @@ impl SqliteStore {
 
     /// List resources sorted by meta.lastUpdated descending with pagination.
     /// Returns (entries as (id, value), total_count).
+    #[allow(clippy::type_complexity)]
     pub fn list_by_last_updated(
         &self,
         resource_type: &str,
