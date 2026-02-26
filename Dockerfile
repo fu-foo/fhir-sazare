@@ -14,7 +14,7 @@ RUN apk add --no-cache ca-certificates
 
 COPY --from=builder /build/target/release/sazare-server /usr/local/bin/sazare-server
 COPY config.example.yaml /etc/sazare/config.example.yaml
-COPY config.demo.yaml /etc/sazare/config.yaml
+COPY config.example.yaml /etc/sazare/config.yaml
 COPY plugins/ /plugins/
 
 RUN mkdir -p /data

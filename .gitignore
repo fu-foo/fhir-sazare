@@ -10,11 +10,16 @@ data/
 # Config with credentials (use config.example.yaml as template)
 config.yaml
 config.demo.yaml
+Dockerfile.fly
 
 # TLS certificates and private keys
 certs/*.key
 certs/*.crt
 certs/*.pem
+
+# Fly.io (local deploy only)
+fly.toml
+.github/workflows/fly-deploy.yml
 
 # Claude Code
 .claude/
