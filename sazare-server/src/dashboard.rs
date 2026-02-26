@@ -358,6 +358,11 @@ async function showResourceList(type, offset) {
     if (entries.length === 0) {
       body.innerHTML = '<tr><td colspan="3" style="color:#bbb">No resources</td></tr>';
     } else {
+      entries.sort(function(a, b) {
+        var ta = a.lastUpdated || '';
+        var tb = b.lastUpdated || '';
+        return ta < tb ? 1 : ta > tb ? -1 : 0;
+      });
       body.innerHTML = entries.map(e => {
         const id = e.id || '-';
         const updated = e.lastUpdated ? new Date(e.lastUpdated).toLocaleString() : '-';

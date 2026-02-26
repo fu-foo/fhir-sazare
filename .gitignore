@@ -9,6 +9,7 @@ data/
 
 # Config with credentials (use config.example.yaml as template)
 config.yaml
+config.demo.yaml
 
 # TLS certificates and private keys
 certs/*.key
