@@ -11,8 +11,6 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use sazare_core::SearchQuery;
-use sazare_store::SearchExecutor;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::sync::Arc;
@@ -83,24 +81,14 @@ pub async fn browse_list(
     let count = params._count.unwrap_or(20);
     let offset = params._offset.unwrap_or(0);
 
-    let query_str = format!("_count={}&_offset={}", count, offset);
-    let query = match SearchQuery::parse(&query_str) {
-        Ok(q) => q,
-        Err(e) => return Json(json!({"error": e})).into_response(),
-    };
-
-    let index = state.index.lock().await;
-    let executor = SearchExecutor::new(&state.store, &index);
-
-    let (ids, total) = match executor.search_with_total(&resource_type, &query) {
+    let (raw_entries, total) = match state.store.list_by_last_updated(&resource_type, count, offset) {
         Ok(r) => r,
-        Err(e) => return Json(json!({"error": e})).into_response(),
+        Err(e) => return Json(json!({"error": e.to_string()})).into_response(),
     };
 
-    let resources = executor.load_resources(&resource_type, &ids).unwrap_or_default();
-
-    let entries: Vec<Value> = resources
+    let entries: Vec<Value> = raw_entries
         .into_iter()
+        .filter_map(|(_id, data)| serde_json::from_slice::<Value>(&data).ok())
         .map(|r| {
             json!({
                 "id": r.get("id").and_then(|v| v.as_str()).unwrap_or(""),
@@ -358,11 +346,6 @@ async function showResourceList(type, offset) {
     if (entries.length === 0) {
       body.innerHTML = '<tr><td colspan="3" style="color:#bbb">No resources</td></tr>';
     } else {
-      entries.sort(function(a, b) {
-        var ta = a.lastUpdated || '';
-        var tb = b.lastUpdated || '';
-        return ta < tb ? 1 : ta > tb ? -1 : 0;
-      });
       body.innerHTML = entries.map(e => {
         const id = e.id || '-';
         const updated = e.lastUpdated ? new Date(e.lastUpdated).toLocaleString() : '-';

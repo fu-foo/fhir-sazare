@@ -226,6 +226,41 @@ impl SqliteStore {
         Ok(results)
     }
 
+    /// List resources sorted by meta.lastUpdated descending with pagination.
+    /// Returns (entries as (id, value), total_count).
+    pub fn list_by_last_updated(
+        &self,
+        resource_type: &str,
+        count: usize,
+        offset: usize,
+    ) -> Result<(Vec<(String, Vec<u8>)>, usize)> {
+        let conn = self.conn.lock().unwrap();
+
+        // Total count
+        let total: usize = conn.query_row(
+            "SELECT COUNT(*) FROM resources WHERE resource_type = ?",
+            params![resource_type],
+            |row| row.get(0),
+        )?;
+
+        let mut stmt = conn.prepare(
+            "SELECT id, value FROM resources WHERE resource_type = ? \
+             ORDER BY json_extract(value, '$.meta.lastUpdated') DESC \
+             LIMIT ? OFFSET ?",
+        )?;
+        let rows = stmt.query_map(params![resource_type, count as i64, offset as i64], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+
+        let mut entries = Vec::new();
+        for row in rows {
+            let (id, val) = row?;
+            entries.push((id, val.into_bytes()));
+        }
+
+        Ok((entries, total))
+    }
+
     /// Execute multiple operations atomically within an SQLite transaction
     pub fn in_transaction<F, T>(&self, f: F) -> Result<T>
     where
