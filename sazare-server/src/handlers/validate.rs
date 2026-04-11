@@ -77,14 +77,21 @@ pub async fn validate(
         &state.profile_registry,
         &state.terminology_registry,
     ) {
-        Ok(()) => {
+        Ok(result) => {
+            let mut issues = vec![json!({
+                "severity": "information",
+                "code": "informational",
+                "diagnostics": "Validation successful"
+            })];
+
+            // Append any warnings from profile validation
+            for warning in &result.warnings {
+                issues.push(json!(warning));
+            }
+
             let outcome = json!({
                 "resourceType": "OperationOutcome",
-                "issue": [{
-                    "severity": "information",
-                    "code": "informational",
-                    "diagnostics": "Validation successful"
-                }]
+                "issue": issues
             });
             Ok((StatusCode::OK, Json(outcome)).into_response())
         }

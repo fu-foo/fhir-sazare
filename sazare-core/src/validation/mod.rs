@@ -11,27 +11,36 @@ pub mod registry;
 
 pub use registry::{ProfileRegistry, TerminologyRegistry};
 
-use crate::operation_outcome::OperationOutcome;
+use crate::operation_outcome::{OperationOutcome, OperationOutcomeIssue};
 use serde_json::Value;
+
+/// Result of validation: success with optional warnings, or failure.
+pub struct ValidationResult {
+    /// Warning-level issues collected during validation (not errors).
+    pub warnings: Vec<OperationOutcomeIssue>,
+}
 
 /// Validate a resource through all 3 phases.
 ///
-/// Returns Ok(()) on success, Err(OperationOutcome) on validation failure.
+/// Returns `Ok(ValidationResult)` on success (may contain warnings),
+/// or `Err(OperationOutcome)` on validation failure.
 pub fn validate_resource_all_phases(
     resource: &Value,
     profile_registry: &ProfileRegistry,
     terminology_registry: &TerminologyRegistry,
-) -> Result<(), OperationOutcome> {
+) -> Result<ValidationResult, OperationOutcome> {
     // Phase 1: Required fields, types, cardinality
     phase1::Phase1Validator::validate(resource)?;
 
-    // Phase 2: Extension validation
-    phase2::Phase2Validator::validate(resource, profile_registry)?;
+    // Phase 2: Extension validation + Profile-based validation
+    let phase2_warnings = phase2::Phase2Validator::validate(resource, profile_registry)?;
 
     // Phase 3: Terminology binding
     phase3::Phase3Validator::validate(resource, terminology_registry)?;
 
-    Ok(())
+    Ok(ValidationResult {
+        warnings: phase2_warnings,
+    })
 }
 
 #[cfg(test)]
