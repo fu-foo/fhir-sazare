@@ -5,6 +5,7 @@
 
 use crate::audit::{self, AuditContext};
 use crate::auth::AuthUser;
+use crate::handlers::merge_version_meta;
 use crate::AppState;
 
 use axum::{
@@ -194,16 +195,10 @@ pub async fn import(
             _ => "1".to_string(),
         };
 
-        // Set id and meta
+        // Set id and meta (preserve caller-provided meta fields)
         if let Some(obj) = resource.as_object_mut() {
             obj.insert("id".to_string(), json!(id));
-            obj.insert(
-                "meta".to_string(),
-                json!({
-                    "versionId": version_id,
-                    "lastUpdated": chrono::Utc::now().to_rfc3339()
-                }),
-            );
+            merge_version_meta(obj, &version_id);
         }
 
         let data = serde_json::to_vec(&resource).unwrap();

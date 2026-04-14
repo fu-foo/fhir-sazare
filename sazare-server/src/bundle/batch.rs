@@ -108,13 +108,7 @@ async fn process_batch_entry(
 
             if let Some(obj) = resource.as_object_mut() {
                 obj.insert("id".to_string(), json!(id));
-                obj.insert(
-                    "meta".to_string(),
-                    json!({
-                        "versionId": version_id,
-                        "lastUpdated": chrono::Utc::now().to_rfc3339()
-                    }),
-                );
+                crate::handlers::merge_version_meta(obj, &version_id);
             }
 
             let data = serde_json::to_vec(&resource).unwrap();
@@ -204,13 +198,7 @@ async fn process_batch_entry(
 
             if let Some(obj) = resource.as_object_mut() {
                 obj.insert("id".to_string(), json!(id));
-                obj.insert(
-                    "meta".to_string(),
-                    json!({
-                        "versionId": version_id,
-                        "lastUpdated": chrono::Utc::now().to_rfc3339()
-                    }),
-                );
+                crate::handlers::merge_version_meta(obj, &version_id);
             }
 
             let data = serde_json::to_vec(&resource).unwrap();

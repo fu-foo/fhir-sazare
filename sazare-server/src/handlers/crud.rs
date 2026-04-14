@@ -7,7 +7,7 @@ use http_body_util::BodyExt;
 use sazare_core::{
     operation_outcome::IssueType,
     validation::validate_resource_all_phases,
-    Meta, OperationOutcome, Resource,
+    OperationOutcome, Resource,
 };
 use serde_json::{json, Value};
 use std::sync::Arc;
@@ -125,14 +125,13 @@ pub async fn create(
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     resource.id = Some(id.clone());
 
-    // Set metadata
+    // Set metadata — preserve caller-provided fields (profile, source, tag, ...)
     let version_id = "1".to_string();
     let now = chrono::Utc::now().to_rfc3339();
-    resource.meta = Some(Meta {
-        version_id: Some(version_id.clone()),
-        last_updated: Some(now),
-        ..Default::default()
-    });
+    let mut meta = resource.meta.take().unwrap_or_default();
+    meta.version_id = Some(version_id.clone());
+    meta.last_updated = Some(now);
+    resource.meta = Some(meta);
 
     // Save
     let json_bytes = serde_json::to_vec(&resource).map_err(|e| {
@@ -296,11 +295,10 @@ pub async fn update(
     };
 
     resource.id = Some(id.clone());
-    resource.meta = Some(Meta {
-        version_id: Some(new_version.clone()),
-        last_updated: Some(chrono::Utc::now().to_rfc3339()),
-        ..Default::default()
-    });
+    let mut meta = resource.meta.take().unwrap_or_default();
+    meta.version_id = Some(new_version.clone());
+    meta.last_updated = Some(chrono::Utc::now().to_rfc3339());
+    resource.meta = Some(meta);
 
     let json_bytes = serde_json::to_vec(&resource).map_err(|e| {
         (

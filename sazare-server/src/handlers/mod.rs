@@ -3,6 +3,7 @@ pub mod crud;
 pub mod everything;
 pub mod history;
 pub mod metadata;
+pub mod reindex;
 pub mod search;
 pub mod validate;
 
@@ -41,6 +42,21 @@ pub fn response_with_etag(status: StatusCode, resource: Value) -> impl IntoRespo
     );
 
     (status, headers, Json(resource))
+}
+
+/// Merge versionId + lastUpdated into a resource's `meta` object, preserving
+/// any caller-provided fields (profile, tag, security, source, extension).
+pub fn merge_version_meta(obj: &mut serde_json::Map<String, Value>, version_id: &str) {
+    let now = chrono::Utc::now().to_rfc3339();
+    let meta_entry = obj
+        .entry("meta".to_string())
+        .or_insert_with(|| Value::Object(serde_json::Map::new()));
+    if !meta_entry.is_object() {
+        *meta_entry = Value::Object(serde_json::Map::new());
+    }
+    let meta = meta_entry.as_object_mut().unwrap();
+    meta.insert("versionId".to_string(), Value::String(version_id.to_string()));
+    meta.insert("lastUpdated".to_string(), Value::String(now));
 }
 
 /// Update search index for a resource (synchronous — must not be async)
