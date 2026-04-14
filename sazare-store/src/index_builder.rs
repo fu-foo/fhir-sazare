@@ -67,6 +67,61 @@ impl IndexBuilder {
             ExtractionMode::PeriodStart => {
                 Self::extract_period_start(resource, &def.path, &def.name, param_type_str, indices);
             }
+            ExtractionMode::UriArray => {
+                Self::extract_uri_array(resource, &def.path, &def.name, param_type_str, indices);
+            }
+            ExtractionMode::CodingArray => {
+                Self::extract_coding_array(resource, &def.path, &def.name, param_type_str, indices);
+            }
+        }
+    }
+
+    /// CodingArray: navigate path to an array of Coding objects (e.g. meta.tag).
+    fn extract_coding_array(
+        resource: &Value,
+        path: &[String],
+        name: &str,
+        param_type: &str,
+        indices: &mut Vec<(String, String, String, Option<String>)>,
+    ) {
+        let mut current = resource;
+        for segment in path {
+            match current.get(segment.as_str()) {
+                Some(v) => current = v,
+                None => return,
+            }
+        }
+        if let Some(arr) = current.as_array() {
+            for coding in arr {
+                if let Some(code) = coding.get("code").and_then(|v| v.as_str()) {
+                    let system = coding.get("system").and_then(|v| v.as_str()).map(|s| s.to_string());
+                    indices.push((name.to_string(), param_type.to_string(), code.to_string(), system));
+                }
+            }
+        }
+    }
+
+    /// UriArray: navigate path to an array of scalar strings (e.g. meta.profile).
+    fn extract_uri_array(
+        resource: &Value,
+        path: &[String],
+        name: &str,
+        param_type: &str,
+        indices: &mut Vec<(String, String, String, Option<String>)>,
+    ) {
+        let mut current = resource;
+        for segment in path {
+            match current.get(segment.as_str()) {
+                Some(v) => current = v,
+                None => return,
+            }
+        }
+        if let Some(arr) = current.as_array() {
+            for v in arr {
+                if let Some(s) = v.as_str() {
+                    indices.push((name.to_string(), param_type.to_string(), s.to_string(), None));
+                }
+            }
         }
     }
 
@@ -377,15 +432,60 @@ mod tests {
 
     #[test]
     fn test_extract_unknown_resource_common_indices() {
+        // Unknown resource types fall back to FHIR-common params only (_profile).
         let resource = json!({
             "resourceType": "CustomResource",
-            "status": "active",
-            "identifier": [{"value": "ID-001"}]
+            "meta": {"profile": ["http://example.org/StructureDefinition/Custom"]}
         });
 
         let indices = IndexBuilder::extract_indices("CustomResource", &resource);
-        assert!(indices.iter().any(|(name, _, val, _)| name == "status" && val == "active"));
-        assert!(indices.iter().any(|(name, _, val, _)| name == "identifier" && val == "ID-001"));
+        assert!(indices.iter().any(|(name, _, val, _)|
+            name == "_profile" && val == "http://example.org/StructureDefinition/Custom"
+        ));
+    }
+
+    #[test]
+    fn test_extract_common_fhir_params() {
+        let patient = json!({
+            "resourceType": "Patient",
+            "id": "p-1",
+            "meta": {
+                "lastUpdated": "2024-06-01T12:00:00Z",
+                "tag": [{"system": "http://example.org/tag", "code": "vip"}],
+                "security": [{"system": "http://hl7.org/fhir/v3/Confidentiality", "code": "R"}]
+            }
+        });
+
+        let indices = IndexBuilder::extract_indices("Patient", &patient);
+        assert!(indices.iter().any(|(n, _, v, _)| n == "_id" && v == "p-1"));
+        assert!(indices.iter().any(|(n, _, v, _)| n == "_lastUpdated" && v == "2024-06-01T12:00:00Z"));
+        assert!(indices.iter().any(|(n, _, v, s)|
+            n == "_tag" && v == "vip" && s.as_deref() == Some("http://example.org/tag")
+        ));
+        assert!(indices.iter().any(|(n, _, v, s)|
+            n == "_security" && v == "R" && s.as_deref() == Some("http://hl7.org/fhir/v3/Confidentiality")
+        ));
+    }
+
+    #[test]
+    fn test_extract_profile_on_registered_resource() {
+        let sr = json!({
+            "resourceType": "ServiceRequest",
+            "status": "active",
+            "intent": "order",
+            "meta": {"profile": [
+                "http://example.org/StructureDefinition/ServiceRequestA",
+                "http://example.org/StructureDefinition/Common"
+            ]}
+        });
+
+        let indices = IndexBuilder::extract_indices("ServiceRequest", &sr);
+        assert!(indices.iter().any(|(name, _, val, _)|
+            name == "_profile" && val == "http://example.org/StructureDefinition/ServiceRequestA"
+        ));
+        assert!(indices.iter().any(|(name, _, val, _)|
+            name == "_profile" && val == "http://example.org/StructureDefinition/Common"
+        ));
     }
 
     #[test]

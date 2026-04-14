@@ -19,6 +19,10 @@ pub enum ExtractionMode {
     Reference,
     /// Period start: `resource["period"]["start"]`
     PeriodStart,
+    /// Array of scalar URIs/strings: `resource["meta"]["profile"][*]` → value (system=None)
+    UriArray,
+    /// Array of Codings: `resource["meta"]["tag"][*]` → code + system
+    CodingArray,
 }
 
 /// Definition of a single search parameter
@@ -62,6 +66,14 @@ impl SearchParamRegistry {
         definitions.insert("ServiceRequest".to_string(), service_request_definitions());
         definitions.insert("Appointment".to_string(), appointment_definitions());
         definitions.insert("Specimen".to_string(), specimen_definitions());
+
+        // Append FHIR-common parameters (e.g. _profile) to every resource-specific list
+        let common = common_fhir_params();
+        for defs in definitions.values_mut() {
+            for c in &common {
+                defs.push(c.clone());
+            }
+        }
 
         Self { definitions }
     }
@@ -660,20 +672,50 @@ fn specimen_definitions() -> Vec<SearchParamDef> {
     ]
 }
 
+/// Fallback for resource types without explicit definitions. Kept minimal
+/// to avoid indexing non-existent fields on arbitrary resources.
 fn common_definitions() -> Vec<SearchParamDef> {
+    common_fhir_params()
+}
+
+/// Parameters defined by the base FHIR spec that apply to every resource
+/// (`_id`, `_lastUpdated`, `_profile`, `_tag`, `_security`).
+/// Appended to every resource-specific list.
+fn common_fhir_params() -> Vec<SearchParamDef> {
     vec![
         SearchParamDef {
-            name: "status".to_string(),
+            name: "_id".to_string(),
             param_type: SearchParamType::Token,
-            path: vec!["status".to_string()],
+            path: vec!["id".to_string()],
             extraction: ExtractionMode::Simple,
             aliases: vec![],
         },
         SearchParamDef {
-            name: "identifier".to_string(),
+            name: "_lastUpdated".to_string(),
+            param_type: SearchParamType::Date,
+            path: vec!["meta".to_string(), "lastUpdated".to_string()],
+            extraction: ExtractionMode::Simple,
+            aliases: vec![],
+        },
+        SearchParamDef {
+            name: "_profile".to_string(),
             param_type: SearchParamType::Token,
-            path: vec!["identifier".to_string()],
-            extraction: ExtractionMode::Identifier,
+            path: vec!["meta".to_string(), "profile".to_string()],
+            extraction: ExtractionMode::UriArray,
+            aliases: vec![],
+        },
+        SearchParamDef {
+            name: "_tag".to_string(),
+            param_type: SearchParamType::Token,
+            path: vec!["meta".to_string(), "tag".to_string()],
+            extraction: ExtractionMode::CodingArray,
+            aliases: vec![],
+        },
+        SearchParamDef {
+            name: "_security".to_string(),
+            param_type: SearchParamType::Token,
+            path: vec!["meta".to_string(), "security".to_string()],
+            extraction: ExtractionMode::CodingArray,
             aliases: vec![],
         },
     ]
@@ -706,9 +748,13 @@ mod tests {
     fn test_fallback_for_unknown_resource() {
         let registry = SearchParamRegistry::new();
         let defs = registry.get_definitions("UnknownResource");
-        assert_eq!(defs.len(), 2);
-        assert_eq!(defs[0].name, "status");
-        assert_eq!(defs[1].name, "identifier");
+        // Fallback exposes FHIR-common params only.
+        let names: Vec<&str> = defs.iter().map(|d| d.name.as_str()).collect();
+        assert!(names.contains(&"_id"));
+        assert!(names.contains(&"_lastUpdated"));
+        assert!(names.contains(&"_profile"));
+        assert!(names.contains(&"_tag"));
+        assert!(names.contains(&"_security"));
     }
 
     #[test]

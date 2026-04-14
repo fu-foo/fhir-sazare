@@ -131,7 +131,10 @@ impl SearchQuery {
             // Skip other standard result parameters that start with "_"
             // (e.g. _sort, _total, _contained, _containedType)
             // These are not search filters and should be ignored if unsupported.
-            if key.starts_with('_') {
+            // Allowlist underscore-prefixed params that ARE search filters.
+            const UNDERSCORE_SEARCH_PARAMS: &[&str] =
+                &["_id", "_lastUpdated", "_profile", "_tag", "_security"];
+            if key.starts_with('_') && !UNDERSCORE_SEARCH_PARAMS.contains(&key.as_ref()) {
                 continue;
             }
 
@@ -234,9 +237,10 @@ pub fn infer_param_type_for_resource(resource_type: Option<&str>, name: &str) ->
     match name {
         "identifier" | "code" | "status" | "gender" | "intent"
         | "vaccine-code" | "clinical-status" | "type" | "category"
-        | "priority" | "requisition" => SearchParamType::Token,
+        | "priority" | "requisition"
+        | "_id" | "_profile" | "_tag" | "_security" => SearchParamType::Token,
         "name" | "family" | "given" | "address" => SearchParamType::String,
-        "birthdate" | "date" | "period" => SearchParamType::Date,
+        "birthdate" | "date" | "period" | "_lastUpdated" => SearchParamType::Date,
         "subject" | "patient" | "encounter" | "owner"
         | "requester" => SearchParamType::Reference,
         _ => SearchParamType::String,
@@ -347,6 +351,38 @@ mod tests {
         assert_eq!(query.parameters.len(), 1);
         assert_eq!(query.chain_parameters.len(), 0);
         assert_eq!(query.parameters[0].modifier, Some("exact".to_string()));
+    }
+
+    #[test]
+    fn test_parse_profile() {
+        let query = SearchQuery::parse("_profile=http://example.org/StructureDefinition/A").unwrap();
+        assert_eq!(query.parameters.len(), 1);
+        assert_eq!(query.parameters[0].name, "_profile");
+        assert_eq!(query.parameters[0].value, "http://example.org/StructureDefinition/A");
+        assert_eq!(query.parameters[0].param_type, SearchParamType::Token);
+    }
+
+    #[test]
+    fn test_parse_common_fhir_params() {
+        let query = SearchQuery::parse(
+            "_id=abc&_tag=http://x|t1&_security=http://x|s1&_lastUpdated=ge2024-01-01"
+        ).unwrap();
+        assert_eq!(query.parameters.len(), 4);
+        let names: Vec<&str> = query.parameters.iter().map(|p| p.name.as_str()).collect();
+        assert!(names.contains(&"_id"));
+        assert!(names.contains(&"_tag"));
+        assert!(names.contains(&"_security"));
+        assert!(names.contains(&"_lastUpdated"));
+        let last_updated = query.parameters.iter().find(|p| p.name == "_lastUpdated").unwrap();
+        assert_eq!(last_updated.param_type, SearchParamType::Date);
+        assert_eq!(last_updated.prefix.as_deref(), Some("ge"));
+        assert_eq!(last_updated.value, "2024-01-01");
+    }
+
+    #[test]
+    fn test_parse_unknown_underscore_param_skipped() {
+        let query = SearchQuery::parse("_sort=name").unwrap();
+        assert_eq!(query.parameters.len(), 0);
     }
 
     #[test]
