@@ -105,6 +105,22 @@ impl SearchIndex {
         Ok(())
     }
 
+    /// Count total entries in the search index (for reindex decisions)
+    pub fn row_count(&self) -> Result<usize> {
+        let count: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM search_index",
+            [],
+            |row| row.get(0),
+        )?;
+        Ok(count as usize)
+    }
+
+    /// Drop all entries from the search index
+    pub fn clear_all(&self) -> Result<()> {
+        self.conn.execute("DELETE FROM search_index", [])?;
+        Ok(())
+    }
+
     /// Remove all index entries for a resource
     pub fn remove_index(&self, resource_type: &str, resource_id: &str) -> Result<()> {
         self.conn.execute(

@@ -119,6 +119,8 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         // Bulk operations
         .route("/$export", get(bulk::export))
         .route("/$import", post(bulk::import))
+        // Admin: rebuild search index
+        .route("/$reindex", post(handlers::reindex::reindex))
         // Metadata
         .route("/metadata", get(handlers::metadata::capability_statement))
         // SMART on FHIR configuration

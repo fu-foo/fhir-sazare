@@ -11,7 +11,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use sazare_server::{build_router, config::ServerConfig, plugins, AppState};
+use sazare_server::{build_router, config::ServerConfig, handlers::reindex::perform_reindex, plugins, AppState};
 
 #[tokio::main]
 async fn main() {
@@ -76,6 +76,31 @@ async fn main() {
         }
     }
 
+    // Auto-reindex if the search index is empty (fresh deploy, or after an index wipe
+    // following a schema change like added common params _id/_profile/_tag/etc.)
+    let search_param_registry = SearchParamRegistry::new();
+    match index.row_count() {
+        Ok(0) => {
+            let store_has_data = store
+                .list_all(None)
+                .map(|v| !v.is_empty())
+                .unwrap_or(false);
+            if store_has_data {
+                tracing::info!("Search index is empty; rebuilding from resource store...");
+                match perform_reindex(&store, &index, &search_param_registry) {
+                    Ok(s) => tracing::info!(
+                        "Auto-reindex complete: {} resources, {} entries",
+                        s.resources_indexed,
+                        s.entries_written
+                    ),
+                    Err(e) => tracing::error!("Auto-reindex failed: {}", e),
+                }
+            }
+        }
+        Ok(n) => tracing::info!("Search index has {} entries", n),
+        Err(e) => tracing::warn!("Failed to query search index size: {}", e),
+    }
+
     let bind_addr = format!("{}:{}", config.server.host, config.server.port);
 
     let plugin_names = plugins::discover_plugin_names(&config);
@@ -87,7 +112,7 @@ async fn main() {
         config: config.clone(),
         profile_registry,
         terminology_registry: TerminologyRegistry::new(),
-        search_param_registry: SearchParamRegistry::new(),
+        search_param_registry,
         compartment_def: CompartmentDef::patient_compartment(),
         jwk_cache: tokio::sync::RwLock::new(sazare_server::auth::JwkCache::new()),
         plugin_names,
