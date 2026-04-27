@@ -32,6 +32,7 @@ use tokio::sync::Mutex;
 use tower_http::{
     cors::{Any, CorsLayer},
     limit::RequestBodyLimitLayer,
+    services::ServeDir,
     trace::TraceLayer,
 };
 
@@ -104,7 +105,15 @@ pub fn build_router(state: Arc<AppState>) -> Router {
     // Build plugin routes (explicit per-plugin paths, e.g. /sample-patient-register/)
     let plugin_router = plugins::plugin_routes(&state);
 
-    plugin_router
+    // Optional UI: served from SAZARE_UI_DIR if set and exists
+    let ui_dir = std::env::var("SAZARE_UI_DIR").ok().filter(|p| std::path::Path::new(p).is_dir());
+    let mut router = plugin_router;
+    if let Some(dir) = ui_dir.as_ref() {
+        tracing::info!("UI: serving static files from {} at /ui", dir);
+        router = router.nest_service("/ui", ServeDir::new(dir));
+    }
+
+    router
         .merge(Router::new()
         // Health check
         .route("/health", get(handlers::metadata::health_check))
@@ -128,6 +137,8 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         // Operations (must be before /{resource_type}/{id} to avoid matching as {id})
         .route("/{resource_type}/$validate", post(handlers::validate::validate))
         .route("/{resource_type}/{id}/$everything", get(handlers::everything::patient_everything))
+        // FHIR search-via-POST (alternative to GET search; body is form-encoded params)
+        .route("/{resource_type}/_search", post(handlers::search::search_post))
         // CRUD + Search + Conditional
         .route(
             "/{resource_type}",

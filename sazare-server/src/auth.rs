@@ -162,7 +162,8 @@ pub async fn auth_middleware(
         return Ok(next.run(request).await);
     }
 
-    let is_dashboard = path == "/" || path == "/$status" || path.starts_with("/$browse");
+    let is_dashboard = path == "/" || path == "/$status" || path.starts_with("/$browse")
+        || path == "/ui" || path.starts_with("/ui/");
 
     // Extract authorization header
     let auth_header = request

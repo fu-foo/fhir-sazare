@@ -21,6 +21,32 @@ use crate::AppState;
 /// Default page size per FHIR spec
 const DEFAULT_COUNT: usize = 100;
 
+/// Reconstruct the externally-visible base URL (scheme + authority).
+/// Honors `X-Forwarded-Proto` and `X-Forwarded-Host` so reverse-proxied deploys
+/// (Fly.io, nginx) emit absolute Bundle.link / entry.fullUrl URLs that clients
+/// can resolve back to the same scheme — preventing http→https 301 redirects
+/// when downstream tooling follows the link.
+fn external_base_url(request: &Request) -> String {
+    let headers = request.headers();
+    let scheme = headers
+        .get("x-forwarded-proto")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.split(',').next().unwrap_or(s).trim().to_string())
+        .unwrap_or_else(|| {
+            request
+                .uri()
+                .scheme_str()
+                .unwrap_or("http")
+                .to_string()
+        });
+    let host = headers
+        .get("x-forwarded-host")
+        .or_else(|| headers.get("host"))
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("localhost");
+    format!("{}://{}", scheme, host)
+}
+
 /// Search query parameters
 #[derive(Deserialize, Default)]
 pub struct SearchParams {
@@ -37,7 +63,55 @@ pub async fn search(
 ) -> Result<Response, (StatusCode, Json<Value>)> {
     let audit_ctx = AuditContext::from_request(&request);
     let auth_user = request.extensions().get::<AuthUser>().cloned();
+    let base_url = external_base_url(&request);
+    do_search(state, resource_type, params, auth_user, audit_ctx, base_url).await
+}
 
+/// Search via POST (POST /{resource_type}/_search) — FHIR alternative to GET search.
+/// Body is `application/x-www-form-urlencoded` with the same params as the query string.
+pub async fn search_post(
+    State(state): State<Arc<AppState>>,
+    Path(resource_type): Path<String>,
+    request: Request,
+) -> Result<Response, (StatusCode, Json<Value>)> {
+    let audit_ctx = AuditContext::from_request(&request);
+    let auth_user = request.extensions().get::<AuthUser>().cloned();
+    let base_url = external_base_url(&request);
+
+    let body = request.into_body();
+    let bytes = axum::body::to_bytes(body, 16 * 1024 * 1024).await.map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!(OperationOutcome::error(
+                IssueType::Invalid,
+                format!("Failed to read body: {e}")
+            ))),
+        )
+    })?;
+    let params_map: std::collections::HashMap<String, String> =
+        serde_urlencoded::from_bytes(&bytes).map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!(OperationOutcome::error(
+                    IssueType::Invalid,
+                    format!("Failed to parse form-encoded body: {e}")
+                ))),
+            )
+        })?;
+    let params = SearchParams { params: params_map };
+
+    do_search(state, resource_type, params, auth_user, audit_ctx, base_url).await
+}
+
+/// Shared search execution path used by both GET and POST search handlers.
+async fn do_search(
+    state: Arc<AppState>,
+    resource_type: String,
+    params: SearchParams,
+    auth_user: Option<AuthUser>,
+    audit_ctx: AuditContext,
+    base_url: String,
+) -> Result<Response, (StatusCode, Json<Value>)> {
     // Reconstruct query string
     let query_string: String = params
         .params
@@ -147,7 +221,8 @@ pub async fn search(
         .into_iter()
         .map(|r| {
             let full_url = format!(
-                "{}/{}",
+                "{}/{}/{}",
+                base_url,
                 resource_type,
                 r.get("id").and_then(|v| v.as_str()).unwrap_or("")
             );
@@ -167,7 +242,7 @@ pub async fn search(
             .unwrap_or("");
         let inc_id = inc.get("id").and_then(|v| v.as_str()).unwrap_or("");
         entries.push(json!({
-            "fullUrl": format!("{}/{}", inc_type, inc_id),
+            "fullUrl": format!("{}/{}/{}", base_url, inc_type, inc_id),
             "resource": inc,
             "search": {"mode": "include"}
         }));
@@ -181,7 +256,7 @@ pub async fn search(
             .unwrap_or("");
         let inc_id = inc.get("id").and_then(|v| v.as_str()).unwrap_or("");
         entries.push(json!({
-            "fullUrl": format!("{}/{}", inc_type, inc_id),
+            "fullUrl": format!("{}/{}/{}", base_url, inc_type, inc_id),
             "resource": inc,
             "search": {"mode": "include"}
         }));
@@ -202,9 +277,9 @@ pub async fn search(
         .join("&");
 
     let base = if base_params.is_empty() {
-        format!("/{}?_count={}", resource_type, count)
+        format!("{}/{}?_count={}", base_url, resource_type, count)
     } else {
-        format!("/{resource_type}?{base_params}&_count={count}")
+        format!("{base_url}/{resource_type}?{base_params}&_count={count}")
     };
 
     // self link

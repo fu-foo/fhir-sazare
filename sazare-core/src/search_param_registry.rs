@@ -23,6 +23,9 @@ pub enum ExtractionMode {
     UriArray,
     /// Array of Codings: `resource["meta"]["tag"][*]` → code + system
     CodingArray,
+    /// Single Coding object (e.g. `Encounter.class` is one Coding, not a CodeableConcept).
+    /// Yields `code` + `system`.
+    Coding,
 }
 
 /// Definition of a single search parameter
@@ -66,6 +69,8 @@ impl SearchParamRegistry {
         definitions.insert("ServiceRequest".to_string(), service_request_definitions());
         definitions.insert("Appointment".to_string(), appointment_definitions());
         definitions.insert("Specimen".to_string(), specimen_definitions());
+        definitions.insert("Provenance".to_string(), provenance_definitions());
+        definitions.insert("CarePlan".to_string(), care_plan_definitions());
 
         // Append FHIR-common parameters (e.g. _profile) to every resource-specific list
         let common = common_fhir_params();
@@ -133,6 +138,13 @@ fn patient_definitions() -> Vec<SearchParamDef> {
             aliases: vec![],
         },
         SearchParamDef {
+            name: "death-date".to_string(),
+            param_type: SearchParamType::Date,
+            path: vec!["deceasedDateTime".to_string()],
+            extraction: ExtractionMode::Simple,
+            aliases: vec![],
+        },
+        SearchParamDef {
             name: "family".to_string(),
             param_type: SearchParamType::String,
             path: vec!["name".to_string(), "family".to_string()],
@@ -143,6 +155,45 @@ fn patient_definitions() -> Vec<SearchParamDef> {
             name: "given".to_string(),
             param_type: SearchParamType::String,
             path: vec!["name".to_string(), "given".to_string()],
+            extraction: ExtractionMode::NestedArrayScalar,
+            aliases: vec![],
+        },
+        // US Core `name`: combined search across all HumanName components.
+        // Five defs share the same param name so values are indexed under
+        // a single "name" bucket; the CapabilityStatement dedup keeps the
+        // declaration to one entry.
+        SearchParamDef {
+            name: "name".to_string(),
+            param_type: SearchParamType::String,
+            path: vec!["name".to_string(), "family".to_string()],
+            extraction: ExtractionMode::ArrayField,
+            aliases: vec![],
+        },
+        SearchParamDef {
+            name: "name".to_string(),
+            param_type: SearchParamType::String,
+            path: vec!["name".to_string(), "given".to_string()],
+            extraction: ExtractionMode::NestedArrayScalar,
+            aliases: vec![],
+        },
+        SearchParamDef {
+            name: "name".to_string(),
+            param_type: SearchParamType::String,
+            path: vec!["name".to_string(), "text".to_string()],
+            extraction: ExtractionMode::ArrayField,
+            aliases: vec![],
+        },
+        SearchParamDef {
+            name: "name".to_string(),
+            param_type: SearchParamType::String,
+            path: vec!["name".to_string(), "prefix".to_string()],
+            extraction: ExtractionMode::NestedArrayScalar,
+            aliases: vec![],
+        },
+        SearchParamDef {
+            name: "name".to_string(),
+            param_type: SearchParamType::String,
+            path: vec!["name".to_string(), "suffix".to_string()],
             extraction: ExtractionMode::NestedArrayScalar,
             aliases: vec![],
         },
@@ -200,6 +251,17 @@ fn observation_definitions() -> Vec<SearchParamDef> {
             extraction: ExtractionMode::Simple,
             aliases: vec![],
         },
+        // `combo-code` searches Observation.code OR Observation.component.code.
+        // Component-level access requires array-of-CodeableConcept walking and is
+        // tracked separately; for now we index the top-level code under combo-code
+        // which covers single-value Observations (e.g. lab results).
+        SearchParamDef {
+            name: "combo-code".to_string(),
+            param_type: SearchParamType::Token,
+            path: vec!["code".to_string()],
+            extraction: ExtractionMode::CodeableConcept,
+            aliases: vec![],
+        },
     ]
 }
 
@@ -226,6 +288,27 @@ fn encounter_definitions() -> Vec<SearchParamDef> {
             extraction: ExtractionMode::PeriodStart,
             aliases: vec![],
         },
+        SearchParamDef {
+            name: "class".to_string(),
+            param_type: SearchParamType::Token,
+            path: vec!["class".to_string()],
+            extraction: ExtractionMode::Coding,
+            aliases: vec![],
+        },
+        SearchParamDef {
+            name: "type".to_string(),
+            param_type: SearchParamType::Token,
+            path: vec!["type".to_string()],
+            extraction: ExtractionMode::CodeableConcept,
+            aliases: vec![],
+        },
+        SearchParamDef {
+            name: "identifier".to_string(),
+            param_type: SearchParamType::Token,
+            path: vec!["identifier".to_string()],
+            extraction: ExtractionMode::Identifier,
+            aliases: vec![],
+        },
     ]
 }
 
@@ -244,6 +327,27 @@ fn condition_definitions() -> Vec<SearchParamDef> {
             path: vec!["subject".to_string()],
             extraction: ExtractionMode::Reference,
             aliases: vec!["patient".to_string()],
+        },
+        SearchParamDef {
+            name: "category".to_string(),
+            param_type: SearchParamType::Token,
+            path: vec!["category".to_string()],
+            extraction: ExtractionMode::CodeableConcept,
+            aliases: vec![],
+        },
+        SearchParamDef {
+            name: "clinical-status".to_string(),
+            param_type: SearchParamType::Token,
+            path: vec!["clinicalStatus".to_string()],
+            extraction: ExtractionMode::CodeableConcept,
+            aliases: vec![],
+        },
+        SearchParamDef {
+            name: "onset-date".to_string(),
+            param_type: SearchParamType::Date,
+            path: vec!["onsetDateTime".to_string()],
+            extraction: ExtractionMode::Simple,
+            aliases: vec![],
         },
     ]
 }
@@ -497,6 +601,41 @@ fn practitioner_definitions() -> Vec<SearchParamDef> {
             extraction: ExtractionMode::NestedArrayScalar,
             aliases: vec![],
         },
+        SearchParamDef {
+            name: "name".to_string(),
+            param_type: SearchParamType::String,
+            path: vec!["name".to_string(), "family".to_string()],
+            extraction: ExtractionMode::ArrayField,
+            aliases: vec![],
+        },
+        SearchParamDef {
+            name: "name".to_string(),
+            param_type: SearchParamType::String,
+            path: vec!["name".to_string(), "given".to_string()],
+            extraction: ExtractionMode::NestedArrayScalar,
+            aliases: vec![],
+        },
+        SearchParamDef {
+            name: "name".to_string(),
+            param_type: SearchParamType::String,
+            path: vec!["name".to_string(), "text".to_string()],
+            extraction: ExtractionMode::ArrayField,
+            aliases: vec![],
+        },
+        SearchParamDef {
+            name: "name".to_string(),
+            param_type: SearchParamType::String,
+            path: vec!["name".to_string(), "prefix".to_string()],
+            extraction: ExtractionMode::NestedArrayScalar,
+            aliases: vec![],
+        },
+        SearchParamDef {
+            name: "name".to_string(),
+            param_type: SearchParamType::String,
+            path: vec!["name".to_string(), "suffix".to_string()],
+            extraction: ExtractionMode::NestedArrayScalar,
+            aliases: vec![],
+        },
     ]
 }
 
@@ -672,6 +811,58 @@ fn specimen_definitions() -> Vec<SearchParamDef> {
     ]
 }
 
+fn care_plan_definitions() -> Vec<SearchParamDef> {
+    vec![
+        SearchParamDef {
+            name: "subject".to_string(),
+            param_type: SearchParamType::Reference,
+            path: vec!["subject".to_string()],
+            extraction: ExtractionMode::Reference,
+            aliases: vec!["patient".to_string()],
+        },
+        SearchParamDef {
+            name: "category".to_string(),
+            param_type: SearchParamType::Token,
+            path: vec!["category".to_string()],
+            extraction: ExtractionMode::CodeableConcept,
+            aliases: vec![],
+        },
+        SearchParamDef {
+            name: "status".to_string(),
+            param_type: SearchParamType::Token,
+            path: vec!["status".to_string()],
+            extraction: ExtractionMode::Simple,
+            aliases: vec![],
+        },
+        SearchParamDef {
+            name: "date".to_string(),
+            param_type: SearchParamType::Date,
+            path: vec!["period".to_string(), "start".to_string()],
+            extraction: ExtractionMode::PeriodStart,
+            aliases: vec![],
+        },
+    ]
+}
+
+fn provenance_definitions() -> Vec<SearchParamDef> {
+    vec![
+        SearchParamDef {
+            name: "target".to_string(),
+            param_type: SearchParamType::Reference,
+            path: vec!["target".to_string()],
+            extraction: ExtractionMode::Reference,
+            aliases: vec!["patient".to_string()],
+        },
+        SearchParamDef {
+            name: "recorded".to_string(),
+            param_type: SearchParamType::Date,
+            path: vec!["recorded".to_string()],
+            extraction: ExtractionMode::Simple,
+            aliases: vec![],
+        },
+    ]
+}
+
 /// Fallback for resource types without explicit definitions. Kept minimal
 /// to avoid indexing non-existent fields on arbitrary resources.
 fn common_definitions() -> Vec<SearchParamDef> {
@@ -726,7 +917,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_registry_has_all_16_resource_types() {
+    fn test_registry_has_all_resource_types() {
         let registry = SearchParamRegistry::new();
         let types = [
             "Patient", "Observation", "Encounter", "Condition",
@@ -734,6 +925,7 @@ mod tests {
             "DiagnosticReport", "Immunization", "Task",
             "Practitioner", "Organization", "Bundle",
             "ServiceRequest", "Appointment", "Specimen",
+            "Provenance",
         ];
         for rt in &types {
             assert!(
@@ -742,6 +934,20 @@ mod tests {
                 rt
             );
         }
+    }
+
+    #[test]
+    fn test_provenance_target_param() {
+        let registry = SearchParamRegistry::new();
+        assert_eq!(
+            registry.lookup_param_type("Provenance", "target"),
+            Some(SearchParamType::Reference)
+        );
+        // Alias `patient` for compartment-style searches
+        assert_eq!(
+            registry.lookup_param_type("Provenance", "patient"),
+            Some(SearchParamType::Reference)
+        );
     }
 
     #[test]
@@ -803,6 +1009,33 @@ mod tests {
         assert_eq!(
             registry.lookup_param_type("AllergyIntolerance", "status"),
             Some(SearchParamType::Token)
+        );
+    }
+
+    #[test]
+    fn test_patient_name_param_registered() {
+        let registry = SearchParamRegistry::new();
+        assert_eq!(
+            registry.lookup_param_type("Patient", "name"),
+            Some(SearchParamType::String)
+        );
+        // Existing family/given still work
+        assert_eq!(
+            registry.lookup_param_type("Patient", "family"),
+            Some(SearchParamType::String)
+        );
+        assert_eq!(
+            registry.lookup_param_type("Patient", "given"),
+            Some(SearchParamType::String)
+        );
+    }
+
+    #[test]
+    fn test_practitioner_name_param_registered() {
+        let registry = SearchParamRegistry::new();
+        assert_eq!(
+            registry.lookup_param_type("Practitioner", "name"),
+            Some(SearchParamType::String)
         );
     }
 

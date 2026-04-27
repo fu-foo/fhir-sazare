@@ -73,6 +73,38 @@ impl IndexBuilder {
             ExtractionMode::CodingArray => {
                 Self::extract_coding_array(resource, &def.path, &def.name, param_type_str, indices);
             }
+            ExtractionMode::Coding => {
+                Self::extract_coding(resource, &def.path, &def.name, param_type_str, &def.aliases, indices);
+            }
+        }
+    }
+
+    /// Coding: navigate path to a single Coding object (e.g. Encounter.class).
+    /// Yields `code` + `system`.
+    fn extract_coding(
+        resource: &Value,
+        path: &[String],
+        name: &str,
+        param_type: &str,
+        aliases: &[String],
+        indices: &mut Vec<(String, String, String, Option<String>)>,
+    ) {
+        if path.is_empty() {
+            return;
+        }
+        let mut current = resource;
+        for segment in path {
+            match current.get(segment.as_str()) {
+                Some(v) => current = v,
+                None => return,
+            }
+        }
+        if let Some(code) = current.get("code").and_then(|v| v.as_str()) {
+            let system = current.get("system").and_then(|v| v.as_str()).map(|s| s.to_string());
+            indices.push((name.to_string(), param_type.to_string(), code.to_string(), system.clone()));
+            for alias in aliases {
+                indices.push((alias.to_string(), param_type.to_string(), code.to_string(), system.clone()));
+            }
         }
     }
 
@@ -282,7 +314,11 @@ impl IndexBuilder {
         }
     }
 
-    /// Reference: navigate to path, then get .reference field
+    /// Reference: navigate to path, then get .reference field.
+    /// Handles both single Reference objects (e.g. Observation.subject) and
+    /// arrays of References (e.g. Provenance.target).
+    /// Indexes both the full reference and the bare resource id so FHIR clients
+    /// can search using either form (`?patient=Patient/123` or `?patient=123`).
     fn extract_reference(
         resource: &Value,
         path: &[String],
@@ -301,10 +337,29 @@ impl IndexBuilder {
                 None => return,
             }
         }
-        if let Some(reference) = current.get("reference").and_then(|v| v.as_str()) {
+        // Accept either a single Reference object or an array of References.
+        let refs: Vec<&Value> = if current.is_array() {
+            current.as_array().unwrap().iter().collect()
+        } else {
+            vec![current]
+        };
+        for ref_obj in refs {
+            let Some(reference) = ref_obj.get("reference").and_then(|v| v.as_str()) else {
+                continue;
+            };
             indices.push((name.to_string(), param_type.to_string(), reference.to_string(), None));
             for alias in aliases {
                 indices.push((alias.to_string(), param_type.to_string(), reference.to_string(), None));
+            }
+            // Also index the bare resource id (last segment, ignoring /_history/...)
+            // so `?patient=patient-example` matches "Patient/patient-example".
+            let trimmed = reference.split("/_history/").next().unwrap_or(reference);
+            let bare = trimmed.rsplit('/').next().unwrap_or("");
+            if !bare.is_empty() && bare != reference {
+                indices.push((name.to_string(), param_type.to_string(), bare.to_string(), None));
+                for alias in aliases {
+                    indices.push((alias.to_string(), param_type.to_string(), bare.to_string(), None));
+                }
             }
         }
     }
@@ -360,6 +415,31 @@ mod tests {
         // Check system is captured
         let id_idx = indices.iter().find(|(name, _, _, _)| name == "identifier").unwrap();
         assert_eq!(id_idx.3, Some("urn:oid:1.2.3".to_string()));
+    }
+
+    #[test]
+    fn test_extract_patient_name_combined() {
+        // US Core `name` indexes against every HumanName component
+        let patient = json!({
+            "resourceType": "Patient",
+            "name": [{
+                "family": "Smith",
+                "given": ["Amy", "V."],
+                "prefix": ["Mrs."]
+            }]
+        });
+
+        let indices = IndexBuilder::extract_indices("Patient", &patient);
+
+        // String values are lowercased on extract
+        assert!(indices.iter().any(|(n, _, v, _)| n == "name" && v == "smith"));
+        assert!(indices.iter().any(|(n, _, v, _)| n == "name" && v == "amy"));
+        assert!(indices.iter().any(|(n, _, v, _)| n == "name" && v == "v."));
+        assert!(indices.iter().any(|(n, _, v, _)| n == "name" && v == "mrs."));
+
+        // Existing family/given index entries still present
+        assert!(indices.iter().any(|(n, _, v, _)| n == "family" && v == "smith"));
+        assert!(indices.iter().any(|(n, _, v, _)| n == "given" && v == "amy"));
     }
 
     #[test]
@@ -428,6 +508,82 @@ mod tests {
         assert!(indices.iter().any(|(name, _, val, _)| name == "owner" && val == "Practitioner/001"));
         assert!(indices.iter().any(|(name, _, val, _)| name == "code" && val == "fulfill"));
         assert!(indices.iter().any(|(name, _, val, _)| name == "identifier" && val == "TASK-001"));
+    }
+
+    #[test]
+    fn test_reference_indexed_with_bare_id() {
+        // FHIR clients search references as either "Patient/123" or "123";
+        // both forms must be retrievable from the index.
+        let observation = json!({
+            "resourceType": "Observation",
+            "status": "final",
+            "code": {"coding": [{"code": "8310-5"}]},
+            "subject": {"reference": "Patient/abc-123"}
+        });
+
+        let indices = IndexBuilder::extract_indices("Observation", &observation);
+
+        // Full reference present
+        assert!(indices.iter().any(|(n, _, v, _)| n == "subject" && v == "Patient/abc-123"));
+        // Bare id also indexed under same param name
+        assert!(indices.iter().any(|(n, _, v, _)| n == "subject" && v == "abc-123"));
+        // Same for the alias
+        assert!(indices.iter().any(|(n, _, v, _)| n == "patient" && v == "Patient/abc-123"));
+        assert!(indices.iter().any(|(n, _, v, _)| n == "patient" && v == "abc-123"));
+    }
+
+    #[test]
+    fn test_reference_with_history_strips_version() {
+        // `Patient/123/_history/4` should still yield bare id "123", not "4".
+        let observation = json!({
+            "resourceType": "Observation",
+            "status": "final",
+            "code": {"coding": [{"code": "8310-5"}]},
+            "subject": {"reference": "Patient/123/_history/4"}
+        });
+
+        let indices = IndexBuilder::extract_indices("Observation", &observation);
+        assert!(indices.iter().any(|(n, _, v, _)| n == "subject" && v == "123"));
+        // Should NOT extract "4" as a bare id
+        assert!(!indices.iter().any(|(n, _, v, _)| n == "subject" && v == "4"));
+    }
+
+    #[test]
+    fn test_reference_array_indexed() {
+        // Provenance.target is an array of References; each element should be indexed.
+        let provenance = json!({
+            "resourceType": "Provenance",
+            "target": [
+                {"reference": "Patient/patient-example"},
+                {"reference": "Encounter/enc-example"}
+            ],
+            "recorded": "2025-12-01T10:00:00Z"
+        });
+
+        let indices = IndexBuilder::extract_indices("Provenance", &provenance);
+        // Both full and bare forms for both targets
+        assert!(indices.iter().any(|(n, _, v, _)| n == "target" && v == "Patient/patient-example"));
+        assert!(indices.iter().any(|(n, _, v, _)| n == "target" && v == "patient-example"));
+        assert!(indices.iter().any(|(n, _, v, _)| n == "target" && v == "Encounter/enc-example"));
+        assert!(indices.iter().any(|(n, _, v, _)| n == "target" && v == "enc-example"));
+        // Alias `patient` works too
+        assert!(indices.iter().any(|(n, _, v, _)| n == "patient" && v == "Patient/patient-example"));
+    }
+
+    #[test]
+    fn test_reference_already_bare_no_duplicate() {
+        // If the reference has no "/", the bare form equals the canonical form
+        // and we should not push duplicate entries.
+        let observation = json!({
+            "resourceType": "Observation",
+            "status": "final",
+            "code": {"coding": [{"code": "8310-5"}]},
+            "subject": {"reference": "abc-123"}
+        });
+
+        let indices = IndexBuilder::extract_indices("Observation", &observation);
+        let subject_count = indices.iter().filter(|(n, _, v, _)| n == "subject" && v == "abc-123").count();
+        assert_eq!(subject_count, 1, "bare-only reference must not be indexed twice");
     }
 
     #[test]
@@ -500,6 +656,74 @@ mod tests {
         let indices = IndexBuilder::extract_indices("Encounter", &encounter);
         assert!(indices.iter().any(|(name, _, val, _)| name == "date" && val == "2024-01-15T10:00:00Z"));
         assert!(indices.iter().any(|(name, _, val, _)| name == "patient" && val == "Patient/123"));
+    }
+
+    #[test]
+    fn test_extract_encounter_class_type_identifier() {
+        let encounter = json!({
+            "resourceType": "Encounter",
+            "status": "finished",
+            "class": {
+                "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+                "code": "AMB"
+            },
+            "type": [{
+                "coding": [{"system": "http://www.ama-assn.org/go/cpt", "code": "99213"}]
+            }],
+            "identifier": [{"system": "http://hospital.example/encs", "value": "ENC-1"}]
+        });
+
+        let indices = IndexBuilder::extract_indices("Encounter", &encounter);
+        assert!(indices.iter().any(|(n, _, v, s)|
+            n == "class" && v == "AMB" && s.as_deref() == Some("http://terminology.hl7.org/CodeSystem/v3-ActCode")
+        ));
+        assert!(indices.iter().any(|(n, _, v, _)| n == "type" && v == "99213"));
+        assert!(indices.iter().any(|(n, _, v, _)| n == "identifier" && v == "ENC-1"));
+    }
+
+    #[test]
+    fn test_extract_condition_category_status_onset() {
+        let condition = json!({
+            "resourceType": "Condition",
+            "category": [{
+                "coding": [{"system": "http://terminology.hl7.org/CodeSystem/condition-category", "code": "problem-list-item"}]
+            }],
+            "clinicalStatus": {
+                "coding": [{"system": "http://terminology.hl7.org/CodeSystem/condition-clinical", "code": "active"}]
+            },
+            "subject": {"reference": "Patient/123"},
+            "onsetDateTime": "2020-05-15"
+        });
+
+        let indices = IndexBuilder::extract_indices("Condition", &condition);
+        assert!(indices.iter().any(|(n, _, v, _)| n == "category" && v == "problem-list-item"));
+        assert!(indices.iter().any(|(n, _, v, _)| n == "clinical-status" && v == "active"));
+        assert!(indices.iter().any(|(n, _, v, _)| n == "onset-date" && v == "2020-05-15"));
+    }
+
+    #[test]
+    fn test_extract_patient_death_date() {
+        let patient = json!({
+            "resourceType": "Patient",
+            "name": [{"family": "X"}],
+            "deceasedDateTime": "2024-09-01"
+        });
+        let indices = IndexBuilder::extract_indices("Patient", &patient);
+        assert!(indices.iter().any(|(n, _, v, _)| n == "death-date" && v == "2024-09-01"));
+    }
+
+    #[test]
+    fn test_extract_observation_combo_code() {
+        let observation = json!({
+            "resourceType": "Observation",
+            "status": "final",
+            "code": {"coding": [{"system": "http://loinc.org", "code": "85354-9"}]},
+            "subject": {"reference": "Patient/123"}
+        });
+        let indices = IndexBuilder::extract_indices("Observation", &observation);
+        // combo-code mirrors `code` for top-level; component access tracked separately
+        assert!(indices.iter().any(|(n, _, v, _)| n == "combo-code" && v == "85354-9"));
+        assert!(indices.iter().any(|(n, _, v, _)| n == "code" && v == "85354-9"));
     }
 
     #[test]

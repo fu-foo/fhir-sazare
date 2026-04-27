@@ -1,5 +1,7 @@
 # Build artifacts
 target/
+ui/node_modules/
+ui/dist/
 
 # Data and databases
 data/

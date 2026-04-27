@@ -23,7 +23,43 @@ pub const SUPPORTED_RESOURCE_TYPES: &[&str] = &[
     "MedicationRequest",
     "Procedure",
     "Bundle",
+    "Provenance",
+    "CarePlan",
 ];
+
+/// US Core v7 profiles supported per resource type. Declared in
+/// `CapabilityStatement.rest.resource[].supportedProfile` so that Inferno's
+/// US Core Server test recognizes the server as US Core conformant.
+fn us_core_profiles_for(resource_type: &str) -> Vec<&'static str> {
+    match resource_type {
+        "Patient" => vec!["http://hl7.org/fhir/us/core/StructureDefinition/us-core-patient"],
+        "Practitioner" => vec!["http://hl7.org/fhir/us/core/StructureDefinition/us-core-practitioner"],
+        "Organization" => vec!["http://hl7.org/fhir/us/core/StructureDefinition/us-core-organization"],
+        "Encounter" => vec!["http://hl7.org/fhir/us/core/StructureDefinition/us-core-encounter"],
+        "Condition" => vec![
+            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-condition-encounter-diagnosis",
+            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-condition-problems-health-concerns",
+        ],
+        "Observation" => vec![
+            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-observation-lab",
+            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-blood-pressure",
+            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-body-weight",
+            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-smokingstatus",
+            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-vital-signs",
+        ],
+        "AllergyIntolerance" => vec!["http://hl7.org/fhir/us/core/StructureDefinition/us-core-allergyintolerance"],
+        "DiagnosticReport" => vec![
+            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-diagnosticreport-lab",
+            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-diagnosticreport-note",
+        ],
+        "Immunization" => vec!["http://hl7.org/fhir/us/core/StructureDefinition/us-core-immunization"],
+        "MedicationRequest" => vec!["http://hl7.org/fhir/us/core/StructureDefinition/us-core-medicationrequest"],
+        "Procedure" => vec!["http://hl7.org/fhir/us/core/StructureDefinition/us-core-procedure"],
+        "Provenance" => vec!["http://hl7.org/fhir/us/core/StructureDefinition/us-core-provenance"],
+        "CarePlan" => vec!["http://hl7.org/fhir/us/core/StructureDefinition/us-core-careplan"],
+        _ => vec![],
+    }
+}
 
 /// Health check (GET /health)
 pub async fn health_check() -> impl IntoResponse {
@@ -50,14 +86,19 @@ pub async fn capability_statement(State(state): State<Arc<AppState>>) -> Json<Va
     let resources: Vec<Value> = SUPPORTED_RESOURCE_TYPES
         .iter()
         .map(|rt| {
-            json!({
+            let mut entry = json!({
                 "type": rt,
                 "versioning": "versioned",
                 "readHistory": true,
                 "conditionalCreate": true,
                 "interaction": interactions,
                 "searchParam": get_search_params_from_registry(&state.search_param_registry, rt),
-            })
+            });
+            let profiles = us_core_profiles_for(rt);
+            if !profiles.is_empty() {
+                entry["supportedProfile"] = json!(profiles);
+            }
+            entry
         })
         .collect();
 
@@ -80,12 +121,20 @@ pub async fn capability_statement(State(state): State<Arc<AppState>>) -> Json<Va
         rest["security"] = sec;
     }
 
+    // `date` is required by the base CapabilityStatement profile. Use the build
+    // timestamp's date portion as a stable per-deploy value.
+    let date = chrono::Utc::now().format("%Y-%m-%d").to_string();
+
     Json(json!({
         "resourceType": "CapabilityStatement",
         "status": "active",
+        "date": date,
         "kind": "instance",
         "fhirVersion": "4.0.1",
         "format": ["json"],
+        "instantiates": [
+            "http://hl7.org/fhir/us/core/CapabilityStatement/us-core-server"
+        ],
         "software": {
             "name": "sazare",
             "version": env!("CARGO_PKG_VERSION"),

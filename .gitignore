@@ -1,5 +1,7 @@
 # Build artifacts
 /target/
+ui/node_modules/
+ui/dist/
 
 # SQLite databases
 data/
@@ -10,6 +12,8 @@ data/
 # Config with credentials (use config.example.yaml as template)
 config.yaml
 config.demo.yaml
+config.docker.yaml
+config.public.yaml
 Dockerfile.fly
 
 # TLS certificates and private keys
@@ -19,6 +23,7 @@ certs/*.pem
 
 # Fly.io (local deploy only)
 fly.toml
+fly.public.toml
 .github/workflows/fly-deploy.yml
 
 # Claude Code

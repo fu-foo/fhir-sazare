@@ -1,0 +1,848 @@
+{
+  "resourceType": "Bundle",
+  "type": "transaction",
+  "entry": [
+    {
+      "fullUrl": "Organization/org-example",
+      "resource": {
+        "resourceType": "Organization",
+        "id": "org-example",
+        "identifier": [
+          {
+            "system": "http://hl7.org/fhir/sid/us-npi",
+            "value": "1407071236"
+          }
+        ],
+        "active": true,
+        "name": "Acme Healthcare",
+        "telecom": [
+          {
+            "system": "phone",
+            "value": "+1-555-0100"
+          }
+        ],
+        "address": [
+          {
+            "line": [
+              "100 Health Way"
+            ],
+            "city": "Boston",
+            "state": "MA",
+            "postalCode": "02115",
+            "country": "US"
+          }
+        ]
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Organization/org-example"
+      }
+    },
+    {
+      "fullUrl": "Practitioner/pract-example",
+      "resource": {
+        "resourceType": "Practitioner",
+        "id": "pract-example",
+        "identifier": [
+          {
+            "system": "http://hl7.org/fhir/sid/us-npi",
+            "value": "9941339108"
+          }
+        ],
+        "active": true,
+        "name": [
+          {
+            "family": "Bone",
+            "given": [
+              "Ronald"
+            ],
+            "prefix": [
+              "Dr."
+            ]
+          }
+        ],
+        "telecom": [
+          {
+            "system": "phone",
+            "value": "+1-555-0101",
+            "use": "work"
+          }
+        ]
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Practitioner/pract-example"
+      }
+    },
+    {
+      "fullUrl": "Patient/patient-example",
+      "resource": {
+        "resourceType": "Patient",
+        "id": "patient-example",
+        "extension": [
+          {
+            "url": "http://hl7.org/fhir/us/core/StructureDefinition/us-core-race",
+            "extension": [
+              {
+                "url": "ombCategory",
+                "valueCoding": {
+                  "system": "urn:oid:2.16.840.1.113883.6.238",
+                  "code": "2106-3",
+                  "display": "White"
+                }
+              },
+              {
+                "url": "text",
+                "valueString": "White"
+              }
+            ]
+          },
+          {
+            "url": "http://hl7.org/fhir/us/core/StructureDefinition/us-core-ethnicity",
+            "extension": [
+              {
+                "url": "ombCategory",
+                "valueCoding": {
+                  "system": "urn:oid:2.16.840.1.113883.6.238",
+                  "code": "2186-5",
+                  "display": "Not Hispanic or Latino"
+                }
+              },
+              {
+                "url": "text",
+                "valueString": "Not Hispanic or Latino"
+              }
+            ]
+          },
+          {
+            "url": "http://hl7.org/fhir/us/core/StructureDefinition/us-core-birthsex",
+            "valueCode": "F"
+          },
+          {
+            "url": "http://hl7.org/fhir/us/core/StructureDefinition/us-core-sex",
+            "valueCode": "248152002"
+          },
+          {
+            "url": "http://hl7.org/fhir/us/core/StructureDefinition/us-core-tribal-affiliation",
+            "extension": [
+              {
+                "url": "tribalAffiliation",
+                "valueCodeableConcept": {
+                  "coding": [
+                    {
+                      "system": "http://terminology.hl7.org/CodeSystem/v3-TribalEntityUS",
+                      "code": "338",
+                      "display": "Native Village of Afognak"
+                    }
+                  ]
+                }
+              },
+              {
+                "url": "isEnrolled",
+                "valueBoolean": false
+              }
+            ]
+          }
+        ],
+        "identifier": [
+          {
+            "use": "usual",
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                  "code": "MR",
+                  "display": "Medical Record Number"
+                }
+              ]
+            },
+            "system": "urn:oid:1.2.36.146.595.217.0.1",
+            "value": "MRN-12345"
+          }
+        ],
+        "active": true,
+        "name": [
+          {
+            "use": "official",
+            "family": "Smith",
+            "given": [
+              "Amy",
+              "V."
+            ],
+            "period": {
+              "start": "2010-06-15"
+            }
+          },
+          {
+            "use": "old",
+            "family": "Jones",
+            "given": [
+              "Amy"
+            ],
+            "suffix": [
+              "Jr."
+            ],
+            "period": {
+              "start": "1987-02-20",
+              "end": "2010-06-15"
+            }
+          }
+        ],
+        "telecom": [
+          {
+            "system": "phone",
+            "value": "+1-555-0150",
+            "use": "home"
+          }
+        ],
+        "gender": "female",
+        "birthDate": "1987-02-20",
+        "deceasedDateTime": "2025-12-31T23:00:00-05:00",
+        "address": [
+          {
+            "use": "home",
+            "line": [
+              "49 Meadow St"
+            ],
+            "city": "Mounds",
+            "state": "OK",
+            "postalCode": "74047",
+            "country": "US",
+            "period": {
+              "start": "2020-06-15"
+            }
+          },
+          {
+            "use": "old",
+            "line": [
+              "123 Old Lane"
+            ],
+            "city": "Tulsa",
+            "state": "OK",
+            "postalCode": "74103",
+            "country": "US",
+            "period": {
+              "start": "2000-01-01",
+              "end": "2020-06-15"
+            }
+          }
+        ],
+        "communication": [
+          {
+            "language": {
+              "coding": [
+                {
+                  "system": "urn:ietf:bcp:47",
+                  "code": "en",
+                  "display": "English"
+                }
+              ]
+            },
+            "preferred": true
+          }
+        ]
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Patient/patient-example"
+      }
+    },
+    {
+      "fullUrl": "Encounter/enc-example",
+      "resource": {
+        "resourceType": "Encounter",
+        "id": "enc-example",
+        "identifier": [
+          {
+            "system": "urn:oid:1.2.36.146.595.217.0.2",
+            "value": "ENC-001"
+          }
+        ],
+        "status": "finished",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "AMB",
+          "display": "ambulatory"
+        },
+        "type": [
+          {
+            "coding": [
+              {
+                "system": "http://www.ama-assn.org/go/cpt",
+                "code": "99213",
+                "display": "Office or other outpatient visit"
+              }
+            ]
+          }
+        ],
+        "subject": {
+          "reference": "Patient/patient-example"
+        },
+        "participant": [
+          {
+            "individual": {
+              "reference": "Practitioner/pract-example"
+            }
+          }
+        ],
+        "period": {
+          "start": "2025-12-01T09:00:00-05:00",
+          "end": "2025-12-01T09:30:00-05:00"
+        },
+        "serviceProvider": {
+          "reference": "Organization/org-example"
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Encounter/enc-example"
+      }
+    },
+    {
+      "fullUrl": "Condition/cond-example",
+      "resource": {
+        "resourceType": "Condition",
+        "id": "cond-example",
+        "clinicalStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/condition-clinical",
+              "code": "active",
+              "display": "Active"
+            }
+          ]
+        },
+        "verificationStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/condition-ver-status",
+              "code": "confirmed",
+              "display": "Confirmed"
+            }
+          ]
+        },
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/condition-category",
+                "code": "problem-list-item",
+                "display": "Problem List Item"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://snomed.info/sct",
+              "code": "44054006",
+              "display": "Diabetes mellitus type 2"
+            }
+          ],
+          "text": "Type 2 Diabetes"
+        },
+        "subject": {
+          "reference": "Patient/patient-example"
+        },
+        "onsetDateTime": "2020-05-15",
+        "recordedDate": "2020-05-15"
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Condition/cond-example"
+      }
+    },
+    {
+      "fullUrl": "Observation/obs-bp-example",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-bp-example",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "vital-signs",
+                "display": "Vital Signs"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "85354-9",
+              "display": "Blood pressure panel with all children optional"
+            }
+          ]
+        },
+        "subject": {
+          "reference": "Patient/patient-example"
+        },
+        "encounter": {
+          "reference": "Encounter/enc-example"
+        },
+        "effectiveDateTime": "2025-12-01T09:15:00-05:00",
+        "component": [
+          {
+            "code": {
+              "coding": [
+                {
+                  "system": "http://loinc.org",
+                  "code": "8480-6",
+                  "display": "Systolic blood pressure"
+                }
+              ]
+            },
+            "valueQuantity": {
+              "value": 128,
+              "unit": "mmHg",
+              "system": "http://unitsofmeasure.org",
+              "code": "mm[Hg]"
+            }
+          },
+          {
+            "code": {
+              "coding": [
+                {
+                  "system": "http://loinc.org",
+                  "code": "8462-4",
+                  "display": "Diastolic blood pressure"
+                }
+              ]
+            },
+            "valueQuantity": {
+              "value": 82,
+              "unit": "mmHg",
+              "system": "http://unitsofmeasure.org",
+              "code": "mm[Hg]"
+            }
+          }
+        ]
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Observation/obs-bp-example"
+      }
+    },
+    {
+      "fullUrl": "Observation/obs-weight-example",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-weight-example",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "vital-signs",
+                "display": "Vital Signs"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "29463-7",
+              "display": "Body Weight"
+            }
+          ]
+        },
+        "subject": {
+          "reference": "Patient/patient-example"
+        },
+        "encounter": {
+          "reference": "Encounter/enc-example"
+        },
+        "effectiveDateTime": "2025-12-01T09:10:00-05:00",
+        "valueQuantity": {
+          "value": 65.0,
+          "unit": "kg",
+          "system": "http://unitsofmeasure.org",
+          "code": "kg"
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Observation/obs-weight-example"
+      }
+    },
+    {
+      "fullUrl": "Observation/obs-smoking-example",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-smoking-example",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "social-history",
+                "display": "Social History"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "72166-2",
+              "display": "Tobacco smoking status"
+            }
+          ]
+        },
+        "subject": {
+          "reference": "Patient/patient-example"
+        },
+        "effectiveDateTime": "2025-12-01T09:05:00-05:00",
+        "valueCodeableConcept": {
+          "coding": [
+            {
+              "system": "http://snomed.info/sct",
+              "code": "8517006",
+              "display": "Former smoker"
+            }
+          ]
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Observation/obs-smoking-example"
+      }
+    },
+    {
+      "fullUrl": "Observation/obs-lab-example",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-lab-example",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "laboratory",
+                "display": "Laboratory"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "4548-4",
+              "display": "Hemoglobin A1c"
+            }
+          ]
+        },
+        "subject": {
+          "reference": "Patient/patient-example"
+        },
+        "encounter": {
+          "reference": "Encounter/enc-example"
+        },
+        "effectiveDateTime": "2025-12-01T10:00:00-05:00",
+        "valueQuantity": {
+          "value": 7.2,
+          "unit": "%",
+          "system": "http://unitsofmeasure.org",
+          "code": "%"
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Observation/obs-lab-example"
+      }
+    },
+    {
+      "fullUrl": "AllergyIntolerance/allergy-example",
+      "resource": {
+        "resourceType": "AllergyIntolerance",
+        "id": "allergy-example",
+        "clinicalStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/allergyintolerance-clinical",
+              "code": "active",
+              "display": "Active"
+            }
+          ]
+        },
+        "verificationStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/allergyintolerance-verification",
+              "code": "confirmed",
+              "display": "Confirmed"
+            }
+          ]
+        },
+        "code": {
+          "coding": [
+            {
+              "system": "http://www.nlm.nih.gov/research/umls/rxnorm",
+              "code": "7980",
+              "display": "Penicillin G"
+            }
+          ]
+        },
+        "patient": {
+          "reference": "Patient/patient-example"
+        },
+        "onsetDateTime": "2010-08-01",
+        "recorder": {
+          "reference": "Practitioner/pract-example"
+        },
+        "reaction": [
+          {
+            "manifestation": [
+              {
+                "coding": [
+                  {
+                    "system": "http://snomed.info/sct",
+                    "code": "247472004",
+                    "display": "Hives"
+                  }
+                ]
+              }
+            ],
+            "severity": "moderate"
+          }
+        ]
+      },
+      "request": {
+        "method": "PUT",
+        "url": "AllergyIntolerance/allergy-example"
+      }
+    },
+    {
+      "fullUrl": "MedicationRequest/medreq-example",
+      "resource": {
+        "resourceType": "MedicationRequest",
+        "id": "medreq-example",
+        "status": "active",
+        "intent": "order",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/medicationrequest-category",
+                "code": "outpatient",
+                "display": "Outpatient"
+              }
+            ]
+          }
+        ],
+        "medicationCodeableConcept": {
+          "coding": [
+            {
+              "system": "http://www.nlm.nih.gov/research/umls/rxnorm",
+              "code": "860975",
+              "display": "Metformin hydrochloride 500 MG Oral Tablet"
+            }
+          ]
+        },
+        "subject": {
+          "reference": "Patient/patient-example"
+        },
+        "encounter": {
+          "reference": "Encounter/enc-example"
+        },
+        "authoredOn": "2025-12-01",
+        "requester": {
+          "reference": "Practitioner/pract-example"
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "MedicationRequest/medreq-example"
+      }
+    },
+    {
+      "fullUrl": "Procedure/proc-example",
+      "resource": {
+        "resourceType": "Procedure",
+        "id": "proc-example",
+        "status": "completed",
+        "code": {
+          "coding": [
+            {
+              "system": "http://snomed.info/sct",
+              "code": "33879002",
+              "display": "Administration of vaccine"
+            }
+          ]
+        },
+        "subject": {
+          "reference": "Patient/patient-example"
+        },
+        "encounter": {
+          "reference": "Encounter/enc-example"
+        },
+        "performedDateTime": "2025-12-01T09:25:00-05:00"
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Procedure/proc-example"
+      }
+    },
+    {
+      "fullUrl": "Immunization/imm-example",
+      "resource": {
+        "resourceType": "Immunization",
+        "id": "imm-example",
+        "status": "completed",
+        "vaccineCode": {
+          "coding": [
+            {
+              "system": "http://hl7.org/fhir/sid/cvx",
+              "code": "207",
+              "display": "COVID-19 mRNA, LNP-S, PF, 100 mcg/0.5 mL dose"
+            }
+          ]
+        },
+        "patient": {
+          "reference": "Patient/patient-example"
+        },
+        "occurrenceDateTime": "2025-12-01T09:25:00-05:00",
+        "primarySource": true
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Immunization/imm-example"
+      }
+    },
+    {
+      "fullUrl": "DiagnosticReport/dr-example",
+      "resource": {
+        "resourceType": "DiagnosticReport",
+        "id": "dr-example",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/v2-0074",
+                "code": "LAB",
+                "display": "Laboratory"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "4548-4",
+              "display": "Hemoglobin A1c"
+            }
+          ]
+        },
+        "subject": {
+          "reference": "Patient/patient-example"
+        },
+        "encounter": {
+          "reference": "Encounter/enc-example"
+        },
+        "effectiveDateTime": "2025-12-01T10:00:00-05:00",
+        "issued": "2025-12-01T10:30:00-05:00",
+        "result": [
+          {
+            "reference": "Observation/obs-lab-example"
+          }
+        ]
+      },
+      "request": {
+        "method": "PUT",
+        "url": "DiagnosticReport/dr-example"
+      }
+    },
+    {
+      "fullUrl": "Provenance/prov-example",
+      "resource": {
+        "resourceType": "Provenance",
+        "id": "prov-example",
+        "target": [
+          {"reference": "Patient/patient-example"},
+          {"reference": "AllergyIntolerance/allergy-example"},
+          {"reference": "Condition/cond-example"},
+          {"reference": "Encounter/enc-example"},
+          {"reference": "Observation/obs-bp-example"},
+          {"reference": "Observation/obs-weight-example"},
+          {"reference": "Observation/obs-smoking-example"},
+          {"reference": "Observation/obs-lab-example"},
+          {"reference": "MedicationRequest/medreq-example"},
+          {"reference": "Procedure/proc-example"},
+          {"reference": "Immunization/imm-example"},
+          {"reference": "DiagnosticReport/dr-example"},
+          {"reference": "CarePlan/careplan-example"}
+        ],
+        "recorded": "2025-12-01T10:00:00Z",
+        "agent": [
+          {
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/provenance-participant-type",
+                  "code": "author",
+                  "display": "Author"
+                }
+              ]
+            },
+            "who": {"reference": "Practitioner/pract-example"},
+            "onBehalfOf": {"reference": "Organization/org-example"}
+          }
+        ]
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Provenance/prov-example"
+      }
+    },
+    {
+      "fullUrl": "CarePlan/careplan-example",
+      "resource": {
+        "resourceType": "CarePlan",
+        "id": "careplan-example",
+        "text": {
+          "status": "additional",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Care plan: Type 2 Diabetes management for Amy Smith. Includes blood glucose monitoring, dietary counseling, and quarterly follow-up visits.</p></div>"
+        },
+        "status": "active",
+        "intent": "plan",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://hl7.org/fhir/us/core/CodeSystem/careplan-category",
+                "code": "assess-plan"
+              }
+            ]
+          }
+        ],
+        "subject": {
+          "reference": "Patient/patient-example"
+        },
+        "encounter": {
+          "reference": "Encounter/enc-example"
+        },
+        "period": {
+          "start": "2025-12-01"
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "CarePlan/careplan-example"
+      }
+    }
+  ]
+}
