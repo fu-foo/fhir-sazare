@@ -158,6 +158,7 @@ pub(super) async fn process_transaction(
     let mut resources_for_index: Vec<(String, String, Value)> = Vec::new();
     let mut response_entries: Vec<Value> = Vec::with_capacity(entries.len());
 
+    #[allow(clippy::result_large_err)]
     let tx_result = state.store.in_transaction(|ops| {
         for (i, entry) in entries.iter_mut().enumerate() {
             // Skip conditional-existing entries (ifNoneExist matched)
