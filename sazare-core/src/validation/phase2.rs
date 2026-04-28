@@ -156,42 +156,41 @@ impl Phase2Validator {
                 .unwrap_or(false);
 
             // --- Required element validation (min >= 1) ---
-            if let Some(min_val) = min {
-                if min_val >= 1 {
-                    let count = Self::count_element(resource, relative_path);
-                    if count < min_val {
-                        issues.push(OperationOutcomeIssue {
-                            severity: IssueSeverity::Error,
-                            code: IssueType::Required,
-                            diagnostics: Some(format!(
-                                "Profile '{}' requires element '{}' (min={}) but found {} occurrence(s)",
-                                profile_url, path, min_val, count
-                            )),
-                            details: None,
-                            expression: Some(vec![path.to_string()]),
-                        });
-                    }
+            if let Some(min_val) = min
+                && min_val >= 1
+            {
+                let count = Self::count_element(resource, relative_path);
+                if count < min_val {
+                    issues.push(OperationOutcomeIssue {
+                        severity: IssueSeverity::Error,
+                        code: IssueType::Required,
+                        diagnostics: Some(format!(
+                            "Profile '{}' requires element '{}' (min={}) but found {} occurrence(s)",
+                            profile_url, path, min_val, count
+                        )),
+                        details: None,
+                        expression: Some(vec![path.to_string()]),
+                    });
                 }
             }
 
             // --- Max cardinality validation ---
-            if let Some(max) = max_str {
-                if max != "*" {
-                    if let Ok(max_val) = max.parse::<u64>() {
-                        let count = Self::count_element(resource, relative_path);
-                        if count > max_val {
-                            issues.push(OperationOutcomeIssue {
-                                severity: IssueSeverity::Error,
-                                code: IssueType::BusinessRule,
-                                diagnostics: Some(format!(
-                                    "Profile '{}': element '{}' exceeds max cardinality (max={}, found={})",
-                                    profile_url, path, max_val, count
-                                )),
-                                details: None,
-                                expression: Some(vec![path.to_string()]),
-                            });
-                        }
-                    }
+            if let Some(max) = max_str
+                && max != "*"
+                && let Ok(max_val) = max.parse::<u64>()
+            {
+                let count = Self::count_element(resource, relative_path);
+                if count > max_val {
+                    issues.push(OperationOutcomeIssue {
+                        severity: IssueSeverity::Error,
+                        code: IssueType::BusinessRule,
+                        diagnostics: Some(format!(
+                            "Profile '{}': element '{}' exceeds max cardinality (max={}, found={})",
+                            profile_url, path, max_val, count
+                        )),
+                        details: None,
+                        expression: Some(vec![path.to_string()]),
+                    });
                 }
             }
 

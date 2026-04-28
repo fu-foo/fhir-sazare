@@ -467,20 +467,21 @@ mod tests {
     use crate::config::{ApiKey, AuthSettings, BasicAuthUser, JwtSettings};
 
     fn test_config() -> ServerConfig {
-        let mut config = ServerConfig::default();
-        config.auth = AuthSettings {
-            enabled: true,
-            api_keys: vec![ApiKey {
-                name: "test-client".to_string(),
-                key: "test-api-key-12345".to_string(),
-            }],
-            basic_auth: vec![BasicAuthUser {
-                username: "admin".to_string(),
-                password: "admin123".to_string(),
-            }],
-            jwt: None,
-        };
-        config
+        ServerConfig {
+            auth: AuthSettings {
+                enabled: true,
+                api_keys: vec![ApiKey {
+                    name: "test-client".to_string(),
+                    key: "test-api-key-12345".to_string(),
+                }],
+                basic_auth: vec![BasicAuthUser {
+                    username: "admin".to_string(),
+                    password: "admin123".to_string(),
+                }],
+                jwt: None,
+            },
+            ..ServerConfig::default()
+        }
     }
 
     fn test_config_with_jwt() -> ServerConfig {
