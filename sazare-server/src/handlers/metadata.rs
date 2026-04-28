@@ -25,6 +25,9 @@ pub const SUPPORTED_RESOURCE_TYPES: &[&str] = &[
     "Bundle",
     "Provenance",
     "CarePlan",
+    "CareTeam",
+    "RelatedPerson",
+    "Location",
 ];
 
 /// US Core v7 profiles supported per resource type. Declared in
@@ -57,6 +60,9 @@ fn us_core_profiles_for(resource_type: &str) -> Vec<&'static str> {
         "Procedure" => vec!["http://hl7.org/fhir/us/core/StructureDefinition/us-core-procedure"],
         "Provenance" => vec!["http://hl7.org/fhir/us/core/StructureDefinition/us-core-provenance"],
         "CarePlan" => vec!["http://hl7.org/fhir/us/core/StructureDefinition/us-core-careplan"],
+        "CareTeam" => vec!["http://hl7.org/fhir/us/core/StructureDefinition/us-core-careteam"],
+        "RelatedPerson" => vec!["http://hl7.org/fhir/us/core/StructureDefinition/us-core-relatedperson"],
+        "Location" => vec!["http://hl7.org/fhir/us/core/StructureDefinition/us-core-location"],
         _ => vec![],
     }
 }

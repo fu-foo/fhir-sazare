@@ -43,10 +43,19 @@
       "resource": {
         "resourceType": "Practitioner",
         "id": "pract-example",
+        "meta": {
+          "profile": [
+            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-practitioner"
+          ]
+        },
+        "text": {
+          "status": "additional",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Dr. Ronald Bone, MD - Boston, MA</p></div>"
+        },
         "identifier": [
           {
             "system": "http://hl7.org/fhir/sid/us-npi",
-            "value": "9941339108"
+            "value": "9941339100"
           }
         ],
         "active": true,
@@ -58,6 +67,9 @@
             ],
             "prefix": [
               "Dr."
+            ],
+            "suffix": [
+              "MD"
             ]
           }
         ],
@@ -66,6 +78,55 @@
             "system": "phone",
             "value": "+1-555-0101",
             "use": "work"
+          },
+          {
+            "system": "email",
+            "value": "rbone@example-clinic.org",
+            "use": "work"
+          }
+        ],
+        "address": [
+          {
+            "use": "work",
+            "line": ["100 Health Way"],
+            "city": "Boston",
+            "state": "MA",
+            "postalCode": "02115",
+            "country": "US"
+          }
+        ],
+        "gender": "male",
+        "communication": [
+          {
+            "coding": [
+              {
+                "system": "urn:ietf:bcp:47",
+                "code": "en",
+                "display": "English"
+              }
+            ]
+          }
+        ],
+        "qualification": [
+          {
+            "identifier": [
+              {
+                "system": "urn:oid:2.16.840.1.113883.4.6",
+                "value": "MD-MA-12345"
+              }
+            ],
+            "code": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/v2-0360",
+                  "code": "MD",
+                  "display": "Doctor of Medicine"
+                }
+              ]
+            },
+            "issuer": {
+              "reference": "Organization/org-example"
+            }
           }
         ]
       },
@@ -248,6 +309,42 @@
       }
     },
     {
+      "fullUrl": "Location/loc-example",
+      "resource": {
+        "resourceType": "Location",
+        "id": "loc-example",
+        "meta": {
+          "profile": [
+            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-location"
+          ]
+        },
+        "status": "active",
+        "name": "Acme Outpatient Clinic - Room 12",
+        "telecom": [
+          {
+            "system": "phone",
+            "value": "+1-555-0102",
+            "use": "work"
+          }
+        ],
+        "address": {
+          "use": "work",
+          "line": ["100 Health Way"],
+          "city": "Boston",
+          "state": "MA",
+          "postalCode": "02115",
+          "country": "US"
+        },
+        "managingOrganization": {
+          "reference": "Organization/org-example"
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Location/loc-example"
+      }
+    },
+    {
       "fullUrl": "Encounter/enc-example",
       "resource": {
         "resourceType": "Encounter",
@@ -269,8 +366,7 @@
             "coding": [
               {
                 "system": "http://www.ama-assn.org/go/cpt",
-                "code": "99213",
-                "display": "Office or other outpatient visit"
+                "code": "99213"
               }
             ]
           }
@@ -280,6 +376,21 @@
         },
         "participant": [
           {
+            "type": [
+              {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationType",
+                    "code": "ATND",
+                    "display": "attender"
+                  }
+                ]
+              }
+            ],
+            "period": {
+              "start": "2025-12-01T09:00:00-05:00",
+              "end": "2025-12-01T09:30:00-05:00"
+            },
             "individual": {
               "reference": "Practitioner/pract-example"
             }
@@ -289,6 +400,43 @@
           "start": "2025-12-01T09:00:00-05:00",
           "end": "2025-12-01T09:30:00-05:00"
         },
+        "reasonCode": [
+          {
+            "coding": [
+              {
+                "system": "http://snomed.info/sct",
+                "code": "73211009",
+                "display": "Diabetes mellitus"
+              }
+            ]
+          }
+        ],
+        "reasonReference": [
+          {
+            "reference": "Condition/cond-encounter-example"
+          },
+          {
+            "reference": "Condition/cond-example"
+          }
+        ],
+        "hospitalization": {
+          "dischargeDisposition": {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/discharge-disposition",
+                "code": "home",
+                "display": "Home"
+              }
+            ]
+          }
+        },
+        "location": [
+          {
+            "location": {
+              "reference": "Location/loc-example"
+            }
+          }
+        ],
         "serviceProvider": {
           "reference": "Organization/org-example"
         }
@@ -303,6 +451,11 @@
       "resource": {
         "resourceType": "Condition",
         "id": "cond-example",
+        "meta": {
+          "profile": [
+            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-condition-problems-health-concerns"
+          ]
+        },
         "clinicalStatus": {
           "coding": [
             {
@@ -351,6 +504,140 @@
       "request": {
         "method": "PUT",
         "url": "Condition/cond-example"
+      }
+    },
+    {
+      "fullUrl": "Condition/cond-screening-example",
+      "resource": {
+        "resourceType": "Condition",
+        "id": "cond-screening-example",
+        "meta": {
+          "profile": [
+            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-condition-problems-health-concerns"
+          ]
+        },
+        "clinicalStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/condition-clinical",
+              "code": "resolved",
+              "display": "Resolved"
+            }
+          ]
+        },
+        "verificationStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/condition-ver-status",
+              "code": "confirmed",
+              "display": "Confirmed"
+            }
+          ]
+        },
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/condition-category",
+                "code": "problem-list-item",
+                "display": "Problem List Item"
+              }
+            ]
+          },
+          {
+            "coding": [
+              {
+                "system": "http://hl7.org/fhir/us/core/CodeSystem/us-core-category",
+                "code": "functional-status",
+                "display": "Functional Status"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://snomed.info/sct",
+              "code": "171207006",
+              "display": "Depression screening"
+            }
+          ],
+          "text": "Depression screening"
+        },
+        "subject": {
+          "reference": "Patient/patient-example"
+        },
+        "onsetDateTime": "2025-06-01",
+        "abatementDateTime": "2025-06-01",
+        "recordedDate": "2025-06-01"
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Condition/cond-screening-example"
+      }
+    },
+    {
+      "fullUrl": "Condition/cond-encounter-example",
+      "resource": {
+        "resourceType": "Condition",
+        "id": "cond-encounter-example",
+        "meta": {
+          "profile": [
+            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-condition-encounter-diagnosis"
+          ]
+        },
+        "clinicalStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/condition-clinical",
+              "code": "resolved",
+              "display": "Resolved"
+            }
+          ]
+        },
+        "verificationStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/condition-ver-status",
+              "code": "confirmed",
+              "display": "Confirmed"
+            }
+          ]
+        },
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/condition-category",
+                "code": "encounter-diagnosis",
+                "display": "Encounter Diagnosis"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://snomed.info/sct",
+              "code": "10509002",
+              "display": "Acute bronchitis"
+            }
+          ],
+          "text": "Acute bronchitis"
+        },
+        "subject": {
+          "reference": "Patient/patient-example"
+        },
+        "encounter": {
+          "reference": "Encounter/enc-example"
+        },
+        "onsetDateTime": "2025-12-01",
+        "abatementDateTime": "2025-12-15",
+        "recordedDate": "2025-12-01T09:15:00-05:00"
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Condition/cond-encounter-example"
       }
     },
     {
@@ -705,20 +992,65 @@
           "coding": [
             {
               "system": "http://hl7.org/fhir/sid/cvx",
-              "code": "207",
-              "display": "COVID-19 mRNA, LNP-S, PF, 100 mcg/0.5 mL dose"
+              "code": "207"
             }
           ]
         },
         "patient": {
           "reference": "Patient/patient-example"
         },
+        "encounter": {
+          "reference": "Encounter/enc-example"
+        },
         "occurrenceDateTime": "2025-12-01T09:25:00-05:00",
-        "primarySource": true
+        "primarySource": true,
+        "location": {
+          "reference": "Location/loc-example"
+        }
       },
       "request": {
         "method": "PUT",
         "url": "Immunization/imm-example"
+      }
+    },
+    {
+      "fullUrl": "Immunization/imm-notdone-example",
+      "resource": {
+        "resourceType": "Immunization",
+        "id": "imm-notdone-example",
+        "status": "not-done",
+        "statusReason": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/v3-ActReason",
+              "code": "PATOBJ",
+              "display": "patient objection"
+            }
+          ]
+        },
+        "vaccineCode": {
+          "coding": [
+            {
+              "system": "http://hl7.org/fhir/sid/cvx",
+              "code": "140"
+            }
+          ]
+        },
+        "patient": {
+          "reference": "Patient/patient-example"
+        },
+        "encounter": {
+          "reference": "Encounter/enc-example"
+        },
+        "occurrenceDateTime": "2025-10-15",
+        "primarySource": true,
+        "location": {
+          "reference": "Location/loc-example"
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Immunization/imm-notdone-example"
       }
     },
     {
@@ -767,6 +1099,72 @@
       }
     },
     {
+      "fullUrl": "DiagnosticReport/dr-note-example",
+      "resource": {
+        "resourceType": "DiagnosticReport",
+        "id": "dr-note-example",
+        "meta": {
+          "profile": [
+            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-diagnosticreport-note"
+          ]
+        },
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://loinc.org",
+                "code": "LP29684-5",
+                "display": "Radiology"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "30746-2",
+              "display": "Chest X-ray report"
+            }
+          ],
+          "text": "Chest X-ray report"
+        },
+        "subject": {
+          "reference": "Patient/patient-example"
+        },
+        "encounter": {
+          "reference": "Encounter/enc-example"
+        },
+        "effectiveDateTime": "2025-12-01T09:30:00-05:00",
+        "issued": "2025-12-01T11:00:00-05:00",
+        "performer": [
+          {
+            "reference": "Practitioner/pract-example"
+          },
+          {
+            "reference": "Organization/org-example"
+          }
+        ],
+        "result": [
+          {
+            "reference": "Observation/obs-lab-example"
+          }
+        ],
+        "presentedForm": [
+          {
+            "contentType": "text/plain",
+            "data": "Q2hlc3QgWC1yYXkgcmVwb3J0Cg==",
+            "title": "Chest X-ray Report"
+          }
+        ]
+      },
+      "request": {
+        "method": "PUT",
+        "url": "DiagnosticReport/dr-note-example"
+      }
+    },
+    {
       "fullUrl": "Provenance/prov-example",
       "resource": {
         "resourceType": "Provenance",
@@ -774,7 +1172,11 @@
         "target": [
           {"reference": "Patient/patient-example"},
           {"reference": "AllergyIntolerance/allergy-example"},
+          {"reference": "Location/loc-example"},
           {"reference": "Condition/cond-example"},
+          {"reference": "Condition/cond-screening-example"},
+          {"reference": "Condition/cond-encounter-example"},
+          {"reference": "RelatedPerson/related-example"},
           {"reference": "Encounter/enc-example"},
           {"reference": "Observation/obs-bp-example"},
           {"reference": "Observation/obs-weight-example"},
@@ -784,7 +1186,9 @@
           {"reference": "Procedure/proc-example"},
           {"reference": "Immunization/imm-example"},
           {"reference": "DiagnosticReport/dr-example"},
-          {"reference": "CarePlan/careplan-example"}
+          {"reference": "DiagnosticReport/dr-note-example"},
+          {"reference": "CarePlan/careplan-example"},
+          {"reference": "CareTeam/careteam-example"}
         ],
         "recorded": "2025-12-01T10:00:00Z",
         "agent": [
@@ -842,6 +1246,125 @@
       "request": {
         "method": "PUT",
         "url": "CarePlan/careplan-example"
+      }
+    },
+    {
+      "fullUrl": "RelatedPerson/related-example",
+      "resource": {
+        "resourceType": "RelatedPerson",
+        "id": "related-example",
+        "meta": {
+          "profile": [
+            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-relatedperson"
+          ]
+        },
+        "text": {
+          "status": "additional",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Jane Smith - mother of Amy Smith</p></div>"
+        },
+        "active": true,
+        "patient": {
+          "reference": "Patient/patient-example"
+        },
+        "relationship": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/v3-RoleCode",
+                "code": "MTH",
+                "display": "mother"
+              }
+            ]
+          }
+        ],
+        "name": [
+          {
+            "use": "official",
+            "family": "Smith",
+            "given": ["Jane"]
+          }
+        ],
+        "telecom": [
+          {
+            "system": "phone",
+            "value": "+1-555-0144",
+            "use": "home"
+          }
+        ],
+        "gender": "female",
+        "address": [
+          {
+            "use": "home",
+            "line": ["742 Evergreen Terrace"],
+            "city": "Boston",
+            "state": "MA",
+            "postalCode": "02115",
+            "country": "US"
+          }
+        ]
+      },
+      "request": {
+        "method": "PUT",
+        "url": "RelatedPerson/related-example"
+      }
+    },
+    {
+      "fullUrl": "CareTeam/careteam-example",
+      "resource": {
+        "resourceType": "CareTeam",
+        "id": "careteam-example",
+        "text": {
+          "status": "additional",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Care team coordinating Amy Smith's diabetes management.</p></div>"
+        },
+        "status": "active",
+        "subject": {
+          "reference": "Patient/patient-example"
+        },
+        "encounter": {
+          "reference": "Encounter/enc-example"
+        },
+        "participant": [
+          {
+            "role": [
+              {
+                "coding": [
+                  {
+                    "system": "http://nucc.org/provider-taxonomy",
+                    "code": "207Q00000X",
+                    "display": "Family Medicine Physician"
+                  }
+                ]
+              }
+            ],
+            "member": {
+              "reference": "Practitioner/pract-example"
+            },
+            "onBehalfOf": {
+              "reference": "Organization/org-example"
+            }
+          },
+          {
+            "role": [
+              {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-RoleCode",
+                    "code": "MTH",
+                    "display": "mother"
+                  }
+                ]
+              }
+            ],
+            "member": {
+              "reference": "RelatedPerson/related-example"
+            }
+          }
+        ]
+      },
+      "request": {
+        "method": "PUT",
+        "url": "CareTeam/careteam-example"
       }
     }
   ]

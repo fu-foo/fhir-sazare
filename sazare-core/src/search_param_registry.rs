@@ -71,6 +71,9 @@ impl SearchParamRegistry {
         definitions.insert("Specimen".to_string(), specimen_definitions());
         definitions.insert("Provenance".to_string(), provenance_definitions());
         definitions.insert("CarePlan".to_string(), care_plan_definitions());
+        definitions.insert("CareTeam".to_string(), care_team_definitions());
+        definitions.insert("RelatedPerson".to_string(), related_person_definitions());
+        definitions.insert("Location".to_string(), location_definitions());
 
         // Append FHIR-common parameters (e.g. _profile) to every resource-specific list
         let common = common_fhir_params();
@@ -475,6 +478,13 @@ fn diagnostic_report_definitions() -> Vec<SearchParamDef> {
             aliases: vec!["patient".to_string()],
         },
         SearchParamDef {
+            name: "category".to_string(),
+            param_type: SearchParamType::Token,
+            path: vec!["category".to_string()],
+            extraction: ExtractionMode::CodeableConcept,
+            aliases: vec![],
+        },
+        SearchParamDef {
             name: "code".to_string(),
             param_type: SearchParamType::Token,
             path: vec!["code".to_string()],
@@ -665,6 +675,44 @@ fn organization_definitions() -> Vec<SearchParamDef> {
     ]
 }
 
+fn location_definitions() -> Vec<SearchParamDef> {
+    vec![
+        SearchParamDef {
+            name: "name".to_string(),
+            param_type: SearchParamType::String,
+            path: vec!["name".to_string()],
+            extraction: ExtractionMode::Simple,
+            aliases: vec![],
+        },
+        SearchParamDef {
+            name: "address".to_string(),
+            param_type: SearchParamType::String,
+            path: vec!["address".to_string()],
+            extraction: ExtractionMode::Simple,
+            aliases: vec![],
+        },
+    ]
+}
+
+fn related_person_definitions() -> Vec<SearchParamDef> {
+    vec![
+        SearchParamDef {
+            name: "patient".to_string(),
+            param_type: SearchParamType::Reference,
+            path: vec!["patient".to_string()],
+            extraction: ExtractionMode::Reference,
+            aliases: vec![],
+        },
+        SearchParamDef {
+            name: "identifier".to_string(),
+            param_type: SearchParamType::Token,
+            path: vec!["identifier".to_string()],
+            extraction: ExtractionMode::Identifier,
+            aliases: vec![],
+        },
+    ]
+}
+
 fn bundle_definitions() -> Vec<SearchParamDef> {
     vec![
         SearchParamDef {
@@ -839,6 +887,25 @@ fn care_plan_definitions() -> Vec<SearchParamDef> {
             param_type: SearchParamType::Date,
             path: vec!["period".to_string(), "start".to_string()],
             extraction: ExtractionMode::PeriodStart,
+            aliases: vec![],
+        },
+    ]
+}
+
+fn care_team_definitions() -> Vec<SearchParamDef> {
+    vec![
+        SearchParamDef {
+            name: "subject".to_string(),
+            param_type: SearchParamType::Reference,
+            path: vec!["subject".to_string()],
+            extraction: ExtractionMode::Reference,
+            aliases: vec!["patient".to_string()],
+        },
+        SearchParamDef {
+            name: "status".to_string(),
+            param_type: SearchParamType::Token,
+            path: vec!["status".to_string()],
+            extraction: ExtractionMode::Simple,
             aliases: vec![],
         },
     ]
