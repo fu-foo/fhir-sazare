@@ -21,7 +21,7 @@ FROM alpine:3.21
 
 RUN apk add --no-cache ca-certificates
 
-ARG CONFIG_FILE=config.docker.yaml
+ARG CONFIG_FILE=config.example.yaml
 
 COPY --from=builder /build/target/release/sazare-server /usr/local/bin/sazare-server
 COPY --from=ui-builder /ui/dist /ui
