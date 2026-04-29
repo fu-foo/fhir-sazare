@@ -1249,8 +1249,7 @@
           "coding": [
             {
               "system": "http://loinc.org",
-              "code": "30746-2",
-              "display": "Chest X-ray report"
+              "code": "30746-2"
             }
           ],
           "text": "Chest X-ray report"
@@ -2975,6 +2974,9 @@
             },
             "who": {
               "reference": "Practitioner/pract-example"
+            },
+            "onBehalfOf": {
+              "reference": "Organization/org-example"
             }
           }
         ]
