@@ -88,7 +88,9 @@
         "address": [
           {
             "use": "work",
-            "line": ["100 Health Way"],
+            "line": [
+              "100 Health Way"
+            ],
             "city": "Boston",
             "state": "MA",
             "postalCode": "02115",
@@ -329,7 +331,9 @@
         ],
         "address": {
           "use": "work",
-          "line": ["100 Health Way"],
+          "line": [
+            "100 Health Way"
+          ],
           "city": "Boston",
           "state": "MA",
           "postalCode": "02115",
@@ -826,8 +830,7 @@
           "coding": [
             {
               "system": "http://loinc.org",
-              "code": "4548-4",
-              "display": "Hemoglobin A1c"
+              "code": "4548-4"
             }
           ]
         },
@@ -933,8 +936,7 @@
           "coding": [
             {
               "system": "http://www.nlm.nih.gov/research/umls/rxnorm",
-              "code": "860975",
-              "display": "Metformin hydrochloride 500 MG Oral Tablet"
+              "code": "860975"
             }
           ]
         },
@@ -1074,8 +1076,7 @@
           "coding": [
             {
               "system": "http://loinc.org",
-              "code": "4548-4",
-              "display": "Hemoglobin A1c"
+              "code": "4548-4"
             }
           ]
         },
@@ -1165,30 +1166,967 @@
       }
     },
     {
+      "fullUrl": "Observation/obs-dar-example",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-dar-example",
+        "extension": [
+          {
+            "url": "http://hl7.org/fhir/StructureDefinition/data-absent-reason",
+            "valueCode": "unknown"
+          }
+        ],
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "exam",
+                "display": "Exam"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/data-absent-reason",
+              "code": "unknown",
+              "display": "Unknown"
+            }
+          ],
+          "text": "Test observation with absent value"
+        },
+        "subject": {
+          "reference": "Patient/patient-example"
+        },
+        "effectiveDateTime": "2025-12-01T09:30:00-05:00",
+        "valueString": "value not available"
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Observation/obs-dar-example"
+      }
+    },
+    {
+      "fullUrl": "Observation/obs-height-example",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-height-example",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "vital-signs",
+                "display": "Vital Signs"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "8302-2"
+            }
+          ]
+        },
+        "subject": {
+          "reference": "Patient/patient-example"
+        },
+        "encounter": {
+          "reference": "Encounter/enc-example"
+        },
+        "effectiveDateTime": "2025-12-01T09:15:00-05:00",
+        "valueQuantity": {
+          "value": 168,
+          "unit": "cm",
+          "system": "http://unitsofmeasure.org",
+          "code": "cm"
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Observation/obs-height-example"
+      }
+    },
+    {
+      "fullUrl": "Observation/obs-temp-example",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-temp-example",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "vital-signs",
+                "display": "Vital Signs"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "8310-5"
+            }
+          ]
+        },
+        "subject": {
+          "reference": "Patient/patient-example"
+        },
+        "encounter": {
+          "reference": "Encounter/enc-example"
+        },
+        "effectiveDateTime": "2025-12-01T09:15:00-05:00",
+        "valueQuantity": {
+          "value": 37.0,
+          "unit": "Cel",
+          "system": "http://unitsofmeasure.org",
+          "code": "Cel"
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Observation/obs-temp-example"
+      }
+    },
+    {
+      "fullUrl": "Observation/obs-bmi-example",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-bmi-example",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "vital-signs",
+                "display": "Vital Signs"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "39156-5"
+            }
+          ]
+        },
+        "subject": {
+          "reference": "Patient/patient-example"
+        },
+        "encounter": {
+          "reference": "Encounter/enc-example"
+        },
+        "effectiveDateTime": "2025-12-01T09:15:00-05:00",
+        "valueQuantity": {
+          "value": 24.5,
+          "unit": "kg/m2",
+          "system": "http://unitsofmeasure.org",
+          "code": "kg/m2"
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Observation/obs-bmi-example"
+      }
+    },
+    {
+      "fullUrl": "Observation/obs-hr-example",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-hr-example",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "vital-signs",
+                "display": "Vital Signs"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "8867-4"
+            }
+          ]
+        },
+        "subject": {
+          "reference": "Patient/patient-example"
+        },
+        "encounter": {
+          "reference": "Encounter/enc-example"
+        },
+        "effectiveDateTime": "2025-12-01T09:15:00-05:00",
+        "valueQuantity": {
+          "value": 72,
+          "unit": "/min",
+          "system": "http://unitsofmeasure.org",
+          "code": "/min"
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Observation/obs-hr-example"
+      }
+    },
+    {
+      "fullUrl": "Observation/obs-rr-example",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-rr-example",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "vital-signs",
+                "display": "Vital Signs"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "9279-1"
+            }
+          ]
+        },
+        "subject": {
+          "reference": "Patient/patient-example"
+        },
+        "encounter": {
+          "reference": "Encounter/enc-example"
+        },
+        "effectiveDateTime": "2025-12-01T09:15:00-05:00",
+        "valueQuantity": {
+          "value": 16,
+          "unit": "/min",
+          "system": "http://unitsofmeasure.org",
+          "code": "/min"
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Observation/obs-rr-example"
+      }
+    },
+    {
+      "fullUrl": "Observation/obs-hc-example",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-hc-example",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "vital-signs",
+                "display": "Vital Signs"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "9843-4"
+            }
+          ]
+        },
+        "subject": {
+          "reference": "Patient/patient-example"
+        },
+        "encounter": {
+          "reference": "Encounter/enc-example"
+        },
+        "effectiveDateTime": "2025-12-01T09:15:00-05:00",
+        "valueQuantity": {
+          "value": 56,
+          "unit": "cm",
+          "system": "http://unitsofmeasure.org",
+          "code": "cm"
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Observation/obs-hc-example"
+      }
+    },
+    {
+      "fullUrl": "Observation/obs-hc-pct-example",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-hc-pct-example",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "vital-signs",
+                "display": "Vital Signs"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "8289-1"
+            }
+          ]
+        },
+        "subject": {
+          "reference": "Patient/patient-example"
+        },
+        "encounter": {
+          "reference": "Encounter/enc-example"
+        },
+        "effectiveDateTime": "2025-12-01T09:15:00-05:00",
+        "valueQuantity": {
+          "value": 50,
+          "unit": "%",
+          "system": "http://unitsofmeasure.org",
+          "code": "%"
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Observation/obs-hc-pct-example"
+      }
+    },
+    {
+      "fullUrl": "Observation/obs-ped-bmi-example",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-ped-bmi-example",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "vital-signs",
+                "display": "Vital Signs"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "59576-9"
+            }
+          ]
+        },
+        "subject": {
+          "reference": "Patient/patient-example"
+        },
+        "encounter": {
+          "reference": "Encounter/enc-example"
+        },
+        "effectiveDateTime": "2025-12-01T09:15:00-05:00",
+        "valueQuantity": {
+          "value": 60,
+          "unit": "%",
+          "system": "http://unitsofmeasure.org",
+          "code": "%"
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Observation/obs-ped-bmi-example"
+      }
+    },
+    {
+      "fullUrl": "Observation/obs-ped-wfh-example",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-ped-wfh-example",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "vital-signs",
+                "display": "Vital Signs"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "77606-2"
+            }
+          ]
+        },
+        "subject": {
+          "reference": "Patient/patient-example"
+        },
+        "encounter": {
+          "reference": "Encounter/enc-example"
+        },
+        "effectiveDateTime": "2025-12-01T09:15:00-05:00",
+        "valueQuantity": {
+          "value": 55,
+          "unit": "%",
+          "system": "http://unitsofmeasure.org",
+          "code": "%"
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Observation/obs-ped-wfh-example"
+      }
+    },
+    {
+      "fullUrl": "Observation/obs-avg-bp-example",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-avg-bp-example",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "vital-signs",
+                "display": "Vital Signs"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "96607-7"
+            }
+          ]
+        },
+        "subject": {
+          "reference": "Patient/patient-example"
+        },
+        "encounter": {
+          "reference": "Encounter/enc-example"
+        },
+        "effectiveDateTime": "2025-12-01T09:15:00-05:00",
+        "component": [
+          {
+            "code": {
+              "coding": [
+                {
+                  "system": "http://loinc.org",
+                  "code": "96608-5"
+                }
+              ]
+            },
+            "valueQuantity": {
+              "value": 122,
+              "unit": "mmHg",
+              "system": "http://unitsofmeasure.org",
+              "code": "mm[Hg]"
+            }
+          },
+          {
+            "code": {
+              "coding": [
+                {
+                  "system": "http://loinc.org",
+                  "code": "96609-3"
+                }
+              ]
+            },
+            "valueQuantity": {
+              "value": 78,
+              "unit": "mmHg",
+              "system": "http://unitsofmeasure.org",
+              "code": "mm[Hg]"
+            }
+          }
+        ]
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Observation/obs-avg-bp-example"
+      }
+    },
+    {
+      "fullUrl": "Observation/obs-spo2-example",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-spo2-example",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "vital-signs",
+                "display": "Vital Signs"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "2708-6"
+            },
+            {
+              "system": "http://loinc.org",
+              "code": "59408-5"
+            }
+          ]
+        },
+        "subject": {
+          "reference": "Patient/patient-example"
+        },
+        "encounter": {
+          "reference": "Encounter/enc-example"
+        },
+        "effectiveDateTime": "2025-12-01T09:15:00-05:00",
+        "valueQuantity": {
+          "value": 98,
+          "unit": "%",
+          "system": "http://unitsofmeasure.org",
+          "code": "%"
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Observation/obs-spo2-example"
+      }
+    },
+    {
+      "fullUrl": "Observation/obs-occupation-example",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-occupation-example",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "social-history"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "11341-5"
+            }
+          ],
+          "text": "History of Occupation"
+        },
+        "subject": {
+          "reference": "Patient/patient-example"
+        },
+        "effectiveDateTime": "2025-12-01T09:30:00-05:00",
+        "valueCodeableConcept": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/v3-NullFlavor",
+              "code": "UNK",
+              "display": "Unknown"
+            }
+          ],
+          "text": "Unknown"
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Observation/obs-occupation-example"
+      }
+    },
+    {
+      "fullUrl": "Observation/obs-pregintent-example",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-pregintent-example",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "social-history"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "86645-9"
+            }
+          ],
+          "text": "Pregnancy intention"
+        },
+        "subject": {
+          "reference": "Patient/patient-example"
+        },
+        "effectiveDateTime": "2025-12-01T09:30:00-05:00",
+        "valueCodeableConcept": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "LA32-8"
+            }
+          ]
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Observation/obs-pregintent-example"
+      }
+    },
+    {
+      "fullUrl": "Observation/obs-pregstatus-example",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-pregstatus-example",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "social-history"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "82810-3"
+            }
+          ],
+          "text": "Pregnancy status"
+        },
+        "subject": {
+          "reference": "Patient/patient-example"
+        },
+        "effectiveDateTime": "2025-12-01T09:30:00-05:00",
+        "valueCodeableConcept": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "LA15173-0"
+            }
+          ]
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Observation/obs-pregstatus-example"
+      }
+    },
+    {
+      "fullUrl": "Observation/obs-sexorient-example",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-sexorient-example",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "social-history"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "76690-7"
+            }
+          ],
+          "text": "Sexual orientation"
+        },
+        "subject": {
+          "reference": "Patient/patient-example"
+        },
+        "effectiveDateTime": "2025-12-01T09:30:00-05:00",
+        "valueCodeableConcept": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "LA22881-9"
+            }
+          ]
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Observation/obs-sexorient-example"
+      }
+    },
+    {
+      "fullUrl": "Observation/obs-screening-example",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-screening-example",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "survey"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "44249-1"
+            }
+          ],
+          "text": "PHQ-9 quick depression assessment panel"
+        },
+        "subject": {
+          "reference": "Patient/patient-example"
+        },
+        "effectiveDateTime": "2025-12-01T09:30:00-05:00",
+        "valueString": "No depression detected"
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Observation/obs-screening-example"
+      }
+    },
+    {
+      "fullUrl": "Observation/obs-care-pref-example",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-care-pref-example",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://hl7.org/fhir/us/core/CodeSystem/us-core-category",
+                "code": "care-experience-preference"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "95541-9"
+            }
+          ],
+          "text": "Care experience preference"
+        },
+        "subject": {
+          "reference": "Patient/patient-example"
+        },
+        "effectiveDateTime": "2025-12-01T09:30:00-05:00",
+        "valueString": "Prefers morning appointments"
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Observation/obs-care-pref-example"
+      }
+    },
+    {
+      "fullUrl": "Observation/obs-treat-pref-example",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-treat-pref-example",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://hl7.org/fhir/us/core/CodeSystem/us-core-category",
+                "code": "treatment-intervention-preference"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "75773-2"
+            }
+          ],
+          "text": "Treatment intervention preference"
+        },
+        "subject": {
+          "reference": "Patient/patient-example"
+        },
+        "effectiveDateTime": "2025-12-01T09:30:00-05:00",
+        "valueString": "Prefers oral medications over injections"
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Observation/obs-treat-pref-example"
+      }
+    },
+    {
       "fullUrl": "Provenance/prov-example",
       "resource": {
         "resourceType": "Provenance",
         "id": "prov-example",
         "target": [
-          {"reference": "Patient/patient-example"},
-          {"reference": "AllergyIntolerance/allergy-example"},
-          {"reference": "Location/loc-example"},
-          {"reference": "Condition/cond-example"},
-          {"reference": "Condition/cond-screening-example"},
-          {"reference": "Condition/cond-encounter-example"},
-          {"reference": "RelatedPerson/related-example"},
-          {"reference": "Encounter/enc-example"},
-          {"reference": "Observation/obs-bp-example"},
-          {"reference": "Observation/obs-weight-example"},
-          {"reference": "Observation/obs-smoking-example"},
-          {"reference": "Observation/obs-lab-example"},
-          {"reference": "MedicationRequest/medreq-example"},
-          {"reference": "Procedure/proc-example"},
-          {"reference": "Immunization/imm-example"},
-          {"reference": "DiagnosticReport/dr-example"},
-          {"reference": "DiagnosticReport/dr-note-example"},
-          {"reference": "CarePlan/careplan-example"},
-          {"reference": "CareTeam/careteam-example"}
+          {
+            "reference": "Patient/patient-example"
+          },
+          {
+            "reference": "AllergyIntolerance/allergy-example"
+          },
+          {
+            "reference": "Location/loc-example"
+          },
+          {
+            "reference": "Condition/cond-example"
+          },
+          {
+            "reference": "Condition/cond-screening-example"
+          },
+          {
+            "reference": "Condition/cond-encounter-example"
+          },
+          {
+            "reference": "RelatedPerson/related-example"
+          },
+          {
+            "reference": "Encounter/enc-example"
+          },
+          {
+            "reference": "Observation/obs-bp-example"
+          },
+          {
+            "reference": "Observation/obs-weight-example"
+          },
+          {
+            "reference": "Observation/obs-smoking-example"
+          },
+          {
+            "reference": "Observation/obs-lab-example"
+          },
+          {
+            "reference": "MedicationRequest/medreq-example"
+          },
+          {
+            "reference": "Procedure/proc-example"
+          },
+          {
+            "reference": "Immunization/imm-example"
+          },
+          {
+            "reference": "DiagnosticReport/dr-example"
+          },
+          {
+            "reference": "DiagnosticReport/dr-note-example"
+          },
+          {
+            "reference": "Observation/obs-dar-example"
+          },
+          {
+            "reference": "CarePlan/careplan-example"
+          },
+          {
+            "reference": "CareTeam/careteam-example"
+          },
+          {
+            "reference": "Observation/obs-height-example"
+          },
+          {
+            "reference": "Observation/obs-temp-example"
+          },
+          {
+            "reference": "Observation/obs-bmi-example"
+          },
+          {
+            "reference": "Observation/obs-hr-example"
+          },
+          {
+            "reference": "Observation/obs-rr-example"
+          },
+          {
+            "reference": "Observation/obs-hc-example"
+          },
+          {
+            "reference": "Observation/obs-hc-pct-example"
+          },
+          {
+            "reference": "Observation/obs-ped-bmi-example"
+          },
+          {
+            "reference": "Observation/obs-ped-wfh-example"
+          },
+          {
+            "reference": "Observation/obs-avg-bp-example"
+          },
+          {
+            "reference": "Observation/obs-spo2-example"
+          },
+          {
+            "reference": "Observation/obs-occupation-example"
+          },
+          {
+            "reference": "Observation/obs-pregintent-example"
+          },
+          {
+            "reference": "Observation/obs-pregstatus-example"
+          },
+          {
+            "reference": "Observation/obs-sexorient-example"
+          },
+          {
+            "reference": "Observation/obs-screening-example"
+          },
+          {
+            "reference": "Observation/obs-care-pref-example"
+          },
+          {
+            "reference": "Observation/obs-treat-pref-example"
+          }
         ],
         "recorded": "2025-12-01T10:00:00Z",
         "agent": [
@@ -1202,8 +2140,12 @@
                 }
               ]
             },
-            "who": {"reference": "Practitioner/pract-example"},
-            "onBehalfOf": {"reference": "Organization/org-example"}
+            "who": {
+              "reference": "Practitioner/pract-example"
+            },
+            "onBehalfOf": {
+              "reference": "Organization/org-example"
+            }
           }
         ]
       },
@@ -1281,7 +2223,9 @@
           {
             "use": "official",
             "family": "Smith",
-            "given": ["Jane"]
+            "given": [
+              "Jane"
+            ]
           }
         ],
         "telecom": [
@@ -1295,7 +2239,9 @@
         "address": [
           {
             "use": "home",
-            "line": ["742 Evergreen Terrace"],
+            "line": [
+              "742 Evergreen Terrace"
+            ],
             "city": "Boston",
             "state": "MA",
             "postalCode": "02115",

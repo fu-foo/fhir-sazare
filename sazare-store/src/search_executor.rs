@@ -165,35 +165,63 @@ impl<'a> SearchExecutor<'a> {
     }
 
     /// Search for a single parameter
+    ///
+    /// FHIR spec: comma-separated values in a single param mean OR.
+    /// e.g. `intent=order,plan` → resources matching `order` OR `plan`.
     fn search_parameter(
         &self,
         resource_type: &str,
         param: &SearchParameter,
     ) -> Result<Vec<String>, String> {
+        let values: Vec<&str> = param.value.split(',').collect();
+        if values.len() == 1 {
+            return self.search_parameter_single(resource_type, param, &param.value);
+        }
+
+        // Multi-value: union results across each value
+        let mut union: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for v in values {
+            let v = v.trim();
+            if v.is_empty() {
+                continue;
+            }
+            let ids = self.search_parameter_single(resource_type, param, v)?;
+            union.extend(ids);
+        }
+        Ok(union.into_iter().collect())
+    }
+
+    /// Search for a single parameter with a single value (no comma).
+    fn search_parameter_single(
+        &self,
+        resource_type: &str,
+        param: &SearchParameter,
+        value: &str,
+    ) -> Result<Vec<String>, String> {
         match param.param_type {
             SearchParamType::Token => {
                 // For token search, parse system|code format
-                let (system, code) = if let Some(idx) = param.value.find('|') {
-                    let (sys, cod) = param.value.split_at(idx);
+                let (system, code) = if let Some(idx) = value.find('|') {
+                    let (sys, cod) = value.split_at(idx);
                     (Some(sys), &cod[1..])
                 } else {
-                    (None, param.value.as_str())
+                    (None, value)
                 };
                 self.index.search_token(resource_type, &param.name, system, code)
                     .map_err(|e| e.to_string())
             }
             SearchParamType::String => {
                 let exact = param.modifier.as_deref() == Some("exact");
-                self.index.search_string(resource_type, &param.name, &param.value, exact)
+                self.index.search_string(resource_type, &param.name, value, exact)
                     .map_err(|e| e.to_string())
             }
             SearchParamType::Date => {
                 let prefix = param.prefix.as_deref().unwrap_or("eq");
-                self.index.search_date_with_prefix(resource_type, &param.name, prefix, &param.value)
+                self.index.search_date_with_prefix(resource_type, &param.name, prefix, value)
                     .map_err(|e| e.to_string())
             }
             SearchParamType::Reference => {
-                self.index.search_reference(resource_type, &param.name, &param.value)
+                self.index.search_reference(resource_type, &param.name, value)
                     .map_err(|e| e.to_string())
             }
             SearchParamType::Number => {
