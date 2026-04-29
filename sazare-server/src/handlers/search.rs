@@ -120,7 +120,7 @@ async fn do_search(
         .collect::<Vec<_>>()
         .join("&");
 
-    let query = SearchQuery::parse(&query_string).map_err(|e| {
+    let query = SearchQuery::parse_for_resource(&query_string, Some(&resource_type)).map_err(|e| {
         (
             StatusCode::BAD_REQUEST,
             Json(json!(OperationOutcome::error(IssueType::Invalid, e))),

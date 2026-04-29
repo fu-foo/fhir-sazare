@@ -28,6 +28,15 @@ pub const SUPPORTED_RESOURCE_TYPES: &[&str] = &[
     "CareTeam",
     "RelatedPerson",
     "Location",
+    "PractitionerRole",
+    "Goal",
+    "Coverage",
+    "Device",
+    "MedicationDispense",
+    "DocumentReference",
+    "ServiceRequest",
+    "Specimen",
+    "QuestionnaireResponse",
 ];
 
 /// US Core v7 profiles supported per resource type. Declared in
@@ -63,6 +72,15 @@ fn us_core_profiles_for(resource_type: &str) -> Vec<&'static str> {
         "CareTeam" => vec!["http://hl7.org/fhir/us/core/StructureDefinition/us-core-careteam"],
         "RelatedPerson" => vec!["http://hl7.org/fhir/us/core/StructureDefinition/us-core-relatedperson"],
         "Location" => vec!["http://hl7.org/fhir/us/core/StructureDefinition/us-core-location"],
+        "PractitionerRole" => vec!["http://hl7.org/fhir/us/core/StructureDefinition/us-core-practitionerrole"],
+        "Goal" => vec!["http://hl7.org/fhir/us/core/StructureDefinition/us-core-goal"],
+        "Coverage" => vec!["http://hl7.org/fhir/us/core/StructureDefinition/us-core-coverage"],
+        "Device" => vec!["http://hl7.org/fhir/us/core/StructureDefinition/us-core-implantable-device"],
+        "MedicationDispense" => vec!["http://hl7.org/fhir/us/core/StructureDefinition/us-core-medicationdispense"],
+        "DocumentReference" => vec!["http://hl7.org/fhir/us/core/StructureDefinition/us-core-documentreference"],
+        "ServiceRequest" => vec!["http://hl7.org/fhir/us/core/StructureDefinition/us-core-servicerequest"],
+        "Specimen" => vec!["http://hl7.org/fhir/us/core/StructureDefinition/us-core-specimen"],
+        "QuestionnaireResponse" => vec!["http://hl7.org/fhir/us/core/StructureDefinition/us-core-questionnaireresponse"],
         _ => vec![],
     }
 }

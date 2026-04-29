@@ -341,7 +341,13 @@
         },
         "managingOrganization": {
           "reference": "Organization/org-example"
-        }
+        },
+        "identifier": [
+          {
+            "system": "urn:oid:2.16.840.1.113883.4.6",
+            "value": "LOC-001"
+          }
+        ]
       },
       "request": {
         "method": "PUT",
@@ -711,6 +717,24 @@
               "system": "http://unitsofmeasure.org",
               "code": "mm[Hg]"
             }
+          },
+          {
+            "code": {
+              "coding": [
+                {
+                  "system": "http://loinc.org",
+                  "code": "8478-0"
+                }
+              ]
+            },
+            "dataAbsentReason": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/data-absent-reason",
+                  "code": "unknown"
+                }
+              ]
+            }
           }
         ]
       },
@@ -846,7 +870,37 @@
           "unit": "%",
           "system": "http://unitsofmeasure.org",
           "code": "%"
-        }
+        },
+        "interpretation": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+                "code": "N",
+                "display": "Normal"
+              }
+            ]
+          }
+        ],
+        "specimen": {
+          "reference": "Specimen/specimen-example"
+        },
+        "referenceRange": [
+          {
+            "low": {
+              "value": 4.0,
+              "unit": "%",
+              "system": "http://unitsofmeasure.org",
+              "code": "%"
+            },
+            "high": {
+              "value": 5.6,
+              "unit": "%",
+              "system": "http://unitsofmeasure.org",
+              "code": "%"
+            }
+          }
+        ]
       },
       "request": {
         "method": "PUT",
@@ -949,7 +1003,45 @@
         "authoredOn": "2025-12-01",
         "requester": {
           "reference": "Practitioner/pract-example"
-        }
+        },
+        "reportedBoolean": false,
+        "reasonCode": [
+          {
+            "coding": [
+              {
+                "system": "http://snomed.info/sct",
+                "code": "73211009"
+              }
+            ]
+          }
+        ],
+        "reasonReference": [
+          {
+            "reference": "Condition/cond-example"
+          }
+        ],
+        "dosageInstruction": [
+          {
+            "text": "Take one tablet by mouth twice daily",
+            "timing": {
+              "repeat": {
+                "frequency": 2,
+                "period": 1,
+                "periodUnit": "d"
+              }
+            },
+            "doseAndRate": [
+              {
+                "doseQuantity": {
+                  "value": 500,
+                  "unit": "mg",
+                  "system": "http://unitsofmeasure.org",
+                  "code": "mg"
+                }
+              }
+            ]
+          }
+        ]
       },
       "request": {
         "method": "PUT",
@@ -961,13 +1053,17 @@
       "resource": {
         "resourceType": "Procedure",
         "id": "proc-example",
+        "meta": {
+          "profile": [
+            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-procedure"
+          ]
+        },
         "status": "completed",
         "code": {
           "coding": [
             {
               "system": "http://snomed.info/sct",
-              "code": "33879002",
-              "display": "Administration of vaccine"
+              "code": "33879002"
             }
           ]
         },
@@ -977,7 +1073,27 @@
         "encounter": {
           "reference": "Encounter/enc-example"
         },
-        "performedDateTime": "2025-12-01T09:25:00-05:00"
+        "performedDateTime": "2025-12-01T09:25:00-05:00",
+        "basedOn": [
+          {
+            "reference": "ServiceRequest/sr-example"
+          }
+        ],
+        "reasonCode": [
+          {
+            "coding": [
+              {
+                "system": "http://snomed.info/sct",
+                "code": "73211009"
+              }
+            ]
+          }
+        ],
+        "reasonReference": [
+          {
+            "reference": "Condition/cond-example"
+          }
+        ]
       },
       "request": {
         "method": "PUT",
@@ -1091,6 +1207,14 @@
         "result": [
           {
             "reference": "Observation/obs-lab-example"
+          }
+        ],
+        "performer": [
+          {
+            "reference": "Practitioner/pract-example"
+          },
+          {
+            "reference": "Organization/org-example"
           }
         ]
       },
@@ -1636,7 +1760,6 @@
         "encounter": {
           "reference": "Encounter/enc-example"
         },
-        "effectiveDateTime": "2025-12-01T09:15:00-05:00",
         "component": [
           {
             "code": {
@@ -1669,8 +1792,30 @@
               "system": "http://unitsofmeasure.org",
               "code": "mm[Hg]"
             }
+          },
+          {
+            "code": {
+              "coding": [
+                {
+                  "system": "http://loinc.org",
+                  "code": "8478-0"
+                }
+              ]
+            },
+            "dataAbsentReason": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/data-absent-reason",
+                  "code": "unknown"
+                }
+              ]
+            }
           }
-        ]
+        ],
+        "effectivePeriod": {
+          "start": "2025-12-01T09:15:00-05:00",
+          "end": "2025-12-01T09:30:00-05:00"
+        }
       },
       "request": {
         "method": "PUT",
@@ -1964,7 +2109,16 @@
           "reference": "Patient/patient-example"
         },
         "effectiveDateTime": "2025-12-01T09:30:00-05:00",
-        "valueString": "Prefers morning appointments"
+        "valueCodeableConcept": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/v3-NullFlavor",
+              "code": "OTH",
+              "display": "Other"
+            }
+          ],
+          "text": "Patient preference recorded"
+        }
       },
       "request": {
         "method": "PUT",
@@ -2000,11 +2154,647 @@
           "reference": "Patient/patient-example"
         },
         "effectiveDateTime": "2025-12-01T09:30:00-05:00",
-        "valueString": "Prefers oral medications over injections"
+        "valueCodeableConcept": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/v3-NullFlavor",
+              "code": "OTH",
+              "display": "Other"
+            }
+          ],
+          "text": "Patient preference recorded"
+        }
       },
       "request": {
         "method": "PUT",
         "url": "Observation/obs-treat-pref-example"
+      }
+    },
+    {
+      "fullUrl": "PractitionerRole/practrole-example",
+      "resource": {
+        "resourceType": "PractitionerRole",
+        "id": "practrole-example",
+        "meta": {
+          "profile": [
+            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-practitionerrole"
+          ]
+        },
+        "active": true,
+        "practitioner": {
+          "reference": "Practitioner/pract-example"
+        },
+        "organization": {
+          "reference": "Organization/org-example"
+        },
+        "code": [
+          {
+            "coding": [
+              {
+                "system": "http://nucc.org/provider-taxonomy",
+                "code": "208D00000X"
+              }
+            ]
+          }
+        ],
+        "specialty": [
+          {
+            "coding": [
+              {
+                "system": "http://nucc.org/provider-taxonomy",
+                "code": "207Q00000X"
+              }
+            ]
+          }
+        ],
+        "location": [
+          {
+            "reference": "Location/loc-example"
+          }
+        ],
+        "telecom": [
+          {
+            "system": "phone",
+            "value": "+1-555-0103",
+            "use": "work"
+          }
+        ]
+      },
+      "request": {
+        "method": "PUT",
+        "url": "PractitionerRole/practrole-example"
+      }
+    },
+    {
+      "fullUrl": "Goal/goal-example",
+      "resource": {
+        "resourceType": "Goal",
+        "id": "goal-example",
+        "meta": {
+          "profile": [
+            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-goal"
+          ]
+        },
+        "lifecycleStatus": "active",
+        "achievementStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/goal-achievement",
+              "code": "in-progress"
+            }
+          ]
+        },
+        "description": {
+          "text": "Maintain HbA1c below 7%"
+        },
+        "subject": {
+          "reference": "Patient/patient-example"
+        },
+        "startDate": "2025-12-01",
+        "target": [
+          {
+            "measure": {
+              "coding": [
+                {
+                  "system": "http://loinc.org",
+                  "code": "4548-4"
+                }
+              ]
+            },
+            "detailQuantity": {
+              "value": 7,
+              "unit": "%",
+              "system": "http://unitsofmeasure.org",
+              "code": "%"
+            },
+            "dueDate": "2026-06-01"
+          }
+        ]
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Goal/goal-example"
+      }
+    },
+    {
+      "fullUrl": "Coverage/coverage-example",
+      "resource": {
+        "resourceType": "Coverage",
+        "id": "coverage-example",
+        "identifier": [
+          {
+            "system": "urn:oid:2.16.840.1.113883.4.6",
+            "value": "COV-001",
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                  "code": "MB",
+                  "display": "Member Number"
+                }
+              ]
+            }
+          }
+        ],
+        "status": "active",
+        "type": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+              "code": "EHCPOL",
+              "display": "extended healthcare"
+            }
+          ]
+        },
+        "subscriber": {
+          "reference": "Patient/patient-example"
+        },
+        "subscriberId": "SUB-001",
+        "beneficiary": {
+          "reference": "Patient/patient-example"
+        },
+        "relationship": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/subscriber-relationship",
+              "code": "self"
+            }
+          ]
+        },
+        "period": {
+          "start": "2025-01-01"
+        },
+        "payor": [
+          {
+            "reference": "Organization/org-example"
+          }
+        ],
+        "class": [
+          {
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/coverage-class",
+                  "code": "group"
+                }
+              ]
+            },
+            "value": "GRP-12345",
+            "name": "Acme Group Plan"
+          },
+          {
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/coverage-class",
+                  "code": "plan"
+                }
+              ]
+            },
+            "value": "PLN-EHC-2025",
+            "name": "Acme Extended Health Plan"
+          }
+        ]
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Coverage/coverage-example"
+      }
+    },
+    {
+      "fullUrl": "Device/device-example",
+      "resource": {
+        "resourceType": "Device",
+        "id": "device-example",
+        "meta": {
+          "profile": [
+            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-implantable-device"
+          ]
+        },
+        "udiCarrier": [
+          {
+            "deviceIdentifier": "00643169007222",
+            "carrierHRF": "(01)00643169007222(17)160712(10)BLC200461H",
+            "carrierAIDC": "PEFJREMtYXJlPg=="
+          }
+        ],
+        "status": "active",
+        "distinctIdentifier": "00643169007222",
+        "manufactureDate": "2020-08-01",
+        "expirationDate": "2030-08-01",
+        "lotNumber": "LOT-12345",
+        "serialNumber": "SN-789",
+        "deviceName": [
+          {
+            "name": "Example pacemaker",
+            "type": "user-friendly-name"
+          }
+        ],
+        "modelNumber": "PM-X100",
+        "type": {
+          "coding": [
+            {
+              "system": "http://snomed.info/sct",
+              "code": "14106009"
+            }
+          ]
+        },
+        "patient": {
+          "reference": "Patient/patient-example"
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Device/device-example"
+      }
+    },
+    {
+      "fullUrl": "MedicationDispense/meddisp-example",
+      "resource": {
+        "resourceType": "MedicationDispense",
+        "id": "meddisp-example",
+        "meta": {
+          "profile": [
+            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-medicationdispense"
+          ]
+        },
+        "status": "completed",
+        "medicationCodeableConcept": {
+          "coding": [
+            {
+              "system": "http://www.nlm.nih.gov/research/umls/rxnorm",
+              "code": "860975"
+            }
+          ]
+        },
+        "subject": {
+          "reference": "Patient/patient-example"
+        },
+        "performer": [
+          {
+            "actor": {
+              "reference": "Practitioner/pract-example"
+            }
+          }
+        ],
+        "authorizingPrescription": [
+          {
+            "reference": "MedicationRequest/medreq-example"
+          }
+        ],
+        "type": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+              "code": "FF",
+              "display": "First Fill"
+            }
+          ]
+        },
+        "quantity": {
+          "value": 30,
+          "unit": "tab"
+        },
+        "whenHandedOver": "2025-12-02T10:00:00-05:00",
+        "dosageInstruction": [
+          {
+            "text": "Take one tablet by mouth twice daily",
+            "timing": {
+              "repeat": {
+                "frequency": 2,
+                "period": 1,
+                "periodUnit": "d"
+              }
+            },
+            "doseAndRate": [
+              {
+                "type": {
+                  "coding": [
+                    {
+                      "system": "http://terminology.hl7.org/CodeSystem/dose-rate-type",
+                      "code": "ordered"
+                    }
+                  ]
+                },
+                "doseQuantity": {
+                  "value": 500,
+                  "unit": "mg",
+                  "system": "http://unitsofmeasure.org",
+                  "code": "mg"
+                }
+              }
+            ]
+          }
+        ],
+        "context": {
+          "reference": "Encounter/enc-example"
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "MedicationDispense/meddisp-example"
+      }
+    },
+    {
+      "fullUrl": "DocumentReference/docref-example",
+      "resource": {
+        "resourceType": "DocumentReference",
+        "id": "docref-example",
+        "meta": {
+          "profile": [
+            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-documentreference"
+          ]
+        },
+        "identifier": [
+          {
+            "system": "urn:ietf:rfc:3986",
+            "value": "urn:uuid:doc-12345"
+          }
+        ],
+        "status": "current",
+        "type": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "34133-9",
+              "display": "Summary of episode note"
+            }
+          ]
+        },
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://hl7.org/fhir/us/core/CodeSystem/us-core-documentreference-category",
+                "code": "clinical-note",
+                "display": "Clinical Note"
+              }
+            ]
+          }
+        ],
+        "subject": {
+          "reference": "Patient/patient-example"
+        },
+        "date": "2025-12-01T11:00:00-05:00",
+        "author": [
+          {
+            "reference": "Practitioner/pract-example"
+          }
+        ],
+        "content": [
+          {
+            "attachment": {
+              "contentType": "text/plain",
+              "data": "U3VtbWFyeSBvZiBlcGlzb2RlIG5vdGUu",
+              "title": "Episode summary"
+            },
+            "format": {
+              "system": "http://ihe.net/fhir/ihe.formatcode.fhir/CodeSystem/formatcode",
+              "code": "urn:ihe:iti:xds:2017:mimeTypeSufficient"
+            }
+          }
+        ],
+        "context": {
+          "encounter": [
+            {
+              "reference": "Encounter/enc-example"
+            }
+          ],
+          "period": {
+            "start": "2025-12-01T09:00:00-05:00",
+            "end": "2025-12-01T09:30:00-05:00"
+          }
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "DocumentReference/docref-example"
+      }
+    },
+    {
+      "fullUrl": "ServiceRequest/sr-example",
+      "resource": {
+        "resourceType": "ServiceRequest",
+        "id": "sr-example",
+        "meta": {
+          "profile": [
+            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-servicerequest"
+          ]
+        },
+        "status": "active",
+        "intent": "order",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://snomed.info/sct",
+                "code": "108252007",
+                "display": "Laboratory procedure"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "4548-4"
+            }
+          ]
+        },
+        "subject": {
+          "reference": "Patient/patient-example"
+        },
+        "encounter": {
+          "reference": "Encounter/enc-example"
+        },
+        "authoredOn": "2025-12-01T09:30:00-05:00",
+        "requester": {
+          "reference": "Practitioner/pract-example"
+        },
+        "occurrencePeriod": {
+          "start": "2025-12-01T09:30:00-05:00",
+          "end": "2025-12-01T10:30:00-05:00"
+        },
+        "reasonCode": [
+          {
+            "coding": [
+              {
+                "system": "http://snomed.info/sct",
+                "code": "73211009"
+              }
+            ]
+          }
+        ],
+        "reasonReference": [
+          {
+            "reference": "Condition/cond-example"
+          }
+        ]
+      },
+      "request": {
+        "method": "PUT",
+        "url": "ServiceRequest/sr-example"
+      }
+    },
+    {
+      "fullUrl": "Specimen/specimen-example",
+      "resource": {
+        "resourceType": "Specimen",
+        "id": "specimen-example",
+        "meta": {
+          "profile": [
+            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-specimen"
+          ]
+        },
+        "identifier": [
+          {
+            "system": "urn:oid:1.2.36.146.595.217.0.3",
+            "value": "SPEC-001"
+          }
+        ],
+        "accessionIdentifier": {
+          "system": "urn:oid:1.2.36.146.595.217.0.4",
+          "value": "ACC-001"
+        },
+        "status": "available",
+        "type": {
+          "coding": [
+            {
+              "system": "http://snomed.info/sct",
+              "code": "119297000",
+              "display": "Blood specimen"
+            }
+          ]
+        },
+        "subject": {
+          "reference": "Patient/patient-example"
+        },
+        "receivedTime": "2025-12-01T10:30:00-05:00",
+        "collection": {
+          "collector": {
+            "reference": "Practitioner/pract-example"
+          },
+          "collectedDateTime": "2025-12-01T10:00:00-05:00",
+          "method": {
+            "coding": [
+              {
+                "system": "http://snomed.info/sct",
+                "code": "129316008"
+              }
+            ]
+          },
+          "bodySite": {
+            "coding": [
+              {
+                "system": "http://snomed.info/sct",
+                "code": "49852007"
+              }
+            ]
+          }
+        },
+        "condition": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/v2-0493",
+                "code": "AUT",
+                "display": "Autolyzed"
+              }
+            ]
+          }
+        ]
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Specimen/specimen-example"
+      }
+    },
+    {
+      "fullUrl": "QuestionnaireResponse/qr-example",
+      "resource": {
+        "resourceType": "QuestionnaireResponse",
+        "id": "qr-example",
+        "meta": {
+          "profile": [
+            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-questionnaireresponse"
+          ]
+        },
+        "questionnaire": "http://hl7.org/fhir/Questionnaire/phq9",
+        "status": "completed",
+        "subject": {
+          "reference": "Patient/patient-example"
+        },
+        "authored": "2025-12-01T09:35:00-05:00",
+        "author": {
+          "reference": "Practitioner/pract-example"
+        },
+        "item": [
+          {
+            "linkId": "1",
+            "text": "Little interest or pleasure in doing things",
+            "answer": [
+              {
+                "valueCoding": {
+                  "system": "http://loinc.org",
+                  "code": "LA6568-5",
+                  "display": "Not at all"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "request": {
+        "method": "PUT",
+        "url": "QuestionnaireResponse/qr-example"
+      }
+    },
+    {
+      "fullUrl": "Observation/obs-lab-cc-example",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-lab-cc-example",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "laboratory",
+                "display": "Laboratory"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "5778-6"
+            }
+          ]
+        },
+        "subject": {
+          "reference": "Patient/patient-example"
+        },
+        "encounter": {
+          "reference": "Encounter/enc-example"
+        },
+        "effectiveDateTime": "2025-12-01T10:00:00-05:00",
+        "valueCodeableConcept": {
+          "coding": [
+            {
+              "system": "http://snomed.info/sct",
+              "code": "371244009",
+              "display": "Yellow"
+            }
+          ]
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Observation/obs-lab-cc-example"
       }
     },
     {
@@ -2126,6 +2916,33 @@
           },
           {
             "reference": "Observation/obs-treat-pref-example"
+          },
+          {
+            "reference": "PractitionerRole/practrole-example"
+          },
+          {
+            "reference": "Goal/goal-example"
+          },
+          {
+            "reference": "Coverage/coverage-example"
+          },
+          {
+            "reference": "Device/device-example"
+          },
+          {
+            "reference": "MedicationDispense/meddisp-example"
+          },
+          {
+            "reference": "DocumentReference/docref-example"
+          },
+          {
+            "reference": "ServiceRequest/sr-example"
+          },
+          {
+            "reference": "Specimen/specimen-example"
+          },
+          {
+            "reference": "QuestionnaireResponse/qr-example"
           }
         ],
         "recorded": "2025-12-01T10:00:00Z",
@@ -2145,6 +2962,19 @@
             },
             "onBehalfOf": {
               "reference": "Organization/org-example"
+            }
+          },
+          {
+            "type": {
+              "coding": [
+                {
+                  "system": "http://hl7.org/fhir/us/core/CodeSystem/us-core-provenance-participant-type",
+                  "code": "transmitter"
+                }
+              ]
+            },
+            "who": {
+              "reference": "Practitioner/pract-example"
             }
           }
         ]
@@ -2277,8 +3107,7 @@
                 "coding": [
                   {
                     "system": "http://nucc.org/provider-taxonomy",
-                    "code": "207Q00000X",
-                    "display": "Family Medicine Physician"
+                    "code": "207Q00000X"
                   }
                 ]
               }
@@ -2304,6 +3133,21 @@
             ],
             "member": {
               "reference": "RelatedPerson/related-example"
+            }
+          },
+          {
+            "role": [
+              {
+                "coding": [
+                  {
+                    "system": "http://nucc.org/provider-taxonomy",
+                    "code": "208D00000X"
+                  }
+                ]
+              }
+            ],
+            "member": {
+              "reference": "PractitionerRole/practrole-example"
             }
           }
         ]

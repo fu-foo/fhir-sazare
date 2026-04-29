@@ -74,6 +74,13 @@ impl SearchParamRegistry {
         definitions.insert("CareTeam".to_string(), care_team_definitions());
         definitions.insert("RelatedPerson".to_string(), related_person_definitions());
         definitions.insert("Location".to_string(), location_definitions());
+        definitions.insert("PractitionerRole".to_string(), practitioner_role_definitions());
+        definitions.insert("Goal".to_string(), goal_definitions());
+        definitions.insert("Coverage".to_string(), coverage_definitions());
+        definitions.insert("Device".to_string(), device_definitions());
+        definitions.insert("MedicationDispense".to_string(), medication_dispense_definitions());
+        definitions.insert("DocumentReference".to_string(), document_reference_definitions());
+        definitions.insert("QuestionnaireResponse".to_string(), questionnaire_response_definitions());
 
         // Append FHIR-common parameters (e.g. _profile) to every resource-specific list
         let common = common_fhir_params();
@@ -670,6 +677,230 @@ fn organization_definitions() -> Vec<SearchParamDef> {
             param_type: SearchParamType::Token,
             path: vec!["type".to_string()],
             extraction: ExtractionMode::CodeableConcept,
+            aliases: vec![],
+        },
+    ]
+}
+
+fn practitioner_role_definitions() -> Vec<SearchParamDef> {
+    vec![
+        SearchParamDef {
+            name: "practitioner".to_string(),
+            param_type: SearchParamType::Reference,
+            path: vec!["practitioner".to_string()],
+            extraction: ExtractionMode::Reference,
+            aliases: vec![],
+        },
+        SearchParamDef {
+            name: "specialty".to_string(),
+            param_type: SearchParamType::Token,
+            path: vec!["specialty".to_string()],
+            extraction: ExtractionMode::CodeableConcept,
+            aliases: vec![],
+        },
+        SearchParamDef {
+            name: "role".to_string(),
+            param_type: SearchParamType::Token,
+            path: vec!["code".to_string()],
+            extraction: ExtractionMode::CodeableConcept,
+            aliases: vec![],
+        },
+    ]
+}
+
+fn goal_definitions() -> Vec<SearchParamDef> {
+    vec![
+        SearchParamDef {
+            name: "patient".to_string(),
+            param_type: SearchParamType::Reference,
+            path: vec!["subject".to_string()],
+            extraction: ExtractionMode::Reference,
+            aliases: vec!["subject".to_string()],
+        },
+        SearchParamDef {
+            name: "lifecycle-status".to_string(),
+            param_type: SearchParamType::Token,
+            path: vec!["lifecycleStatus".to_string()],
+            extraction: ExtractionMode::Simple,
+            aliases: vec![],
+        },
+        SearchParamDef {
+            name: "target-date".to_string(),
+            param_type: SearchParamType::Date,
+            path: vec!["target.dueDate".to_string()],
+            extraction: ExtractionMode::Simple,
+            aliases: vec![],
+        },
+        SearchParamDef {
+            name: "description".to_string(),
+            param_type: SearchParamType::Token,
+            path: vec!["description".to_string()],
+            extraction: ExtractionMode::CodeableConcept,
+            aliases: vec![],
+        },
+    ]
+}
+
+fn coverage_definitions() -> Vec<SearchParamDef> {
+    vec![
+        SearchParamDef {
+            name: "patient".to_string(),
+            param_type: SearchParamType::Reference,
+            path: vec!["beneficiary".to_string()],
+            extraction: ExtractionMode::Reference,
+            aliases: vec!["beneficiary".to_string()],
+        },
+        SearchParamDef {
+            name: "status".to_string(),
+            param_type: SearchParamType::Token,
+            path: vec!["status".to_string()],
+            extraction: ExtractionMode::Simple,
+            aliases: vec![],
+        },
+        SearchParamDef {
+            name: "identifier".to_string(),
+            param_type: SearchParamType::Token,
+            path: vec!["identifier".to_string()],
+            extraction: ExtractionMode::Identifier,
+            aliases: vec![],
+        },
+    ]
+}
+
+fn device_definitions() -> Vec<SearchParamDef> {
+    vec![
+        SearchParamDef {
+            name: "patient".to_string(),
+            param_type: SearchParamType::Reference,
+            path: vec!["patient".to_string()],
+            extraction: ExtractionMode::Reference,
+            aliases: vec![],
+        },
+        SearchParamDef {
+            name: "type".to_string(),
+            param_type: SearchParamType::Token,
+            path: vec!["type".to_string()],
+            extraction: ExtractionMode::CodeableConcept,
+            aliases: vec![],
+        },
+        SearchParamDef {
+            name: "status".to_string(),
+            param_type: SearchParamType::Token,
+            path: vec!["status".to_string()],
+            extraction: ExtractionMode::Simple,
+            aliases: vec![],
+        },
+    ]
+}
+
+fn medication_dispense_definitions() -> Vec<SearchParamDef> {
+    vec![
+        SearchParamDef {
+            name: "patient".to_string(),
+            param_type: SearchParamType::Reference,
+            path: vec!["subject".to_string()],
+            extraction: ExtractionMode::Reference,
+            aliases: vec!["subject".to_string()],
+        },
+        SearchParamDef {
+            name: "status".to_string(),
+            param_type: SearchParamType::Token,
+            path: vec!["status".to_string()],
+            extraction: ExtractionMode::Simple,
+            aliases: vec![],
+        },
+        SearchParamDef {
+            name: "type".to_string(),
+            param_type: SearchParamType::Token,
+            path: vec!["type".to_string()],
+            extraction: ExtractionMode::CodeableConcept,
+            aliases: vec![],
+        },
+    ]
+}
+
+fn document_reference_definitions() -> Vec<SearchParamDef> {
+    vec![
+        SearchParamDef {
+            name: "patient".to_string(),
+            param_type: SearchParamType::Reference,
+            path: vec!["subject".to_string()],
+            extraction: ExtractionMode::Reference,
+            aliases: vec!["subject".to_string()],
+        },
+        SearchParamDef {
+            name: "type".to_string(),
+            param_type: SearchParamType::Token,
+            path: vec!["type".to_string()],
+            extraction: ExtractionMode::CodeableConcept,
+            aliases: vec![],
+        },
+        SearchParamDef {
+            name: "category".to_string(),
+            param_type: SearchParamType::Token,
+            path: vec!["category".to_string()],
+            extraction: ExtractionMode::CodeableConcept,
+            aliases: vec![],
+        },
+        SearchParamDef {
+            name: "status".to_string(),
+            param_type: SearchParamType::Token,
+            path: vec!["status".to_string()],
+            extraction: ExtractionMode::Simple,
+            aliases: vec![],
+        },
+        SearchParamDef {
+            name: "date".to_string(),
+            param_type: SearchParamType::Date,
+            path: vec!["date".to_string()],
+            extraction: ExtractionMode::Simple,
+            aliases: vec![],
+        },
+        SearchParamDef {
+            name: "identifier".to_string(),
+            param_type: SearchParamType::Token,
+            path: vec!["identifier".to_string()],
+            extraction: ExtractionMode::Identifier,
+            aliases: vec![],
+        },
+        SearchParamDef {
+            name: "period".to_string(),
+            param_type: SearchParamType::Date,
+            path: vec!["context.period".to_string()],
+            extraction: ExtractionMode::PeriodStart,
+            aliases: vec![],
+        },
+    ]
+}
+
+fn questionnaire_response_definitions() -> Vec<SearchParamDef> {
+    vec![
+        SearchParamDef {
+            name: "patient".to_string(),
+            param_type: SearchParamType::Reference,
+            path: vec!["subject".to_string()],
+            extraction: ExtractionMode::Reference,
+            aliases: vec!["subject".to_string()],
+        },
+        SearchParamDef {
+            name: "questionnaire".to_string(),
+            param_type: SearchParamType::Reference,
+            path: vec!["questionnaire".to_string()],
+            extraction: ExtractionMode::Reference,
+            aliases: vec![],
+        },
+        SearchParamDef {
+            name: "status".to_string(),
+            param_type: SearchParamType::Token,
+            path: vec!["status".to_string()],
+            extraction: ExtractionMode::Simple,
+            aliases: vec![],
+        },
+        SearchParamDef {
+            name: "authored".to_string(),
+            param_type: SearchParamType::Date,
+            path: vec!["authored".to_string()],
+            extraction: ExtractionMode::Simple,
             aliases: vec![],
         },
     ]

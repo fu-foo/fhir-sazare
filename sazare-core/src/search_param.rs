@@ -58,6 +58,13 @@ pub enum SearchParamType {
 impl SearchQuery {
     /// Parse search query from URL query string
     pub fn parse(query_string: &str) -> Result<Self, String> {
+        Self::parse_for_resource(query_string, None)
+    }
+
+    /// Parse with resource_type context, allowing the registry to provide
+    /// resource-specific param-type inference (e.g. PractitionerRole.specialty
+    /// is Token, but the bare-name heuristic returns String).
+    pub fn parse_for_resource(query_string: &str, resource_type: Option<&str>) -> Result<Self, String> {
         let mut parameters = Vec::new();
         let mut chain_parameters = Vec::new();
         let mut include = Vec::new();
@@ -165,8 +172,8 @@ impl SearchQuery {
                 }
             }
 
-            // Infer parameter type from name
-            let param_type = infer_param_type(&param_name);
+            // Infer parameter type from name (registry-aware when resource_type is provided)
+            let param_type = infer_param_type_for_resource(resource_type, &param_name);
 
             // Parse date prefix (ge, le, gt, lt, eq)
             let (prefix, actual_value) = if param_type == SearchParamType::Date {
