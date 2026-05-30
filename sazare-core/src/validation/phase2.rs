@@ -179,7 +179,12 @@ impl Phase2Validator {
                 && max != "*"
                 && let Ok(max_val) = max.parse::<u64>()
             {
-                let count = Self::count_element(resource, relative_path);
+                // Max cardinality applies per parent instance: for a path like
+                // `item.linkId` where `item` repeats, each `item` may have at most
+                // `max` linkIds. Use the per-branch maximum, not the sum across
+                // all parents (which would falsely flag e.g. two items that each
+                // carry one linkId).
+                let count = Self::max_count_at_path(resource, relative_path);
                 if count > max_val {
                     issues.push(OperationOutcomeIssue {
                         severity: IssueSeverity::Error,
@@ -253,6 +258,50 @@ impl Phase2Validator {
                             arr.iter().map(|item| Self::count_at_path(item, remaining)).sum()
                         }
                         Value::Object(_) => Self::count_at_path(child, remaining),
+                        _ => 0,
+                    }
+                }
+            }
+        }
+    }
+
+    /// Like `count_at_path`, but for max-cardinality checks: when the path
+    /// crosses a repeating element, the constraint applies independently to each
+    /// instance, so return the largest leaf count found along any single branch
+    /// rather than the sum across all branches.
+    fn max_count_at_path(value: &Value, relative_path: &str) -> u64 {
+        Self::max_count_parts(value, &relative_path.split('.').collect::<Vec<_>>())
+    }
+
+    fn max_count_parts(value: &Value, parts: &[&str]) -> u64 {
+        if parts.is_empty() {
+            return match value {
+                Value::Array(arr) => arr.len() as u64,
+                Value::Null => 0,
+                _ => 1,
+            };
+        }
+
+        let field = parts[0];
+        let remaining = &parts[1..];
+
+        match value.get(field) {
+            None => 0,
+            Some(child) => {
+                if remaining.is_empty() {
+                    match child {
+                        Value::Array(arr) => arr.len() as u64,
+                        Value::Null => 0,
+                        _ => 1,
+                    }
+                } else {
+                    match child {
+                        Value::Array(arr) => arr
+                            .iter()
+                            .map(|item| Self::max_count_parts(item, remaining))
+                            .max()
+                            .unwrap_or(0),
+                        Value::Object(_) => Self::max_count_parts(child, remaining),
                         _ => 0,
                     }
                 }
@@ -407,6 +456,58 @@ mod tests {
             })
             .collect();
         assert_eq!(cardinality_errors.len(), 1);
+    }
+
+    #[test]
+    fn test_nested_max_cardinality_is_per_parent() {
+        // Two sibling items, each carrying exactly one linkId, must NOT be flagged
+        // as exceeding `item.linkId` max=1 — the constraint applies per item, not
+        // to the sum across items.
+        let resource = json!({
+            "resourceType": "QuestionnaireResponse",
+            "meta": {
+                "profile": ["http://example.com/StructureDefinition/QRProfile"]
+            },
+            "status": "completed",
+            "item": [
+                {"linkId": "1", "text": "Q1"},
+                {"linkId": "2", "text": "Q2"}
+            ]
+        });
+
+        let mut registry = ProfileRegistry::new();
+        registry.add_profile(json!({
+            "resourceType": "StructureDefinition",
+            "url": "http://example.com/StructureDefinition/QRProfile",
+            "snapshot": {
+                "element": [
+                    {"path": "QuestionnaireResponse", "min": 0, "max": "*"},
+                    {"path": "QuestionnaireResponse.status", "min": 1, "max": "1"},
+                    {"path": "QuestionnaireResponse.item", "min": 0, "max": "*"},
+                    {"path": "QuestionnaireResponse.item.linkId", "min": 1, "max": "1"},
+                    {"path": "QuestionnaireResponse.item.text", "min": 0, "max": "1"}
+                ]
+            }
+        }));
+
+        let result = Phase2Validator::validate(&resource, &registry);
+        if let Err(outcome) = result {
+            let cardinality_errors: Vec<_> = outcome
+                .issue
+                .iter()
+                .filter(|i| {
+                    i.diagnostics
+                        .as_ref()
+                        .map(|d| d.contains("max cardinality"))
+                        .unwrap_or(false)
+                })
+                .collect();
+            assert!(
+                cardinality_errors.is_empty(),
+                "per-parent max cardinality should not be summed across siblings: {:?}",
+                cardinality_errors
+            );
+        }
     }
 
     #[test]
