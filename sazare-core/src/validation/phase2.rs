@@ -228,6 +228,14 @@ impl Phase2Validator {
         Self::count_at_path(resource, &parts)
     }
 
+    /// True if `key` is a concrete choice element for the `name[x]` prefix
+    /// (e.g. prefix "value" matches "valueQuantity", "valueCodeableConcept").
+    fn is_choice_field(key: &str, prefix: &str) -> bool {
+        key.strip_prefix(prefix)
+            .and_then(|rest| rest.chars().next())
+            .is_some_and(|c| c.is_ascii_uppercase())
+    }
+
     fn count_at_path(value: &Value, parts: &[&str]) -> u64 {
         if parts.is_empty() {
             return match value {
@@ -239,6 +247,21 @@ impl Phase2Validator {
 
         let field = parts[0];
         let remaining = &parts[1..];
+
+        // Choice element (e.g. `value[x]`): match any present concrete type field.
+        if let Some(prefix) = field.strip_suffix("[x]")
+            && let Value::Object(map) = value
+        {
+            let matched: Vec<&Value> = map
+                .iter()
+                .filter(|(k, _)| Self::is_choice_field(k, prefix))
+                .map(|(_, v)| v)
+                .collect();
+            if remaining.is_empty() {
+                return matched.len() as u64;
+            }
+            return matched.iter().map(|c| Self::count_at_path(c, remaining)).sum();
+        }
 
         match value.get(field) {
             None => 0,
@@ -284,6 +307,24 @@ impl Phase2Validator {
 
         let field = parts[0];
         let remaining = &parts[1..];
+
+        if let Some(prefix) = field.strip_suffix("[x]")
+            && let Value::Object(map) = value
+        {
+            let matched: Vec<&Value> = map
+                .iter()
+                .filter(|(k, _)| Self::is_choice_field(k, prefix))
+                .map(|(_, v)| v)
+                .collect();
+            if remaining.is_empty() {
+                return matched.len() as u64;
+            }
+            return matched
+                .iter()
+                .map(|c| Self::max_count_parts(c, remaining))
+                .max()
+                .unwrap_or(0);
+        }
 
         match value.get(field) {
             None => 0,
@@ -507,6 +548,41 @@ mod tests {
                 "per-parent max cardinality should not be summed across siblings: {:?}",
                 cardinality_errors
             );
+        }
+    }
+
+    #[test]
+    fn test_choice_element_cardinality() {
+        // A required `value[x]` satisfied by a concrete type (valueQuantity)
+        // must count as present, not be reported missing.
+        let resource = json!({
+            "resourceType": "Observation",
+            "meta": {"profile": ["http://example.com/StructureDefinition/ValueProfile"]},
+            "status": "final",
+            "valueQuantity": {"value": 10, "unit": "mg"}
+        });
+
+        let mut registry = ProfileRegistry::new();
+        registry.add_profile(json!({
+            "resourceType": "StructureDefinition",
+            "url": "http://example.com/StructureDefinition/ValueProfile",
+            "snapshot": {
+                "element": [
+                    {"path": "Observation", "min": 0, "max": "*"},
+                    {"path": "Observation.status", "min": 1, "max": "1"},
+                    {"path": "Observation.value[x]", "min": 1, "max": "1"}
+                ]
+            }
+        }));
+
+        let result = Phase2Validator::validate(&resource, &registry);
+        if let Err(outcome) = result {
+            let errs: Vec<_> = outcome
+                .issue
+                .iter()
+                .filter(|i| i.severity == IssueSeverity::Error)
+                .collect();
+            assert!(errs.is_empty(), "value[x] satisfied by valueQuantity should not error: {:?}", errs);
         }
     }
 
