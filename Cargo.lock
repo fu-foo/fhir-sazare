@@ -1258,6 +1258,7 @@ dependencies = [
 name = "sazare-store"
 version = "0.5.3"
 dependencies = [
+ "chrono",
  "rusqlite",
  "sazare-core",
  "serde",

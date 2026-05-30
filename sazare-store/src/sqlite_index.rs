@@ -3,8 +3,56 @@
 //! Single file with tables per resource type for performance.
 
 use crate::error::Result;
+use chrono::{DateTime, NaiveDate, TimeZone, Utc};
 use rusqlite::{params, Connection};
 use std::path::Path;
+
+/// Parse a FHIR date/dateTime string into a half-open epoch-**microsecond**
+/// range `[start, end)` that reflects the value's precision: a year spans a
+/// year, a date a day, a whole-second dateTime one second, and a dateTime with
+/// fractional seconds one microsecond (effectively exact, so e.g. `_lastUpdated`
+/// instants that differ only in sub-second digits do not collide). Returns
+/// `None` if the value cannot be parsed.
+pub(crate) fn fhir_date_range(value: &str) -> Option<(i64, i64)> {
+    let v = value.trim();
+    if v.contains('T') {
+        // dateTime — require a timezone per FHIR; try RFC3339, then assume UTC.
+        let dt = DateTime::parse_from_rfc3339(v)
+            .map(|d| d.with_timezone(&Utc))
+            .or_else(|_| {
+                chrono::NaiveDateTime::parse_from_str(v, "%Y-%m-%dT%H:%M:%S")
+                    .map(|n| Utc.from_utc_datetime(&n))
+            })
+            .ok()?;
+        let start = dt.timestamp_micros();
+        // Fractional seconds → treat as an exact instant; otherwise a 1s window.
+        let span = if v.contains('.') { 1 } else { 1_000_000 };
+        return Some((start, start + span));
+    }
+    match v.len() {
+        4 => {
+            let year: i32 = v.parse().ok()?;
+            let start = Utc.with_ymd_and_hms(year, 1, 1, 0, 0, 0).single()?;
+            let end = Utc.with_ymd_and_hms(year + 1, 1, 1, 0, 0, 0).single()?;
+            Some((start.timestamp_micros(), end.timestamp_micros()))
+        }
+        7 => {
+            let year: i32 = v[0..4].parse().ok()?;
+            let month: u32 = v[5..7].parse().ok()?;
+            let start = Utc.with_ymd_and_hms(year, month, 1, 0, 0, 0).single()?;
+            let (ny, nm) = if month == 12 { (year + 1, 1) } else { (year, month + 1) };
+            let end = Utc.with_ymd_and_hms(ny, nm, 1, 0, 0, 0).single()?;
+            Some((start.timestamp_micros(), end.timestamp_micros()))
+        }
+        10 => {
+            let d = NaiveDate::parse_from_str(v, "%Y-%m-%d").ok()?;
+            let start = Utc.from_utc_datetime(&d.and_hms_opt(0, 0, 0)?);
+            let end = start + chrono::Duration::days(1);
+            Some((start.timestamp_micros(), end.timestamp_micros()))
+        }
+        _ => None,
+    }
+}
 
 /// SQLite-backed search index
 pub struct SearchIndex {
@@ -84,12 +132,40 @@ impl SearchIndex {
     ) -> Result<()> {
         let value_string_lower = value_string.map(|s| s.to_lowercase());
 
+        // For date params, derive a [start, end) epoch-second range so searches
+        // can apply FHIR range semantics. A Period is encoded by the extractor as
+        // "start/end"; a plain date/dateTime spans a single precision window.
+        let (date_start, date_end): (Option<i64>, Option<i64>) = if param_type == "date" {
+            match value_string {
+                Some(s) => {
+                    if let Some((lo, hi)) = s.split_once('/') {
+                        let start = fhir_date_range(lo).map(|(a, _)| a);
+                        let end = if hi.is_empty() {
+                            Some(i64::MAX)
+                        } else {
+                            fhir_date_range(hi).map(|(_, b)| b)
+                        };
+                        (start, end)
+                    } else {
+                        match fhir_date_range(s) {
+                            Some((a, b)) => (Some(a), Some(b)),
+                            None => (None, None),
+                        }
+                    }
+                }
+                None => (None, None),
+            }
+        } else {
+            (None, None)
+        };
+
         self.conn.execute(
             r#"
             INSERT OR REPLACE INTO search_index
             (resource_type, resource_id, param_name, param_type,
-             value_string, value_string_lower, value_system)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+             value_string, value_string_lower, value_system,
+             value_date_start, value_date_end)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
             "#,
             params![
                 resource_type,
@@ -99,6 +175,8 @@ impl SearchIndex {
                 value_string,
                 value_string_lower,
                 value_system,
+                date_start,
+                date_end,
             ],
         )?;
 
@@ -247,7 +325,12 @@ impl SearchIndex {
         Ok(ids)
     }
 
-    /// Date search (with prefix: eq, ge, le, gt, lt)
+    /// Date search (with prefix: eq, ne, ge, le, gt, lt).
+    ///
+    /// Indexed values are half-open epoch ranges `[start, end)` reflecting their
+    /// precision (and the full span of a Period). The query value is likewise
+    /// expanded to a range `[qs, qe)`, then compared per FHIR date semantics so
+    /// that, e.g., an instant `eq` search does not match a wider Period.
     pub fn search_date_with_prefix(
         &self,
         resource_type: &str,
@@ -255,34 +338,29 @@ impl SearchIndex {
         prefix: &str,
         value: &str,
     ) -> Result<Vec<String>> {
-        let (_op, query) = match prefix {
-            "eq" => ("=", r#"
-                SELECT DISTINCT resource_id FROM search_index
-                WHERE resource_type = ?1 AND param_name = ?2 AND value_string = ?3
-            "#),
-            "ge" => (">=", r#"
-                SELECT DISTINCT resource_id FROM search_index
-                WHERE resource_type = ?1 AND param_name = ?2 AND value_string >= ?3
-            "#),
-            "le" => ("<=", r#"
-                SELECT DISTINCT resource_id FROM search_index
-                WHERE resource_type = ?1 AND param_name = ?2 AND value_string <= ?3
-            "#),
-            "gt" => (">", r#"
-                SELECT DISTINCT resource_id FROM search_index
-                WHERE resource_type = ?1 AND param_name = ?2 AND value_string > ?3
-            "#),
-            "lt" => ("<", r#"
-                SELECT DISTINCT resource_id FROM search_index
-                WHERE resource_type = ?1 AND param_name = ?2 AND value_string < ?3
-            "#),
-            _ => ("=", r#"
-                SELECT DISTINCT resource_id FROM search_index
-                WHERE resource_type = ?1 AND param_name = ?2 AND value_string = ?3
-            "#),
+        let Some((qs, qe)) = fhir_date_range(value) else {
+            return Ok(Vec::new());
         };
-        let mut stmt = self.conn.prepare(query)?;
-        let rows = stmt.query_map(params![resource_type, param_name, value], |row| {
+
+        // Each arm compares the resource range [start, end) to the query [qs, qe).
+        // qs is bound to ?3 and qe to ?4; the trailing `?n = ?n` tautologies keep
+        // both placeholders referenced so the bound parameter count always matches.
+        let cond = match prefix {
+            "eq" => "value_date_start >= ?3 AND value_date_end <= ?4",
+            "ne" => "(value_date_start < ?3 OR value_date_end > ?4)",
+            "gt" => "value_date_end > ?4 AND ?3 = ?3",
+            "ge" => "value_date_end > ?3 AND ?4 = ?4",
+            "lt" => "value_date_start < ?3 AND ?4 = ?4",
+            "le" => "value_date_start < ?4 AND ?3 = ?3",
+            _ => "value_date_start >= ?3 AND value_date_end <= ?4",
+        };
+        let query = format!(
+            "SELECT DISTINCT resource_id FROM search_index
+             WHERE resource_type = ?1 AND param_name = ?2
+               AND value_date_start IS NOT NULL AND ({cond})"
+        );
+        let mut stmt = self.conn.prepare(&query)?;
+        let rows = stmt.query_map(params![resource_type, param_name, qs, qe], |row| {
             row.get(0)
         })?;
 
@@ -377,5 +455,61 @@ mod tests {
             .unwrap();
 
         assert_eq!(results, vec!["p2"]);
+    }
+
+    #[test]
+    fn test_date_range_period_vs_instant() {
+        let index = SearchIndex::open(":memory:").unwrap();
+        // A point dateTime Observation and a Period-valued Observation sharing a start.
+        index
+            .add_index("Observation", "point", "date", "date", Some("2025-12-01T09:15:00-05:00"), None)
+            .unwrap();
+        index
+            .add_index(
+                "Observation",
+                "period",
+                "date",
+                "date",
+                Some("2025-12-01T09:15:00-05:00/2025-12-01T09:30:00-05:00"),
+                None,
+            )
+            .unwrap();
+
+        // eq on the instant matches the point but NOT the wider Period.
+        let eq = index
+            .search_date_with_prefix("Observation", "date", "eq", "2025-12-01T09:15:00-05:00")
+            .unwrap();
+        assert_eq!(eq, vec!["point"]);
+
+        // Comparators that the avg-bp Inferno test uses must return the Period.
+        for (prefix, val) in [
+            ("gt", "2025-11-30T09:15:00-05:00"),
+            ("ge", "2025-11-30T09:15:00-05:00"),
+            ("lt", "2025-12-02T09:15:00-05:00"),
+            ("le", "2025-12-02T09:15:00-05:00"),
+        ] {
+            let ids = index
+                .search_date_with_prefix("Observation", "date", prefix, val)
+                .unwrap();
+            assert!(ids.contains(&"period".to_string()), "{prefix} should match the Period");
+        }
+    }
+
+    #[test]
+    fn test_date_subsecond_eq_does_not_collide() {
+        // Two instants in the same second but different microseconds (e.g. two
+        // resources' _lastUpdated) must not match each other under eq.
+        let index = SearchIndex::open(":memory:").unwrap();
+        index
+            .add_index("Observation", "a", "_lastUpdated", "date", Some("2026-05-30T09:49:12.133115+00:00"), None)
+            .unwrap();
+        index
+            .add_index("Observation", "b", "_lastUpdated", "date", Some("2026-05-30T09:49:12.133164+00:00"), None)
+            .unwrap();
+
+        let eq = index
+            .search_date_with_prefix("Observation", "_lastUpdated", "eq", "2026-05-30T09:49:12.133164+00:00")
+            .unwrap();
+        assert_eq!(eq, vec!["b"]);
     }
 }

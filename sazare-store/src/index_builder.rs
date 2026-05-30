@@ -88,7 +88,38 @@ impl IndexBuilder {
             ExtractionMode::NestedReference => {
                 Self::extract_nested_reference(resource, &def.path, &def.name, param_type_str, &def.aliases, indices);
             }
+            ExtractionMode::PeriodRange => {
+                Self::extract_period_range(resource, &def.path, &def.name, param_type_str, indices);
+            }
         }
+    }
+
+    /// PeriodRange: navigate to a Period object and emit a `"start/end"` value so
+    /// the store can index the full date range. Omits the trailing endpoint when
+    /// the Period is open-ended (`"start/"`).
+    fn extract_period_range(
+        resource: &Value,
+        path: &[String],
+        name: &str,
+        param_type: &str,
+        indices: &mut Vec<(String, String, String, Option<String>)>,
+    ) {
+        let mut current = resource;
+        for segment in path {
+            match current.get(segment.as_str()) {
+                Some(v) => current = v,
+                None => return,
+            }
+        }
+        let start = current.get("start").and_then(|v| v.as_str());
+        let end = current.get("end").and_then(|v| v.as_str());
+        let value = match (start, end) {
+            (Some(s), Some(e)) => format!("{}/{}", s, e),
+            (Some(s), None) => format!("{}/", s),
+            (None, Some(e)) => format!("/{}", e),
+            (None, None) => return,
+        };
+        indices.push((name.to_string(), param_type.to_string(), value, None));
     }
 
     /// NestedScalar: `path[0]` is an array (e.g. `target`), `path[1]` a scalar

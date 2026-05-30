@@ -43,6 +43,10 @@ pub enum ExtractionMode {
     /// BackboneElements each carrying a Reference. `path[0]` is the array field,
     /// `path[1]` the Reference field on each element. Indexes full ref + bare id.
     NestedReference,
+    /// Period datatype (e.g. `Observation.effectivePeriod`). `path[0]` is the
+    /// Period field; emits a `"start/end"` value so the index stores the full
+    /// date range (end omitted if the Period is open-ended).
+    PeriodRange,
 }
 
 /// Definition of a single search parameter
@@ -278,11 +282,16 @@ fn observation_definitions() -> Vec<SearchParamDef> {
             extraction: ExtractionMode::Simple,
             aliases: vec![],
         },
-        // NOTE: Observation.effective[x] may be an effectivePeriod (e.g. average
-        // blood pressure). It is intentionally NOT indexed under `date` as a bare
-        // start instant: the index stores a single point, so eq/comparator date
-        // searches would wrongly match Period-valued Observations. Proper support
-        // requires range-aware (start+end) date indexing.
+        // Observation.effective[x] may be an effectivePeriod (e.g. average blood
+        // pressure). Index it as a full date range so range-aware date searches
+        // match correctly (an instant `eq` won't match the wider Period).
+        SearchParamDef {
+            name: "date".to_string(),
+            param_type: SearchParamType::Date,
+            path: vec!["effectivePeriod".to_string()],
+            extraction: ExtractionMode::PeriodRange,
+            aliases: vec![],
+        },
         // `combo-code` searches Observation.code OR Observation.component.code.
         // Component-level access requires array-of-CodeableConcept walking and is
         // tracked separately; for now we index the top-level code under combo-code
