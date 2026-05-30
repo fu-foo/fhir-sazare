@@ -322,6 +322,17 @@
         },
         "status": "active",
         "name": "Acme Outpatient Clinic - Room 12",
+        "type": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/v3-RoleCode",
+                "code": "OF",
+                "display": "Outpatient facility"
+              }
+            ]
+          }
+        ],
         "telecom": [
           {
             "system": "phone",
@@ -507,6 +518,9 @@
         },
         "subject": {
           "reference": "Patient/patient-example"
+        },
+        "encounter": {
+          "reference": "Encounter/enc-example"
         },
         "onsetDateTime": "2020-05-15",
         "recordedDate": "2020-05-15"
@@ -744,6 +758,87 @@
       }
     },
     {
+      "fullUrl": "Observation/obs-bp-dar-example",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-bp-dar-example",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "vital-signs",
+                "display": "Vital Signs"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "85354-9",
+              "display": "Blood pressure panel with all children optional"
+            }
+          ]
+        },
+        "subject": {
+          "reference": "Patient/patient-example"
+        },
+        "encounter": {
+          "reference": "Encounter/enc-example"
+        },
+        "effectiveDateTime": "2025-11-15T09:15:00-05:00",
+        "component": [
+          {
+            "code": {
+              "coding": [
+                {
+                  "system": "http://loinc.org",
+                  "code": "8480-6",
+                  "display": "Systolic blood pressure"
+                }
+              ]
+            },
+            "dataAbsentReason": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/data-absent-reason",
+                  "code": "unknown",
+                  "display": "Unknown"
+                }
+              ]
+            }
+          },
+          {
+            "code": {
+              "coding": [
+                {
+                  "system": "http://loinc.org",
+                  "code": "8462-4",
+                  "display": "Diastolic blood pressure"
+                }
+              ]
+            },
+            "dataAbsentReason": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/data-absent-reason",
+                  "code": "unknown",
+                  "display": "Unknown"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Observation/obs-bp-dar-example"
+      }
+    },
+    {
       "fullUrl": "Observation/obs-weight-example",
       "resource": {
         "resourceType": "Observation",
@@ -973,6 +1068,41 @@
       "resource": {
         "resourceType": "MedicationRequest",
         "id": "medreq-example",
+        "extension": [
+          {
+            "url": "http://hl7.org/fhir/us/core/StructureDefinition/us-core-medication-adherence",
+            "extension": [
+              {
+                "url": "medicationAdherence",
+                "valueCodeableConcept": {
+                  "coding": [
+                    {
+                      "system": "http://hl7.org/fhir/us/core/CodeSystem/us-core-medication-adherence",
+                      "code": "taking-as-directed",
+                      "display": "Taking medication as directed"
+                    }
+                  ]
+                }
+              },
+              {
+                "url": "dateAsserted",
+                "valueDateTime": "2025-12-01"
+              },
+              {
+                "url": "informationSource",
+                "valueCodeableConcept": {
+                  "coding": [
+                    {
+                      "system": "http://snomed.info/sct",
+                      "code": "116154003",
+                      "display": "Patient"
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ],
         "status": "active",
         "intent": "order",
         "category": [
@@ -1041,7 +1171,22 @@
               }
             ]
           }
-        ]
+        ],
+        "dispenseRequest": {
+          "numberOfRepeatsAllowed": 2,
+          "quantity": {
+            "value": 60,
+            "unit": "tablet",
+            "system": "http://terminology.hl7.org/CodeSystem/v3-orderableDrugForm",
+            "code": "TAB"
+          },
+          "expectedSupplyDuration": {
+            "value": 30,
+            "unit": "days",
+            "system": "http://unitsofmeasure.org",
+            "code": "d"
+          }
+        }
       },
       "request": {
         "method": "PUT",
@@ -1281,11 +1426,48 @@
             "data": "Q2hlc3QgWC1yYXkgcmVwb3J0Cg==",
             "title": "Chest X-ray Report"
           }
+        ],
+        "media": [
+          {
+            "comment": "Chest X-ray image",
+            "link": {
+              "reference": "Media/media-example"
+            }
+          }
         ]
       },
       "request": {
         "method": "PUT",
         "url": "DiagnosticReport/dr-note-example"
+      }
+    },
+    {
+      "fullUrl": "Media/media-example",
+      "resource": {
+        "resourceType": "Media",
+        "id": "media-example",
+        "status": "completed",
+        "type": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/media-type",
+              "code": "image",
+              "display": "Image"
+            }
+          ]
+        },
+        "subject": {
+          "reference": "Patient/patient-example"
+        },
+        "createdDateTime": "2025-12-01T09:30:00-05:00",
+        "content": {
+          "contentType": "image/png",
+          "title": "Chest X-ray image"
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Media/media-example"
       }
     },
     {
@@ -2108,6 +2290,42 @@
           "reference": "Patient/patient-example"
         },
         "effectiveDateTime": "2025-12-01T09:30:00-05:00",
+        "valueString": "Prefers telehealth visits and written summaries after each appointment"
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Observation/obs-care-pref-example"
+      }
+    },
+    {
+      "fullUrl": "Observation/obs-care-pref-cc-example",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-care-pref-cc-example",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://hl7.org/fhir/us/core/CodeSystem/us-core-category",
+                "code": "care-experience-preference"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "95541-9"
+            }
+          ],
+          "text": "Care experience preference"
+        },
+        "subject": {
+          "reference": "Patient/patient-example"
+        },
+        "effectiveDateTime": "2025-12-01T09:30:00-05:00",
         "valueCodeableConcept": {
           "coding": [
             {
@@ -2121,7 +2339,7 @@
       },
       "request": {
         "method": "PUT",
-        "url": "Observation/obs-care-pref-example"
+        "url": "Observation/obs-care-pref-cc-example"
       }
     },
     {
@@ -2129,6 +2347,42 @@
       "resource": {
         "resourceType": "Observation",
         "id": "obs-treat-pref-example",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://hl7.org/fhir/us/core/CodeSystem/us-core-category",
+                "code": "treatment-intervention-preference"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "75773-2"
+            }
+          ],
+          "text": "Treatment intervention preference"
+        },
+        "subject": {
+          "reference": "Patient/patient-example"
+        },
+        "effectiveDateTime": "2025-12-01T09:30:00-05:00",
+        "valueString": "Prefers oral medication over injections when clinically appropriate"
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Observation/obs-treat-pref-example"
+      }
+    },
+    {
+      "fullUrl": "Observation/obs-treat-pref-cc-example",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-treat-pref-cc-example",
         "status": "final",
         "category": [
           {
@@ -2166,7 +2420,7 @@
       },
       "request": {
         "method": "PUT",
-        "url": "Observation/obs-treat-pref-example"
+        "url": "Observation/obs-treat-pref-cc-example"
       }
     },
     {
@@ -2217,11 +2471,48 @@
             "value": "+1-555-0103",
             "use": "work"
           }
+        ],
+        "endpoint": [
+          {
+            "reference": "Endpoint/endpoint-example"
+          }
         ]
       },
       "request": {
         "method": "PUT",
         "url": "PractitionerRole/practrole-example"
+      }
+    },
+    {
+      "fullUrl": "Endpoint/endpoint-example",
+      "resource": {
+        "resourceType": "Endpoint",
+        "id": "endpoint-example",
+        "status": "active",
+        "connectionType": {
+          "system": "http://terminology.hl7.org/CodeSystem/endpoint-connection-type",
+          "code": "hl7-fhir-rest"
+        },
+        "name": "Acme Healthcare FHIR Endpoint",
+        "managingOrganization": {
+          "reference": "Organization/org-example"
+        },
+        "payloadType": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/endpoint-payload-type",
+                "code": "any",
+                "display": "Any"
+              }
+            ]
+          }
+        ],
+        "address": "https://example-clinic.org/fhir"
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Endpoint/endpoint-example"
       }
     },
     {
@@ -2244,6 +2535,12 @@
           ]
         },
         "description": {
+          "coding": [
+            {
+              "system": "http://snomed.info/sct",
+              "code": "281004"
+            }
+          ],
           "text": "Maintain HbA1c below 7%"
         },
         "subject": {
@@ -2433,6 +2730,11 @@
           {
             "actor": {
               "reference": "Practitioner/pract-example"
+            }
+          },
+          {
+            "actor": {
+              "reference": "Organization/org-example"
             }
           }
         ],
@@ -2719,7 +3021,19 @@
             "http://hl7.org/fhir/us/core/StructureDefinition/us-core-questionnaireresponse"
           ]
         },
+        "identifier": {
+          "system": "urn:oid:1.2.36.146.595.217.0.5",
+          "value": "QR-001"
+        },
         "questionnaire": "http://hl7.org/fhir/Questionnaire/phq9",
+        "_questionnaire": {
+          "extension": [
+            {
+              "url": "http://hl7.org/fhir/StructureDefinition/display",
+              "valueString": "PHQ-9 Patient Health Questionnaire"
+            }
+          ]
+        },
         "status": "completed",
         "subject": {
           "reference": "Patient/patient-example"
@@ -2739,6 +3053,44 @@
                   "code": "LA6568-5",
                   "display": "Not at all"
                 }
+              },
+              {
+                "valueString": "Patient reports no loss of interest"
+              }
+            ]
+          },
+          {
+            "linkId": "2",
+            "text": "Total score with sub-answers",
+            "answer": [
+              {
+                "valueDecimal": 4.0,
+                "item": [
+                  {
+                    "linkId": "2.1",
+                    "text": "Severity",
+                    "answer": [
+                      {
+                        "valueString": "Minimal depression"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "linkId": "3",
+            "text": "Clinician section",
+            "item": [
+              {
+                "linkId": "3.1",
+                "text": "Clinician note",
+                "answer": [
+                  {
+                    "valueString": "Reassess in 4 weeks"
+                  }
+                ]
               }
             ]
           }
@@ -2794,6 +3146,97 @@
       "request": {
         "method": "PUT",
         "url": "Observation/obs-lab-cc-example"
+      }
+    },
+    {
+      "fullUrl": "Observation/obs-lab-str-example",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-lab-str-example",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "laboratory",
+                "display": "Laboratory"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "634-6"
+            }
+          ]
+        },
+        "subject": {
+          "reference": "Patient/patient-example"
+        },
+        "encounter": {
+          "reference": "Encounter/enc-example"
+        },
+        "effectiveDateTime": "2025-12-01T10:00:00-05:00",
+        "valueString": "No growth after 48 hours"
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Observation/obs-lab-str-example"
+      }
+    },
+    {
+      "fullUrl": "Observation/obs-simple-example",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-simple-example",
+        "meta": {
+          "profile": [
+            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-simple-observation"
+          ]
+        },
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "exam",
+                "display": "Exam"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "11475-1"
+            }
+          ],
+          "text": "Microbiology study observation"
+        },
+        "subject": {
+          "reference": "Patient/patient-example"
+        },
+        "effectiveDateTime": "2025-12-01T10:00:00-05:00",
+        "performer": [
+          {
+            "reference": "Practitioner/pract-example"
+          }
+        ],
+        "valueBoolean": true,
+        "derivedFrom": [
+          {
+            "reference": "Observation/obs-lab-example"
+          }
+        ]
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Observation/obs-simple-example"
       }
     },
     {
@@ -2976,6 +3419,19 @@
               "reference": "Practitioner/pract-example"
             },
             "onBehalfOf": {
+              "reference": "Organization/org-example"
+            }
+          },
+          {
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/provenance-participant-type",
+                  "code": "author"
+                }
+              ]
+            },
+            "who": {
               "reference": "Organization/org-example"
             }
           }
