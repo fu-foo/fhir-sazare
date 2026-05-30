@@ -76,6 +76,112 @@ impl IndexBuilder {
             ExtractionMode::Coding => {
                 Self::extract_coding(resource, &def.path, &def.name, param_type_str, &def.aliases, indices);
             }
+            ExtractionMode::Address => {
+                Self::extract_address(resource, &def.path, &def.name, param_type_str, indices);
+            }
+            ExtractionMode::NestedCodeableConcept => {
+                Self::extract_nested_codeable_concept(resource, &def.path, &def.name, param_type_str, &def.aliases, indices);
+            }
+        }
+    }
+
+    /// Address: navigate to `path[0]` (an Address object or array of Addresses).
+    /// If only the field segment is given, index every component as a string;
+    /// if a component segment is also given (e.g. `["address", "city"]`), index
+    /// just that component. `line` is an array of strings; all other components
+    /// are scalars.
+    fn extract_address(
+        resource: &Value,
+        path: &[String],
+        name: &str,
+        param_type: &str,
+        indices: &mut Vec<(String, String, String, Option<String>)>,
+    ) {
+        let Some(field) = path.first() else { return };
+        let Some(value) = resource.get(field.as_str()) else { return };
+        // Normalize to a list of Address objects (Location.address is a single
+        // object; Organization.address / Patient.address are arrays).
+        let addresses: Vec<&Value> = if let Some(arr) = value.as_array() {
+            arr.iter().collect()
+        } else {
+            vec![value]
+        };
+
+        let push = |s: &str, indices: &mut Vec<(String, String, String, Option<String>)>| {
+            indices.push((name.to_string(), param_type.to_string(), s.to_lowercase(), None));
+        };
+
+        // Specific component requested (e.g. address-city).
+        if let Some(component) = path.get(1) {
+            for addr in &addresses {
+                match addr.get(component.as_str()) {
+                    Some(Value::String(s)) => push(s, indices),
+                    Some(Value::Array(arr)) => {
+                        for v in arr {
+                            if let Some(s) = v.as_str() {
+                                push(s, indices);
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            return;
+        }
+
+        // Whole address: index every component.
+        for addr in &addresses {
+            if let Some(lines) = addr.get("line").and_then(|v| v.as_array()) {
+                for line in lines {
+                    if let Some(s) = line.as_str() {
+                        push(s, indices);
+                    }
+                }
+            }
+            for component in ["city", "district", "state", "postalCode", "country", "text"] {
+                if let Some(s) = addr.get(component).and_then(|v| v.as_str()) {
+                    push(s, indices);
+                }
+            }
+        }
+    }
+
+    /// NestedCodeableConcept: `path[0]` is an array (e.g. `participant`), `path[1]`
+    /// is a CodeableConcept (or array of them) on each element (e.g. `role`).
+    fn extract_nested_codeable_concept(
+        resource: &Value,
+        path: &[String],
+        name: &str,
+        param_type: &str,
+        aliases: &[String],
+        indices: &mut Vec<(String, String, String, Option<String>)>,
+    ) {
+        if path.len() < 2 {
+            return;
+        }
+        let Some(elements) = resource.get(path[0].as_str()).and_then(|v| v.as_array()) else {
+            return;
+        };
+        for element in elements {
+            let Some(target) = element.get(path[1].as_str()) else { continue };
+            let concepts: Vec<&Value> = if let Some(arr) = target.as_array() {
+                arr.iter().collect()
+            } else {
+                vec![target]
+            };
+            for concept in concepts {
+                if let Some(codings) = concept.get("coding").and_then(|v| v.as_array()) {
+                    for coding in codings {
+                        if let Some(code) = coding.get("code").and_then(|v| v.as_str()) {
+                            let system = coding.get("system").and_then(|v| v.as_str()).map(|s| s.to_string());
+                            indices.push((name.to_string(), param_type.to_string(), code.to_string(), system.clone()));
+                            for alias in aliases {
+                                indices.push((alias.to_string(), param_type.to_string(), code.to_string(), system.clone()));
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -827,5 +933,83 @@ mod tests {
         assert!(indices.iter().any(|(name, _, val, _)| name == "patient" && val == "Patient/123"));
         assert!(indices.iter().any(|(name, _, val, _)| name == "type" && val == "BLD"));
         assert!(indices.iter().any(|(name, _, val, _)| name == "identifier" && val == "SP-001"));
+    }
+
+    #[test]
+    fn test_extract_location_address() {
+        // Location.address is a single Address object (not an array).
+        let location = json!({
+            "resourceType": "Location",
+            "name": "Health Clinic",
+            "address": {
+                "line": ["100 Health Way"],
+                "city": "Boston",
+                "state": "MA",
+                "postalCode": "02115",
+                "country": "US"
+            }
+        });
+
+        let indices = IndexBuilder::extract_indices("Location", &location);
+        // Whole-address param matches any component (values are lowercased).
+        assert!(indices.iter().any(|(n, t, v, _)| n == "address" && t == "string" && v == "boston"));
+        assert!(indices.iter().any(|(n, _, v, _)| n == "address" && v == "ma"));
+        assert!(indices.iter().any(|(n, _, v, _)| n == "address" && v == "100 health way"));
+        // Granular params index only their component.
+        assert!(indices.iter().any(|(n, _, v, _)| n == "address-city" && v == "boston"));
+        assert!(indices.iter().any(|(n, _, v, _)| n == "address-state" && v == "ma"));
+        assert!(indices.iter().any(|(n, _, v, _)| n == "address-postalcode" && v == "02115"));
+        assert!(indices.iter().any(|(n, _, v, _)| n == "address-country" && v == "us"));
+        assert!(!indices.iter().any(|(n, _, v, _)| n == "address-city" && v == "ma"));
+    }
+
+    #[test]
+    fn test_extract_organization_address_array() {
+        // Organization.address is an array of Address objects.
+        let org = json!({
+            "resourceType": "Organization",
+            "name": "Acme Health",
+            "address": [{"city": "Tulsa", "state": "OK"}]
+        });
+
+        let indices = IndexBuilder::extract_indices("Organization", &org);
+        assert!(indices.iter().any(|(n, _, v, _)| n == "address" && v == "tulsa"));
+        assert!(indices.iter().any(|(n, _, v, _)| n == "name" && v == "acme health"));
+    }
+
+    #[test]
+    fn test_extract_care_team_role() {
+        // CareTeam.participant.role — role reached through the participant array.
+        let care_team = json!({
+            "resourceType": "CareTeam",
+            "status": "active",
+            "subject": {"reference": "Patient/123"},
+            "participant": [
+                {"role": [{"coding": [{"system": "http://nucc.org/provider-taxonomy", "code": "207Q00000X"}]}]},
+                {"role": [{"coding": [{"system": "http://terminology.hl7.org/CodeSystem/v3-RoleCode", "code": "MTH"}]}]}
+            ]
+        });
+
+        let indices = IndexBuilder::extract_indices("CareTeam", &care_team);
+        assert!(indices.iter().any(|(n, t, v, sys)|
+            n == "role" && t == "token" && v == "207Q00000X"
+                && *sys == Some("http://nucc.org/provider-taxonomy".to_string())
+        ));
+        assert!(indices.iter().any(|(n, _, v, _)| n == "role" && v == "MTH"));
+        assert!(indices.iter().any(|(n, _, v, _)| n == "patient" && v == "Patient/123"));
+    }
+
+    #[test]
+    fn test_extract_related_person_name() {
+        let rp = json!({
+            "resourceType": "RelatedPerson",
+            "patient": {"reference": "Patient/123"},
+            "name": [{"family": "Smith", "given": ["Jane"]}]
+        });
+
+        let indices = IndexBuilder::extract_indices("RelatedPerson", &rp);
+        assert!(indices.iter().any(|(n, t, v, _)| n == "name" && t == "string" && v == "smith"));
+        assert!(indices.iter().any(|(n, _, v, _)| n == "name" && v == "jane"));
+        assert!(indices.iter().any(|(n, _, v, _)| n == "patient" && v == "Patient/123"));
     }
 }

@@ -26,6 +26,14 @@ pub enum ExtractionMode {
     /// Single Coding object (e.g. `Encounter.class` is one Coding, not a CodeableConcept).
     /// Yields `code` + `system`.
     Coding,
+    /// Address datatype (single object or array). When `path` points at the address
+    /// field (e.g. `["address"]`) every component (line, city, district, state,
+    /// postalCode, country, text) is indexed as a string. When `path` includes a
+    /// component (e.g. `["address", "city"]`) only that component is indexed.
+    Address,
+    /// CodeableConcept reached through one intermediate array element, e.g.
+    /// `CareTeam.participant.role` where `participant` is an array. Yields code + system.
+    NestedCodeableConcept,
 }
 
 /// Definition of a single search parameter
@@ -679,6 +687,13 @@ fn organization_definitions() -> Vec<SearchParamDef> {
             extraction: ExtractionMode::CodeableConcept,
             aliases: vec![],
         },
+        SearchParamDef {
+            name: "address".to_string(),
+            param_type: SearchParamType::String,
+            path: vec!["address".to_string()],
+            extraction: ExtractionMode::Address,
+            aliases: vec![],
+        },
     ]
 }
 
@@ -919,7 +934,35 @@ fn location_definitions() -> Vec<SearchParamDef> {
             name: "address".to_string(),
             param_type: SearchParamType::String,
             path: vec!["address".to_string()],
-            extraction: ExtractionMode::Simple,
+            extraction: ExtractionMode::Address,
+            aliases: vec![],
+        },
+        SearchParamDef {
+            name: "address-city".to_string(),
+            param_type: SearchParamType::String,
+            path: vec!["address".to_string(), "city".to_string()],
+            extraction: ExtractionMode::Address,
+            aliases: vec![],
+        },
+        SearchParamDef {
+            name: "address-state".to_string(),
+            param_type: SearchParamType::String,
+            path: vec!["address".to_string(), "state".to_string()],
+            extraction: ExtractionMode::Address,
+            aliases: vec![],
+        },
+        SearchParamDef {
+            name: "address-postalcode".to_string(),
+            param_type: SearchParamType::String,
+            path: vec!["address".to_string(), "postalCode".to_string()],
+            extraction: ExtractionMode::Address,
+            aliases: vec![],
+        },
+        SearchParamDef {
+            name: "address-country".to_string(),
+            param_type: SearchParamType::String,
+            path: vec!["address".to_string(), "country".to_string()],
+            extraction: ExtractionMode::Address,
             aliases: vec![],
         },
     ]
@@ -939,6 +982,29 @@ fn related_person_definitions() -> Vec<SearchParamDef> {
             param_type: SearchParamType::Token,
             path: vec!["identifier".to_string()],
             extraction: ExtractionMode::Identifier,
+            aliases: vec![],
+        },
+        // RelatedPerson.name is a HumanName array, indexed like Patient.name so that
+        // `name=` matches family, given, or the formatted text.
+        SearchParamDef {
+            name: "name".to_string(),
+            param_type: SearchParamType::String,
+            path: vec!["name".to_string(), "family".to_string()],
+            extraction: ExtractionMode::ArrayField,
+            aliases: vec![],
+        },
+        SearchParamDef {
+            name: "name".to_string(),
+            param_type: SearchParamType::String,
+            path: vec!["name".to_string(), "given".to_string()],
+            extraction: ExtractionMode::NestedArrayScalar,
+            aliases: vec![],
+        },
+        SearchParamDef {
+            name: "name".to_string(),
+            param_type: SearchParamType::String,
+            path: vec!["name".to_string(), "text".to_string()],
+            extraction: ExtractionMode::ArrayField,
             aliases: vec![],
         },
     ]
@@ -1137,6 +1203,15 @@ fn care_team_definitions() -> Vec<SearchParamDef> {
             param_type: SearchParamType::Token,
             path: vec!["status".to_string()],
             extraction: ExtractionMode::Simple,
+            aliases: vec![],
+        },
+        // CareTeam.participant.role — `participant` is an array, so the role
+        // CodeableConcept is reached through one intermediate array element.
+        SearchParamDef {
+            name: "role".to_string(),
+            param_type: SearchParamType::Token,
+            path: vec!["participant".to_string(), "role".to_string()],
+            extraction: ExtractionMode::NestedCodeableConcept,
             aliases: vec![],
         },
     ]
