@@ -477,6 +477,12 @@
             "http://hl7.org/fhir/us/core/StructureDefinition/us-core-condition-problems-health-concerns"
           ]
         },
+        "extension": [
+          {
+            "url": "http://hl7.org/fhir/StructureDefinition/condition-assertedDate",
+            "valueDateTime": "2020-05-15"
+          }
+        ],
         "clinicalStatus": {
           "coding": [
             {
@@ -619,6 +625,12 @@
             "http://hl7.org/fhir/us/core/StructureDefinition/us-core-condition-encounter-diagnosis"
           ]
         },
+        "extension": [
+          {
+            "url": "http://hl7.org/fhir/StructureDefinition/condition-assertedDate",
+            "valueDateTime": "2025-12-01T09:15:00-05:00"
+          }
+        ],
         "clinicalStatus": {
           "coding": [
             {

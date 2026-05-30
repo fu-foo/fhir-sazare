@@ -47,6 +47,11 @@ pub enum ExtractionMode {
     /// Period field; emits a `"start/end"` value so the index stores the full
     /// date range (end omitted if the Period is open-ended).
     PeriodRange,
+    /// A dateTime carried by an extension identified by URL, e.g.
+    /// `Condition.extension('.../condition-assertedDate').valueDateTime`.
+    /// `path[0]` is the extension container ("extension"), `path[1]` the
+    /// extension URL; yields the extension's `valueDateTime`.
+    ExtensionDate,
 }
 
 /// Definition of a single search parameter
@@ -425,6 +430,16 @@ fn condition_definitions() -> Vec<SearchParamDef> {
             param_type: SearchParamType::Reference,
             path: vec!["encounter".to_string()],
             extraction: ExtractionMode::Reference,
+            aliases: vec![],
+        },
+        SearchParamDef {
+            name: "asserted-date".to_string(),
+            param_type: SearchParamType::Date,
+            path: vec![
+                "extension".to_string(),
+                "http://hl7.org/fhir/StructureDefinition/condition-assertedDate".to_string(),
+            ],
+            extraction: ExtractionMode::ExtensionDate,
             aliases: vec![],
         },
     ]

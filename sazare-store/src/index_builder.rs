@@ -91,6 +91,33 @@ impl IndexBuilder {
             ExtractionMode::PeriodRange => {
                 Self::extract_period_range(resource, &def.path, &def.name, param_type_str, indices);
             }
+            ExtractionMode::ExtensionDate => {
+                Self::extract_extension_date(resource, &def.path, &def.name, param_type_str, indices);
+            }
+        }
+    }
+
+    /// ExtensionDate: find the extension whose `url` equals `path[1]` under the
+    /// container `path[0]` (typically "extension") and index its `valueDateTime`.
+    fn extract_extension_date(
+        resource: &Value,
+        path: &[String],
+        name: &str,
+        param_type: &str,
+        indices: &mut Vec<(String, String, String, Option<String>)>,
+    ) {
+        if path.len() < 2 {
+            return;
+        }
+        let Some(extensions) = resource.get(path[0].as_str()).and_then(|v| v.as_array()) else {
+            return;
+        };
+        for ext in extensions {
+            if ext.get("url").and_then(|v| v.as_str()) == Some(path[1].as_str())
+                && let Some(dt) = ext.get("valueDateTime").and_then(|v| v.as_str())
+            {
+                indices.push((name.to_string(), param_type.to_string(), dt.to_string(), None));
+            }
         }
     }
 
@@ -1182,5 +1209,19 @@ mod tests {
         let indices = IndexBuilder::extract_indices("ServiceRequest", &sr);
         assert!(indices.iter().any(|(n, t, v, _)| n == "category" && t == "token" && v == "108252007"));
         assert!(indices.iter().any(|(n, t, _, _)| n == "authored" && t == "date"));
+    }
+
+    #[test]
+    fn test_extract_condition_asserted_date_extension() {
+        let cond = json!({
+            "resourceType": "Condition",
+            "extension": [
+                {"url": "http://hl7.org/fhir/StructureDefinition/condition-assertedDate", "valueDateTime": "2020-05-15"}
+            ],
+            "subject": {"reference": "Patient/123"}
+        });
+
+        let indices = IndexBuilder::extract_indices("Condition", &cond);
+        assert!(indices.iter().any(|(n, t, v, _)| n == "asserted-date" && t == "date" && v == "2020-05-15"));
     }
 }
