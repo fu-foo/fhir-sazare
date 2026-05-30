@@ -34,6 +34,15 @@ pub enum ExtractionMode {
     /// CodeableConcept reached through one intermediate array element, e.g.
     /// `CareTeam.participant.role` where `participant` is an array. Yields code + system.
     NestedCodeableConcept,
+    /// Scalar reached through one intermediate array element, e.g.
+    /// `Goal.target.dueDate` where `target` is an array. `path[0]` is the array
+    /// field, `path[1]` the scalar field on each element.
+    NestedScalar,
+    /// Reference reached through one intermediate array element, e.g.
+    /// `Encounter.location.location` where `location` is an array of
+    /// BackboneElements each carrying a Reference. `path[0]` is the array field,
+    /// `path[1]` the Reference field on each element. Indexes full ref + bare id.
+    NestedReference,
 }
 
 /// Definition of a single search parameter
@@ -269,6 +278,11 @@ fn observation_definitions() -> Vec<SearchParamDef> {
             extraction: ExtractionMode::Simple,
             aliases: vec![],
         },
+        // NOTE: Observation.effective[x] may be an effectivePeriod (e.g. average
+        // blood pressure). It is intentionally NOT indexed under `date` as a bare
+        // start instant: the index stores a single point, so eq/comparator date
+        // searches would wrongly match Period-valued Observations. Proper support
+        // requires range-aware (start+end) date indexing.
         // `combo-code` searches Observation.code OR Observation.component.code.
         // Component-level access requires array-of-CodeableConcept walking and is
         // tracked separately; for now we index the top-level code under combo-code
@@ -327,6 +341,22 @@ fn encounter_definitions() -> Vec<SearchParamDef> {
             extraction: ExtractionMode::Identifier,
             aliases: vec![],
         },
+        SearchParamDef {
+            name: "discharge-disposition".to_string(),
+            param_type: SearchParamType::Token,
+            path: vec!["hospitalization".to_string(), "dischargeDisposition".to_string()],
+            extraction: ExtractionMode::CodeableConcept,
+            aliases: vec![],
+        },
+        // Encounter.location.location — `location` is an array of BackboneElements,
+        // each carrying a `location` Reference.
+        SearchParamDef {
+            name: "location".to_string(),
+            param_type: SearchParamType::Reference,
+            path: vec!["location".to_string(), "location".to_string()],
+            extraction: ExtractionMode::NestedReference,
+            aliases: vec![],
+        },
     ]
 }
 
@@ -367,6 +397,27 @@ fn condition_definitions() -> Vec<SearchParamDef> {
             extraction: ExtractionMode::Simple,
             aliases: vec![],
         },
+        SearchParamDef {
+            name: "recorded-date".to_string(),
+            param_type: SearchParamType::Date,
+            path: vec!["recordedDate".to_string()],
+            extraction: ExtractionMode::Simple,
+            aliases: vec![],
+        },
+        SearchParamDef {
+            name: "abatement-date".to_string(),
+            param_type: SearchParamType::Date,
+            path: vec!["abatementDateTime".to_string()],
+            extraction: ExtractionMode::Simple,
+            aliases: vec![],
+        },
+        SearchParamDef {
+            name: "encounter".to_string(),
+            param_type: SearchParamType::Reference,
+            path: vec!["encounter".to_string()],
+            extraction: ExtractionMode::Reference,
+            aliases: vec![],
+        },
     ]
 }
 
@@ -398,6 +449,20 @@ fn medication_request_definitions() -> Vec<SearchParamDef> {
             param_type: SearchParamType::Token,
             path: vec!["identifier".to_string()],
             extraction: ExtractionMode::Identifier,
+            aliases: vec![],
+        },
+        SearchParamDef {
+            name: "authoredon".to_string(),
+            param_type: SearchParamType::Date,
+            path: vec!["authoredOn".to_string()],
+            extraction: ExtractionMode::Simple,
+            aliases: vec![],
+        },
+        SearchParamDef {
+            name: "encounter".to_string(),
+            param_type: SearchParamType::Reference,
+            path: vec!["encounter".to_string()],
+            extraction: ExtractionMode::Reference,
             aliases: vec![],
         },
     ]
@@ -742,8 +807,8 @@ fn goal_definitions() -> Vec<SearchParamDef> {
         SearchParamDef {
             name: "target-date".to_string(),
             param_type: SearchParamType::Date,
-            path: vec!["target.dueDate".to_string()],
-            extraction: ExtractionMode::Simple,
+            path: vec!["target".to_string(), "dueDate".to_string()],
+            extraction: ExtractionMode::NestedScalar,
             aliases: vec![],
         },
         SearchParamDef {
@@ -881,7 +946,7 @@ fn document_reference_definitions() -> Vec<SearchParamDef> {
         SearchParamDef {
             name: "period".to_string(),
             param_type: SearchParamType::Date,
-            path: vec!["context.period".to_string()],
+            path: vec!["context".to_string(), "period".to_string(), "start".to_string()],
             extraction: ExtractionMode::PeriodStart,
             aliases: vec![],
         },
@@ -898,10 +963,12 @@ fn questionnaire_response_definitions() -> Vec<SearchParamDef> {
             aliases: vec!["subject".to_string()],
         },
         SearchParamDef {
+            // QuestionnaireResponse.questionnaire is a canonical (plain string),
+            // not a Reference object, so extract the scalar directly.
             name: "questionnaire".to_string(),
             param_type: SearchParamType::Reference,
             path: vec!["questionnaire".to_string()],
-            extraction: ExtractionMode::Reference,
+            extraction: ExtractionMode::Simple,
             aliases: vec![],
         },
         SearchParamDef {
@@ -1092,6 +1159,20 @@ fn service_request_definitions() -> Vec<SearchParamDef> {
             param_type: SearchParamType::Token,
             path: vec!["requisition".to_string()],
             extraction: ExtractionMode::Identifier,
+            aliases: vec![],
+        },
+        SearchParamDef {
+            name: "category".to_string(),
+            param_type: SearchParamType::Token,
+            path: vec!["category".to_string()],
+            extraction: ExtractionMode::CodeableConcept,
+            aliases: vec![],
+        },
+        SearchParamDef {
+            name: "authored".to_string(),
+            param_type: SearchParamType::Date,
+            path: vec!["authoredOn".to_string()],
+            extraction: ExtractionMode::Simple,
             aliases: vec![],
         },
     ]

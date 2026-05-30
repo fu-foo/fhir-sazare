@@ -82,6 +82,75 @@ impl IndexBuilder {
             ExtractionMode::NestedCodeableConcept => {
                 Self::extract_nested_codeable_concept(resource, &def.path, &def.name, param_type_str, &def.aliases, indices);
             }
+            ExtractionMode::NestedScalar => {
+                Self::extract_nested_scalar(resource, &def.path, &def.name, param_type_str, indices);
+            }
+            ExtractionMode::NestedReference => {
+                Self::extract_nested_reference(resource, &def.path, &def.name, param_type_str, &def.aliases, indices);
+            }
+        }
+    }
+
+    /// NestedScalar: `path[0]` is an array (e.g. `target`), `path[1]` a scalar
+    /// field on each element (e.g. `dueDate`).
+    fn extract_nested_scalar(
+        resource: &Value,
+        path: &[String],
+        name: &str,
+        param_type: &str,
+        indices: &mut Vec<(String, String, String, Option<String>)>,
+    ) {
+        if path.len() < 2 {
+            return;
+        }
+        let Some(elements) = resource.get(path[0].as_str()).and_then(|v| v.as_array()) else {
+            return;
+        };
+        for element in elements {
+            if let Some(s) = element.get(path[1].as_str()).and_then(|v| v.as_str()) {
+                let value = if param_type == "string" { s.to_lowercase() } else { s.to_string() };
+                indices.push((name.to_string(), param_type.to_string(), value, None));
+            }
+        }
+    }
+
+    /// NestedReference: `path[0]` is an array (e.g. `location`), `path[1]` a
+    /// Reference field on each element (e.g. `location`). Indexes the full
+    /// reference and the bare resource id, mirroring `extract_reference`.
+    fn extract_nested_reference(
+        resource: &Value,
+        path: &[String],
+        name: &str,
+        param_type: &str,
+        aliases: &[String],
+        indices: &mut Vec<(String, String, String, Option<String>)>,
+    ) {
+        if path.len() < 2 {
+            return;
+        }
+        let Some(elements) = resource.get(path[0].as_str()).and_then(|v| v.as_array()) else {
+            return;
+        };
+        for element in elements {
+            let Some(reference) = element
+                .get(path[1].as_str())
+                .and_then(|r| r.get("reference"))
+                .and_then(|v| v.as_str())
+            else {
+                continue;
+            };
+            indices.push((name.to_string(), param_type.to_string(), reference.to_string(), None));
+            for alias in aliases {
+                indices.push((alias.to_string(), param_type.to_string(), reference.to_string(), None));
+            }
+            let trimmed = reference.split("/_history/").next().unwrap_or(reference);
+            let bare = trimmed.rsplit('/').next().unwrap_or("");
+            if !bare.is_empty() && bare != reference {
+                indices.push((name.to_string(), param_type.to_string(), bare.to_string(), None));
+                for alias in aliases {
+                    indices.push((alias.to_string(), param_type.to_string(), bare.to_string(), None));
+                }
+            }
         }
     }
 
@@ -1011,5 +1080,76 @@ mod tests {
         assert!(indices.iter().any(|(n, t, v, _)| n == "name" && t == "string" && v == "smith"));
         assert!(indices.iter().any(|(n, _, v, _)| n == "name" && v == "jane"));
         assert!(indices.iter().any(|(n, _, v, _)| n == "patient" && v == "Patient/123"));
+    }
+
+    #[test]
+    fn test_extract_goal_target_date() {
+        // Goal.target.dueDate — dueDate reached through the target array.
+        let goal = json!({
+            "resourceType": "Goal",
+            "lifecycleStatus": "active",
+            "subject": {"reference": "Patient/123"},
+            "description": {"text": "Maintain HbA1c below 7%"},
+            "target": [{"dueDate": "2026-06-01"}]
+        });
+
+        let indices = IndexBuilder::extract_indices("Goal", &goal);
+        assert!(indices.iter().any(|(n, t, v, _)| n == "target-date" && t == "date" && v == "2026-06-01"));
+    }
+
+    #[test]
+    fn test_extract_encounter_location_and_discharge() {
+        let enc = json!({
+            "resourceType": "Encounter",
+            "status": "finished",
+            "subject": {"reference": "Patient/123"},
+            "hospitalization": {
+                "dischargeDisposition": {
+                    "coding": [{"system": "http://terminology.hl7.org/CodeSystem/discharge-disposition", "code": "home"}]
+                }
+            },
+            "location": [{"location": {"reference": "Location/loc-1"}}]
+        });
+
+        let indices = IndexBuilder::extract_indices("Encounter", &enc);
+        // discharge-disposition (CodeableConcept under an object path)
+        assert!(indices.iter().any(|(n, t, v, _)| n == "discharge-disposition" && t == "token" && v == "home"));
+        // location reached through the location array — full ref and bare id
+        assert!(indices.iter().any(|(n, t, v, _)| n == "location" && t == "reference" && v == "Location/loc-1"));
+        assert!(indices.iter().any(|(n, _, v, _)| n == "location" && v == "loc-1"));
+    }
+
+    #[test]
+    fn test_extract_condition_recorded_abatement_encounter() {
+        let cond = json!({
+            "resourceType": "Condition",
+            "subject": {"reference": "Patient/123"},
+            "encounter": {"reference": "Encounter/enc-1"},
+            "onsetDateTime": "2025-12-01",
+            "abatementDateTime": "2025-12-15",
+            "recordedDate": "2025-12-01T09:15:00-05:00"
+        });
+
+        let indices = IndexBuilder::extract_indices("Condition", &cond);
+        assert!(indices.iter().any(|(n, t, _, _)| n == "recorded-date" && t == "date"));
+        assert!(indices.iter().any(|(n, t, v, _)| n == "abatement-date" && t == "date" && v == "2025-12-15"));
+        assert!(indices.iter().any(|(n, _, v, _)| n == "encounter" && v == "Encounter/enc-1"));
+        assert!(indices.iter().any(|(n, _, v, _)| n == "encounter" && v == "enc-1"));
+    }
+
+    #[test]
+    fn test_extract_service_request_category_authored() {
+        let sr = json!({
+            "resourceType": "ServiceRequest",
+            "status": "active",
+            "intent": "order",
+            "subject": {"reference": "Patient/123"},
+            "category": [{"coding": [{"system": "http://snomed.info/sct", "code": "108252007"}]}],
+            "authoredOn": "2025-12-01T09:30:00-05:00"
+        });
+
+        let indices = IndexBuilder::extract_indices("ServiceRequest", &sr);
+        assert!(indices.iter().any(|(n, t, v, _)| n == "category" && t == "token" && v == "108252007"));
+        assert!(indices.iter().any(|(n, t, _, _)| n == "authored" && t == "date"));
     }
 }
