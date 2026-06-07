@@ -8,7 +8,7 @@ use crate::error::Result;
 use rusqlite::{params, Connection, Transaction};
 use std::ops::Deref;
 use std::path::Path;
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 
 /// SQLite-based resource store
 pub struct SqliteStore {
@@ -62,9 +62,22 @@ impl SqliteStore {
         })
     }
 
+    /// Lock the connection, recovering from a poisoned mutex.
+    ///
+    /// A poisoned mutex means a previous operation panicked while holding the
+    /// lock. The `Connection` itself stays usable (rusqlite calls are discrete
+    /// and don't leave it half-mutated), so recover the guard instead of
+    /// propagating the panic — otherwise a single panic would take down every
+    /// subsequent request to the store.
+    fn conn(&self) -> MutexGuard<'_, Connection> {
+        self.conn
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     /// Get a resource
     pub fn get(&self, resource_type: &str, id: &str) -> Result<Option<Vec<u8>>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
 
         let mut stmt = conn.prepare(
             "SELECT value FROM resources WHERE resource_type = ? AND id = ?"
@@ -82,7 +95,7 @@ impl SqliteStore {
     pub fn put(&self, resource_type: &str, id: &str, data: &[u8]) -> Result<()> {
         let value = std::str::from_utf8(data)
             .map_err(|e| crate::error::StoreError::Other(format!("Invalid UTF-8: {}", e)))?;
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
 
         conn.execute(
             "INSERT OR REPLACE INTO resources (resource_type, id, value) VALUES (?, ?, ?)",
@@ -103,7 +116,7 @@ impl SqliteStore {
         let value = std::str::from_utf8(data)
             .map_err(|e| crate::error::StoreError::Other(format!("Invalid UTF-8: {}", e)))?;
 
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
 
         // Save current version
         conn.execute(
@@ -127,7 +140,7 @@ impl SqliteStore {
         id: &str,
         version_id: &str,
     ) -> Result<Option<Vec<u8>>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
 
         let mut stmt = conn.prepare(
             "SELECT value FROM resource_history WHERE resource_type = ? AND id = ? AND version_id = ?"
@@ -143,7 +156,7 @@ impl SqliteStore {
 
     /// Delete a resource (current version only, history is preserved)
     pub fn delete(&self, resource_type: &str, id: &str) -> Result<bool> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
 
         let rows = conn.execute(
             "DELETE FROM resources WHERE resource_type = ? AND id = ?",
@@ -154,7 +167,7 @@ impl SqliteStore {
 
     /// List version history (list of version_ids)
     pub fn list_versions(&self, resource_type: &str, id: &str) -> Result<Vec<String>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
 
         let mut stmt = conn.prepare(
             "SELECT version_id FROM resource_history WHERE resource_type = ? AND id = ? ORDER BY version_id"
@@ -171,7 +184,7 @@ impl SqliteStore {
 
     /// Get resource counts by type
     pub fn count_by_type(&self) -> Result<Vec<(String, i64)>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let mut stmt = conn.prepare(
             "SELECT resource_type, COUNT(*) FROM resources GROUP BY resource_type ORDER BY resource_type",
         )?;
@@ -187,7 +200,7 @@ impl SqliteStore {
 
     /// List all resources (optionally filtered by resource type)
     pub fn list_all(&self, resource_type: Option<&str>) -> Result<Vec<(String, String, Vec<u8>)>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
 
         let mut results = Vec::new();
 
@@ -235,7 +248,7 @@ impl SqliteStore {
         count: usize,
         offset: usize,
     ) -> Result<(Vec<(String, Vec<u8>)>, usize)> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
 
         // Total count
         let total: usize = conn.query_row(
@@ -267,7 +280,7 @@ impl SqliteStore {
     where
         F: FnOnce(&TransactionOps<'_>) -> Result<T>,
     {
-        let mut conn = self.conn.lock().unwrap();
+        let mut conn = self.conn();
         let tx = conn.transaction()?;
         let ops = TransactionOps { tx: &tx };
         let result = f(&ops)?;
@@ -431,5 +444,34 @@ mod tests {
         assert!(result.is_err());
         // Nothing should be saved due to rollback
         assert!(store.get("Patient", "p1").unwrap().is_none());
+    }
+
+    #[test]
+    fn test_recovers_from_poisoned_lock() {
+        let store = SqliteStore::open(":memory:").unwrap();
+        store
+            .put("Patient", "p1", br#"{"resourceType":"Patient","id":"p1"}"#)
+            .unwrap();
+
+        // Poison the connection mutex: panic while the lock guard is held.
+        // (Silence the panic hook so the expected backtrace doesn't clutter
+        // test output.)
+        let prev = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+        let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _: Result<()> = store.in_transaction(|_ops| {
+                panic!("boom while holding the connection lock");
+            });
+        }));
+        std::panic::set_hook(prev);
+        assert!(caught.is_err(), "the panic should have been caught");
+
+        // Despite the now-poisoned mutex, the store must keep working rather
+        // than panicking on every subsequent lock.
+        assert!(store.get("Patient", "p1").unwrap().is_some());
+        store
+            .put("Patient", "p2", br#"{"resourceType":"Patient","id":"p2"}"#)
+            .unwrap();
+        assert!(store.get("Patient", "p2").unwrap().is_some());
     }
 }
