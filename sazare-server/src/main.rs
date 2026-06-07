@@ -163,12 +163,18 @@ async fn main() {
         tracing::info!("Listening on https://{}", bind_addr);
 
         let tls_listener = sazare_server::tls::TlsListener::new(listener, acceptor);
-        axum::serve(tls_listener, app.into_make_service())
-            .with_graceful_shutdown(shutdown_signal())
-            .await
-            .unwrap_or_else(|e| {
-                tracing::error!("Server error: {}", e);
-            });
+        let app = app.layer(axum::middleware::from_fn(
+            sazare_server::tls::propagate_connect_info,
+        ));
+        axum::serve(
+            tls_listener,
+            app.into_make_service_with_connect_info::<sazare_server::tls::TlsConnectInfo>(),
+        )
+        .with_graceful_shutdown(shutdown_signal())
+        .await
+        .unwrap_or_else(|e| {
+            tracing::error!("Server error: {}", e);
+        });
     } else {
         tracing::info!("Listening on http://{}", bind_addr);
 

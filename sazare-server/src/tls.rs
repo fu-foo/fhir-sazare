@@ -50,6 +50,43 @@ impl axum::serve::Listener for TlsListener {
     }
 }
 
+/// Connect-info type for TLS connections.
+///
+/// axum's built-in `Connected` impl for `SocketAddr` only covers plain
+/// `TcpListener`, and orphan rules forbid adding one for `SocketAddr` + our
+/// `TlsListener`. So we use this local newtype as the connect-info type and
+/// remap it to `ConnectInfo<SocketAddr>` (what handlers expect) via
+/// [`propagate_connect_info`]. Without this, handlers that extract
+/// `ConnectInfo<SocketAddr>` (bundle, bulk) return 500 over HTTPS because the
+/// connect-info extension is never inserted.
+#[derive(Clone, Copy, Debug)]
+pub struct TlsConnectInfo(pub SocketAddr);
+
+impl axum::extract::connect_info::Connected<axum::serve::IncomingStream<'_, TlsListener>>
+    for TlsConnectInfo
+{
+    fn connect_info(stream: axum::serve::IncomingStream<'_, TlsListener>) -> Self {
+        TlsConnectInfo(*stream.remote_addr())
+    }
+}
+
+/// Middleware that copies the TLS `ConnectInfo<TlsConnectInfo>` extension into
+/// the `ConnectInfo<SocketAddr>` extension that shared handlers extract, so the
+/// same handlers work identically over HTTP and HTTPS.
+pub async fn propagate_connect_info(
+    mut req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    use axum::extract::connect_info::ConnectInfo;
+    if req.extensions().get::<ConnectInfo<SocketAddr>>().is_none()
+        && let Some(&ConnectInfo(TlsConnectInfo(addr))) =
+            req.extensions().get::<ConnectInfo<TlsConnectInfo>>()
+    {
+        req.extensions_mut().insert(ConnectInfo(addr));
+    }
+    next.run(req).await
+}
+
 /// Load TLS certificate and private key, returning a `TlsAcceptor`.
 pub fn load_tls_acceptor(
     cert_path: &str,
