@@ -30,6 +30,11 @@ fly.public.toml
 .claude/
 CLAUD.md
 
+# Local agent navigation aids (small-context model helpers, updated locally — not for the repo)
+AGENTS.md
+docs/
+scripts/
+
 # Personal notes
 memo.txt
 
