@@ -8,10 +8,10 @@ pub enum SazareError {
         id: String,
     },
 
-    #[error("Validation error: {message}")]
+    #[error("Validation failed: {message}")]
     Validation { message: String },
 
-    #[error("Storage error: {0}")]
+    #[error("Storage issue: {0}")]
     Storage(String),
 
     #[error("Invalid JSON: {0}")]

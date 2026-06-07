@@ -147,13 +147,13 @@ form.addEventListener("submit", async (e) => {
     const patient = buildPatient();
     const created = await registerPatient(patient);
     showResult(
-      "Patient registered: " + (created.id || "OK"),
+      `Patient registered successfully! ID: ${created.id || "OK"}`,
       false
     );
     form.reset();
     await loadPatients();
   } catch (err) {
-    showResult("Error: " + err.message, true);
+    showResult(`Oops! Something went wrong: ${err.message}`, true);
   } finally {
     submitBtn.disabled = false;
     submitBtn.textContent = "Register Patient";
