@@ -1,0 +1,33 @@
+# Caddyfile.example — terminate TLS in front of sazare with a reverse proxy.
+#
+# sazare can serve native TLS itself (see config.example.yaml `server.tls`),
+# but the simplest way to get a *trusted* HTTPS endpoint — e.g. to pass the
+# Inferno US Core `standalone_auth_tls` test, which verifies the certificate —
+# is to run sazare as plain HTTP and put Caddy in front:
+#
+#     Inferno / client  ──HTTPS──▶  Caddy (TLS termination)  ──HTTP──▶  sazare:8080
+#
+# Run sazare with TLS disabled (the default in config.example.yaml), then:
+#
+#   # Production (real domain): automatic Let's Encrypt cert + renewal
+#   caddy run --config Caddyfile.example
+#
+#   # Local dev: Caddy's internal CA. Trust it so clients accept the cert:
+#   caddy run --config Caddyfile.example
+#   caddy trust        # installs Caddy's local root CA into the system store
+#
+# Notes:
+#   - For local testing against the Inferno test kit (which runs in Docker and
+#     reaches the host as `host.docker.internal`), the cert must cover that
+#     hostname and the Inferno container must trust Caddy's local root CA.
+#     See docs/ for the exact steps used during the v7 100% run.
+
+# --- Production: set your domain; Caddy auto-provisions a Let's Encrypt cert ---
+# fhir.example.com {
+# 	reverse_proxy localhost:8080
+# }
+
+# --- Local development: https://localhost via Caddy's internal CA ---
+localhost {
+	reverse_proxy localhost:8080
+}
