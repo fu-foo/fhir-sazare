@@ -330,3 +330,350 @@ async fn test_bundle_transaction() {
     // Second entry should be 201 Created
     assert!(entries[1]["response"]["status"].as_str().unwrap().contains("201"));
 }
+
+/// Helper: POST a resource and return its server-assigned id.
+async fn create(client: &reqwest::Client, base_url: &str, type_: &str, body: &Value) -> String {
+    let resp = client
+        .post(format!("{}/{}", base_url, type_))
+        .json(body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201, "create {} should 201", type_);
+    let created: Value = resp.json().await.unwrap();
+    created["id"].as_str().unwrap().to_string()
+}
+
+#[tokio::test]
+async fn test_conditional_create_if_none_exist() {
+    let (base_url, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+
+    let patient = json!({"resourceType": "Patient", "name": [{"family": "Unique"}]});
+    let id = create(&client, &base_url, "Patient", &patient).await;
+
+    // Conditional create with a matching criterion must NOT create a duplicate;
+    // it returns the existing resource (200).
+    let resp = client
+        .post(format!("{}/Patient", base_url))
+        .header("If-None-Exist", "family=Unique")
+        .json(&patient)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "matching If-None-Exist should return existing (200)");
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["id"], id, "should return the existing resource, not a new one");
+
+    // Only one Patient should exist.
+    let resp = client
+        .get(format!("{}/Patient?family=Unique", base_url))
+        .send()
+        .await
+        .unwrap();
+    let bundle: Value = resp.json().await.unwrap();
+    assert_eq!(bundle["total"], 1, "no duplicate should be created");
+}
+
+#[tokio::test]
+async fn test_conditional_update() {
+    let (base_url, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+
+    // 0 matches -> conditional update creates a new resource (201).
+    let resp = client
+        .put(format!("{}/Patient?family=Cond", base_url))
+        .json(&json!({"resourceType": "Patient", "name": [{"family": "Cond"}], "gender": "male"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201, "conditional update with no match should create");
+    let created: Value = resp.json().await.unwrap();
+    let id = created["id"].as_str().unwrap().to_string();
+
+    // 1 match -> conditional update updates the existing resource (200).
+    let resp = client
+        .put(format!("{}/Patient?family=Cond", base_url))
+        .json(&json!({"resourceType": "Patient", "name": [{"family": "Cond"}], "gender": "female"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "conditional update with one match should update");
+    let updated: Value = resp.json().await.unwrap();
+    assert_eq!(updated["id"], id, "should update the same resource");
+    assert_eq!(updated["gender"], "female");
+}
+
+#[tokio::test]
+async fn test_conditional_delete() {
+    let (base_url, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+
+    let id = create(
+        &client,
+        &base_url,
+        "Patient",
+        &json!({"resourceType": "Patient", "name": [{"family": "DelMe"}]}),
+    )
+    .await;
+
+    let resp = client
+        .delete(format!("{}/Patient?family=DelMe", base_url))
+        .send()
+        .await
+        .unwrap();
+    assert!(resp.status().is_success(), "conditional delete should succeed");
+
+    // Resource is gone.
+    let resp = client
+        .get(format!("{}/Patient/{}", base_url, id))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 404, "deleted resource should be 404");
+}
+
+#[tokio::test]
+async fn test_bulk_export_import_roundtrip() {
+    let (base_url, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+
+    create(&client, &base_url, "Patient", &json!({"resourceType": "Patient", "name": [{"family": "Exp1"}]})).await;
+    create(&client, &base_url, "Patient", &json!({"resourceType": "Patient", "name": [{"family": "Exp2"}]})).await;
+
+    // $export -> NDJSON
+    let resp = client
+        .get(format!("{}/$export?_type=Patient", base_url))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "$export should return 200");
+    let ndjson = resp.text().await.unwrap();
+    let lines: Vec<&str> = ndjson.lines().filter(|l| !l.trim().is_empty()).collect();
+    assert_eq!(lines.len(), 2, "two Patients should be exported");
+    for line in &lines {
+        let v: Value = serde_json::from_str(line).expect("each line is a JSON resource");
+        assert_eq!(v["resourceType"], "Patient");
+    }
+
+    // $import the same NDJSON into a fresh server, then verify it lands.
+    let (base2, _dir2) = start_test_server().await;
+    let resp = client
+        .post(format!("{}/$import", base2))
+        .header("Content-Type", "application/fhir+ndjson")
+        .body(ndjson)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "$import should return 200");
+
+    let resp = client
+        .get(format!("{}/Patient?family=Exp1", base2))
+        .send()
+        .await
+        .unwrap();
+    let bundle: Value = resp.json().await.unwrap();
+    assert_eq!(bundle["total"], 1, "imported Patient should be searchable");
+}
+
+#[tokio::test]
+async fn test_search_include_and_revinclude() {
+    let (base_url, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+
+    let pid = create(
+        &client,
+        &base_url,
+        "Patient",
+        &json!({"resourceType": "Patient", "name": [{"family": "Incl"}]}),
+    )
+    .await;
+    create(
+        &client,
+        &base_url,
+        "Observation",
+        &json!({
+            "resourceType": "Observation",
+            "status": "final",
+            "code": {"coding": [{"system": "http://loinc.org", "code": "1234-5"}]},
+            "subject": {"reference": format!("Patient/{}", pid)}
+        }),
+    )
+    .await;
+
+    // _include: searching Observations pulls in the referenced Patient.
+    let resp = client
+        .get(format!("{}/Observation?code=1234-5&_include=Observation:subject", base_url))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let bundle: Value = resp.json().await.unwrap();
+    let types: Vec<&str> = bundle["entry"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["resource"]["resourceType"].as_str().unwrap())
+        .collect();
+    assert!(types.contains(&"Observation"), "_include result has the Observation");
+    assert!(types.contains(&"Patient"), "_include should pull in the referenced Patient");
+
+    // _revinclude: searching the Patient pulls in Observations referencing it.
+    let resp = client
+        .get(format!("{}/Patient?family=Incl&_revinclude=Observation:subject", base_url))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let bundle: Value = resp.json().await.unwrap();
+    let types: Vec<&str> = bundle["entry"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["resource"]["resourceType"].as_str().unwrap())
+        .collect();
+    assert!(types.contains(&"Patient"), "_revinclude result has the Patient");
+    assert!(types.contains(&"Observation"), "_revinclude should pull in the referencing Observation");
+}
+
+#[tokio::test]
+async fn test_json_patch() {
+    let (base_url, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+
+    let id = create(
+        &client,
+        &base_url,
+        "Patient",
+        &json!({"resourceType": "Patient", "name": [{"family": "Patch"}], "gender": "male"}),
+    )
+    .await;
+
+    let patch = json!([{"op": "replace", "path": "/gender", "value": "female"}]);
+    let resp = client
+        .patch(format!("{}/Patient/{}", base_url, id))
+        .header("Content-Type", "application/json-patch+json")
+        .json(&patch)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "PATCH should return 200");
+
+    let resp = client
+        .get(format!("{}/Patient/{}", base_url, id))
+        .send()
+        .await
+        .unwrap();
+    let read: Value = resp.json().await.unwrap();
+    assert_eq!(read["gender"], "female", "patch should have applied");
+}
+
+#[tokio::test]
+async fn test_patient_everything() {
+    let (base_url, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+
+    let pid = create(
+        &client,
+        &base_url,
+        "Patient",
+        &json!({"resourceType": "Patient", "name": [{"family": "Every"}]}),
+    )
+    .await;
+    create(
+        &client,
+        &base_url,
+        "Observation",
+        &json!({
+            "resourceType": "Observation",
+            "status": "final",
+            "code": {"coding": [{"system": "http://loinc.org", "code": "9999-9"}]},
+            "subject": {"reference": format!("Patient/{}", pid)}
+        }),
+    )
+    .await;
+
+    let resp = client
+        .get(format!("{}/Patient/{}/$everything", base_url, pid))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "$everything should return 200");
+    let bundle: Value = resp.json().await.unwrap();
+    assert_eq!(bundle["resourceType"], "Bundle");
+    let types: Vec<&str> = bundle["entry"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["resource"]["resourceType"].as_str().unwrap())
+        .collect();
+    assert!(types.contains(&"Patient"), "$everything includes the Patient");
+    assert!(types.contains(&"Observation"), "$everything includes compartment members");
+}
+
+#[tokio::test]
+async fn test_vread_specific_version() {
+    let (base_url, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+
+    let id = create(
+        &client,
+        &base_url,
+        "Patient",
+        &json!({"resourceType": "Patient", "name": [{"family": "Ver"}], "gender": "male"}),
+    )
+    .await;
+
+    // Update -> version 2
+    client
+        .put(format!("{}/Patient/{}", base_url, id))
+        .json(&json!({"resourceType": "Patient", "name": [{"family": "Ver"}], "gender": "female"}))
+        .send()
+        .await
+        .unwrap();
+
+    // vread version 1 still has the original value.
+    let resp = client
+        .get(format!("{}/Patient/{}/_history/1", base_url, id))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "vread of v1 should return 200");
+    let v1: Value = resp.json().await.unwrap();
+    assert_eq!(v1["meta"]["versionId"], "1");
+    assert_eq!(v1["gender"], "male", "v1 should retain the original value");
+}
+
+#[tokio::test]
+async fn test_bundle_batch() {
+    let (base_url, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+
+    // A batch with one valid create and one malformed entry (PUT without an id):
+    // batch entries are independent, so the bad one must not fail the good one.
+    let bundle = json!({
+        "resourceType": "Bundle",
+        "type": "batch",
+        "entry": [
+            {
+                "resource": {"resourceType": "Patient", "name": [{"family": "Batch"}]},
+                "request": {"method": "POST", "url": "Patient"}
+            },
+            {
+                "resource": {"resourceType": "Patient", "name": [{"family": "Bad"}]},
+                "request": {"method": "PUT", "url": "Patient"}
+            }
+        ]
+    });
+
+    let resp = client.post(&base_url).json(&bundle).send().await.unwrap();
+    assert_eq!(resp.status(), 200, "batch itself returns 200 even with a failing entry");
+    let result: Value = resp.json().await.unwrap();
+    assert_eq!(result["type"], "batch-response");
+    let entries = result["entry"].as_array().unwrap();
+    assert_eq!(entries.len(), 2);
+    // Good entry succeeds independently of the bad one.
+    assert!(entries[0]["response"]["status"].as_str().unwrap().contains("201"));
+    // Malformed entry fails on its own (PUT requires an id) without aborting the batch.
+    assert!(entries[1]["response"]["status"].as_str().unwrap().contains("400"));
+}
