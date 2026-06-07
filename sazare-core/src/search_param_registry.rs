@@ -1165,6 +1165,13 @@ fn service_request_definitions() -> Vec<SearchParamDef> {
             aliases: vec![],
         },
         SearchParamDef {
+            name: "based-on".to_string(),
+            param_type: SearchParamType::Reference,
+            path: vec!["basedOn".to_string()],
+            extraction: ExtractionMode::Reference,
+            aliases: vec![],
+        },
+        SearchParamDef {
             name: "encounter".to_string(),
             param_type: SearchParamType::Reference,
             path: vec!["encounter".to_string()],
@@ -1536,6 +1543,11 @@ mod tests {
         assert!(defs.iter().any(|d| d.name == "requisition"));
         assert!(defs.iter().any(|d| d.name == "priority"));
         assert!(defs.iter().any(|d| d.name == "encounter"));
+        assert!(defs.iter().any(|d| d.name == "based-on"));
+        assert_eq!(
+            registry.lookup_param_type("ServiceRequest", "based-on"),
+            Some(SearchParamType::Reference)
+        );
         // patient alias on subject
         assert_eq!(
             registry.lookup_param_type("ServiceRequest", "patient"),

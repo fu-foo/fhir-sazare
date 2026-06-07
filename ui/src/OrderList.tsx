@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from 'react';
-import { LAB_ORDER_PROFILE, LAB_ITEM_PROFILE, search } from './fhir';
+import { LAB_ORDER_PROFILE, search } from './fhir';
 
 type Order = {
   id: string;
@@ -28,26 +28,33 @@ export function OrderList({ reloadKey }: { reloadKey: number }) {
     setLoading(true);
     setErr(null);
     try {
-      const [orderBundle, itemBundle] = await Promise.all([
-        search('ServiceRequest', { _profile: LAB_ORDER_PROFILE, _count: '100' }),
-        search('ServiceRequest', { _profile: LAB_ITEM_PROFILE, _count: '500' }),
-      ]);
-      const loaded: Order[] = (orderBundle.entry ?? []).map((e) => {
-        const r = e.resource;
-        return {
-          id: r.id,
-          denpyoNo: r.identifier?.[0]?.value ?? '-',
-          patient: r.subject?.reference ?? '-',
-          authoredOn: r.authoredOn ?? r.meta?.lastUpdated ?? '-',
-          raw: r,
-        };
+      // Single query: fetch LabOrders and pull their LabItems via _revinclude on
+      // the based-on search param. Orders come back as search.mode "match",
+      // items as "include".
+      const bundle = await search('ServiceRequest', {
+        _profile: LAB_ORDER_PROFILE,
+        _count: '100',
+        _revinclude: 'ServiceRequest:based-on',
       });
+      const entries = bundle.entry ?? [];
+      const loaded: Order[] = entries
+        .filter((e) => e.search?.mode !== 'include')
+        .map((e) => {
+          const r = e.resource;
+          return {
+            id: r.id,
+            denpyoNo: r.identifier?.[0]?.value ?? '-',
+            patient: r.subject?.reference ?? '-',
+            authoredOn: r.authoredOn ?? r.meta?.lastUpdated ?? '-',
+            raw: r,
+          };
+        });
       loaded.sort((a, b) => b.authoredOn.localeCompare(a.authoredOn));
       setOrders(loaded);
 
-      // Group items by parent order via basedOn (client-side; based-on index not supported yet)
+      // Group revincluded items by parent order via basedOn.
       const byOrder: Record<string, Item[]> = {};
-      for (const e of itemBundle.entry ?? []) {
+      for (const e of entries.filter((e) => e.search?.mode === 'include')) {
         const r = e.resource;
         const ref: string | undefined = r.basedOn?.[0]?.reference;
         if (!ref) continue;
@@ -98,11 +105,9 @@ export function OrderList({ reloadKey }: { reloadKey: number }) {
       <div className="query-urls">
         <div>
           <span className="method">GET</span>
-          <code>/ServiceRequest?_profile={encodeURIComponent(LAB_ORDER_PROFILE)}&_count=100</code>
-        </div>
-        <div>
-          <span className="method">GET</span>
-          <code>/ServiceRequest?_profile={encodeURIComponent(LAB_ITEM_PROFILE)}&_count=500</code>
+          <code>
+            /ServiceRequest?_profile={encodeURIComponent(LAB_ORDER_PROFILE)}&_count=100&_revinclude=ServiceRequest:based-on
+          </code>
         </div>
       </div>
 

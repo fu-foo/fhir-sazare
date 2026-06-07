@@ -676,6 +676,28 @@ mod tests {
     }
 
     #[test]
+    fn test_extract_service_request_based_on() {
+        // A LabItem ServiceRequest pointing at its parent LabOrder via basedOn.
+        let item = json!({
+            "resourceType": "ServiceRequest",
+            "status": "active",
+            "intent": "order",
+            "basedOn": [{"reference": "ServiceRequest/order-123"}]
+        });
+
+        let indices = IndexBuilder::extract_indices("ServiceRequest", &item);
+
+        // Full reference and bare id are both indexed (powers _revinclude and
+        // ?based-on=ServiceRequest/order-123 / ?based-on=order-123).
+        assert!(indices
+            .iter()
+            .any(|(n, t, v, _)| n == "based-on" && t == "reference" && v == "ServiceRequest/order-123"));
+        assert!(indices
+            .iter()
+            .any(|(n, _, v, _)| n == "based-on" && v == "order-123"));
+    }
+
+    #[test]
     fn test_extract_observation_indices() {
         let observation = json!({
             "resourceType": "Observation",

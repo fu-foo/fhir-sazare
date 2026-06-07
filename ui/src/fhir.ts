@@ -34,7 +34,11 @@ export type Bundle = {
   resourceType: 'Bundle';
   type: string;
   total?: number;
-  entry?: Array<{ resource: any; response?: { status: string; location?: string } }>;
+  entry?: Array<{
+    resource: any;
+    response?: { status: string; location?: string };
+    search?: { mode?: 'match' | 'include' };
+  }>;
 };
 
 export async function search(type: string, params: Record<string, string>): Promise<Bundle> {
