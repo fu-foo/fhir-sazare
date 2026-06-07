@@ -184,7 +184,9 @@ pub(super) async fn process_transaction(
                         crate::handlers::merge_version_meta(obj, &version_id);
                     }
 
-                    let data = serde_json::to_vec(&resource).unwrap();
+                    let data = serde_json::to_vec(&resource).map_err(|e| {
+                        sazare_store::StoreError::Other(format!("serialize failed: {e}"))
+                    })?;
                     ops.put_with_version(resource_type, id, &version_id, &data)?;
 
                     resources_for_index.push((
@@ -225,7 +227,9 @@ pub(super) async fn process_transaction(
                         crate::handlers::merge_version_meta(obj, &version_id);
                     }
 
-                    let data = serde_json::to_vec(&resource).unwrap();
+                    let data = serde_json::to_vec(&resource).map_err(|e| {
+                        sazare_store::StoreError::Other(format!("serialize failed: {e}"))
+                    })?;
                     ops.put_with_version(resource_type, id, &version_id, &data)?;
 
                     resources_for_index.push((

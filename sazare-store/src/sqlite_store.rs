@@ -239,6 +239,23 @@ impl SqliteStore {
         Ok(results)
     }
 
+    /// List resource IDs of a type (id column only).
+    ///
+    /// Used by search when no parameters are given: avoids loading every
+    /// resource body into memory just to extract IDs (the caller fetches only
+    /// the page it needs afterwards).
+    pub fn list_ids(&self, resource_type: &str) -> Result<Vec<String>> {
+        let conn = self.conn();
+        let mut stmt = conn
+            .prepare("SELECT id FROM resources WHERE resource_type = ? ORDER BY id")?;
+        let rows = stmt.query_map(params![resource_type], |row| row.get::<_, String>(0))?;
+        let mut ids = Vec::new();
+        for id in rows {
+            ids.push(id?);
+        }
+        Ok(ids)
+    }
+
     /// List resources sorted by meta.lastUpdated descending with pagination.
     /// Returns (entries as (id, value), total_count).
     #[allow(clippy::type_complexity)]

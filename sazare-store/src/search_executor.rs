@@ -71,13 +71,9 @@ impl<'a> SearchExecutor<'a> {
         let mut ids = match result_ids {
             Some(ids) => ids,
             None => {
-                // No parameters: list all resource IDs
-                self.store
-                    .list_all(Some(resource_type))
-                    .map_err(|e| e.to_string())?
-                    .into_iter()
-                    .map(|(_rt, id, _data)| id)
-                    .collect()
+                // No parameters: list all resource IDs (id column only — don't
+                // load every resource body just to drop it).
+                self.store.list_ids(resource_type).map_err(|e| e.to_string())?
             }
         };
 
@@ -141,14 +137,7 @@ impl<'a> SearchExecutor<'a> {
 
         let mut ids = match result_ids {
             Some(ids) => ids,
-            None => {
-                self.store
-                    .list_all(Some(resource_type))
-                    .map_err(|e| e.to_string())?
-                    .into_iter()
-                    .map(|(_rt, id, _data)| id)
-                    .collect()
-            }
+            None => self.store.list_ids(resource_type).map_err(|e| e.to_string())?,
         };
 
         let total = ids.len();
@@ -225,8 +214,13 @@ impl<'a> SearchExecutor<'a> {
                     .map_err(|e| e.to_string())
             }
             SearchParamType::Number => {
-                // Number search not implemented yet
-                Ok(Vec::new())
+                // Number search isn't implemented. Return an explicit error
+                // rather than silently matching nothing (which looks like a
+                // valid "no results" to the client).
+                Err(format!(
+                    "Number search is not supported for parameter '{}'",
+                    param.name
+                ))
             }
         }
     }

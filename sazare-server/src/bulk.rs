@@ -201,7 +201,18 @@ pub async fn import(
             merge_version_meta(obj, &version_id);
         }
 
-        let data = serde_json::to_vec(&resource).unwrap();
+        let data = match serde_json::to_vec(&resource) {
+            Ok(d) => d,
+            Err(e) => {
+                errors.push(json!({
+                    "line": line_num + 1,
+                    "resourceType": resource_type,
+                    "id": id,
+                    "error": format!("Serialization error: {}", e)
+                }));
+                continue;
+            }
+        };
         match state
             .store
             .put_with_version(&resource_type, &id, &version_id, &data)

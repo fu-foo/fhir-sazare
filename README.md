@@ -29,7 +29,6 @@
 - **Authentication** — API key, Basic auth, JWT (HS256/RS256/JWK URL), SMART on FHIR scopes
 - **Compartment access control** — Patient-scoped token restricts access to own data
 - **TLS/HTTPS** — Optional TLS via config
-- **Webhooks** — Event-driven notifications to external endpoints
 - **Graceful shutdown** — Clean shutdown on SIGTERM / Ctrl+C
 
 ---
@@ -423,7 +422,6 @@ Licensed under the [Apache License, Version 2.0](LICENSE).
 - API キー / Basic 認証 / JWT (HS256/RS256/JWK URL) / SMART on FHIR スコープ
 - コンパートメントベースのアクセス制御
 - TLS/HTTPS 対応
-- Webhook 通知
 
 ### クイックスタート
 

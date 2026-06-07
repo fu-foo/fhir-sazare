@@ -649,19 +649,26 @@ async fn test_bundle_batch() {
     let (base_url, _dir) = start_test_server().await;
     let client = reqwest::Client::new();
 
-    // A batch with one valid create and one malformed entry (PUT without an id):
-    // batch entries are independent, so the bad one must not fail the good one.
+    // Pre-create a resource so the batch can read it.
+    let id = create(
+        &client,
+        &base_url,
+        "Patient",
+        &json!({"resourceType": "Patient", "name": [{"family": "Batch"}]}),
+    )
+    .await;
+
+    // Mixed batch: a GET hit, a GET miss, and a POST — entries are independent,
+    // so each resolves on its own and the bundle as a whole returns 200.
     let bundle = json!({
         "resourceType": "Bundle",
         "type": "batch",
         "entry": [
+            { "request": {"method": "GET", "url": format!("Patient/{}", id)} },
+            { "request": {"method": "GET", "url": "Patient/does-not-exist"} },
             {
-                "resource": {"resourceType": "Patient", "name": [{"family": "Batch"}]},
+                "resource": {"resourceType": "Patient", "name": [{"family": "BatchNew"}]},
                 "request": {"method": "POST", "url": "Patient"}
-            },
-            {
-                "resource": {"resourceType": "Patient", "name": [{"family": "Bad"}]},
-                "request": {"method": "PUT", "url": "Patient"}
             }
         ]
     });
@@ -671,9 +678,12 @@ async fn test_bundle_batch() {
     let result: Value = resp.json().await.unwrap();
     assert_eq!(result["type"], "batch-response");
     let entries = result["entry"].as_array().unwrap();
-    assert_eq!(entries.len(), 2);
-    // Good entry succeeds independently of the bad one.
-    assert!(entries[0]["response"]["status"].as_str().unwrap().contains("201"));
-    // Malformed entry fails on its own (PUT requires an id) without aborting the batch.
-    assert!(entries[1]["response"]["status"].as_str().unwrap().contains("400"));
+    assert_eq!(entries.len(), 3);
+    // GET hit: 200 with the resource body.
+    assert!(entries[0]["response"]["status"].as_str().unwrap().contains("200"));
+    assert_eq!(entries[0]["resource"]["id"], id);
+    // GET miss: 404, independently of the others.
+    assert!(entries[1]["response"]["status"].as_str().unwrap().contains("404"));
+    // POST still creates.
+    assert!(entries[2]["response"]["status"].as_str().unwrap().contains("201"));
 }

@@ -264,6 +264,33 @@ async fn process_batch_entry(
                 Err(e) => error_entry("500 Internal Server Error", &e.to_string()),
             }
         }
+        "GET" => {
+            // Read by id (Type/id). FHIR also allows search GETs in a batch;
+            // those are not supported yet and fall through to the id check.
+            let id = match &entry.id {
+                Some(id) => id.clone(),
+                None => {
+                    return error_entry(
+                        "400 Bad Request",
+                        &format!("entry[{}].request.url must include id for GET", index),
+                    );
+                }
+            };
+
+            match state.store.get(&entry.resource_type, &id) {
+                Ok(Some(data)) => {
+                    let resource: Value = serde_json::from_slice(&data).unwrap_or(json!({}));
+                    json!({
+                        "resource": resource,
+                        "response": { "status": "200 OK" }
+                    })
+                }
+                Ok(None) => json!({
+                    "response": { "status": "404 Not Found" }
+                }),
+                Err(e) => error_entry("500 Internal Server Error", &e.to_string()),
+            }
+        }
         other => error_entry(
             "400 Bad Request",
             &format!(
