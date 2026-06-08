@@ -32,6 +32,7 @@ async fn start_test_server() -> (String, TempDir) {
         compartment_def: CompartmentDef::patient_compartment(),
         jwk_cache: tokio::sync::RwLock::new(sazare_server::auth::JwkCache::new()),
         plugin_names: Vec::new(),
+        ws_registry: Arc::new(sazare_server::websocket::WsRegistry::new()),
     });
 
     let app = build_router(state);
@@ -534,6 +535,76 @@ async fn test_search_include_and_revinclude() {
         .collect();
     assert!(types.contains(&"Patient"), "_revinclude result has the Patient");
     assert!(types.contains(&"Observation"), "_revinclude should pull in the referencing Observation");
+}
+
+#[tokio::test]
+async fn test_websocket_subscription_ping() {
+    use futures_util::{SinkExt, StreamExt};
+    use tokio_tungstenite::tungstenite::Message;
+
+    let (base_url, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+
+    // Create a websocket-channel Subscription (no endpoint needed).
+    let sub_id = create(
+        &client,
+        &base_url,
+        "Subscription",
+        &json!({
+            "resourceType": "Subscription",
+            "status": "active",
+            "criteria": "Observation?status=final",
+            "channel": {"type": "websocket"}
+        }),
+    )
+    .await;
+
+    // Connect and bind to the subscription.
+    let ws_url = format!("{}/ws", base_url.replace("http://", "ws://"));
+    let (mut ws, _) = tokio_tungstenite::connect_async(&ws_url).await.unwrap();
+    ws.send(Message::text(format!("bind {sub_id}"))).await.unwrap();
+
+    // Helper: read the next non-empty text frame, with a timeout.
+    async fn next_text(
+        ws: &mut tokio_tungstenite::WebSocketStream<
+            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+        >,
+    ) -> String {
+        let fut = async {
+            while let Some(Ok(msg)) = ws.next().await {
+                if let Ok(t) = msg.to_text()
+                    && !t.is_empty()
+                {
+                    return t.to_string();
+                }
+            }
+            String::new()
+        };
+        tokio::time::timeout(std::time::Duration::from_secs(5), fut)
+            .await
+            .expect("timed out waiting for ws frame")
+    }
+
+    assert_eq!(next_text(&mut ws).await, format!("bound {sub_id}"));
+
+    // A matching create triggers a ping.
+    create(
+        &client,
+        &base_url,
+        "Observation",
+        &json!({
+            "resourceType": "Observation",
+            "status": "final",
+            "code": {"coding": [{"system": "http://loinc.org", "code": "9999-9"}]}
+        }),
+    )
+    .await;
+
+    assert_eq!(
+        next_text(&mut ws).await,
+        format!("ping {sub_id}"),
+        "matching create should ping the bound websocket client"
+    );
 }
 
 #[tokio::test]

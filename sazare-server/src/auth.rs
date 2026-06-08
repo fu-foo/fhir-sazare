@@ -517,6 +517,7 @@ mod tests {
             compartment_def: sazare_core::CompartmentDef::patient_compartment(),
             jwk_cache: RwLock::new(JwkCache::new()),
             plugin_names: Vec::new(),
+            ws_registry: Arc::new(crate::websocket::WsRegistry::new()),
         })
     }
 

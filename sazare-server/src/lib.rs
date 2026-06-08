@@ -15,6 +15,7 @@ pub mod subscription;
 pub mod tls;
 #[allow(dead_code)]
 pub mod webhook;
+pub mod websocket;
 
 use axum::{
     http::Method,
@@ -49,6 +50,8 @@ pub struct AppState {
     pub jwk_cache: tokio::sync::RwLock<auth::JwkCache>,
     /// Discovered plugin names (for auth bypass and routing)
     pub plugin_names: Vec<String>,
+    /// Live WebSocket clients bound to Subscriptions (R4 websocket channel)
+    pub ws_registry: Arc<websocket::WsRegistry>,
 }
 
 /// Conditional create result
@@ -134,6 +137,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/metadata", get(handlers::metadata::capability_statement))
         // SMART on FHIR configuration
         .route("/.well-known/smart-configuration", get(handlers::metadata::smart_configuration))
+        .route("/ws", get(websocket::ws_handler))
         // Operations (must be before /{resource_type}/{id} to avoid matching as {id})
         .route("/{resource_type}/$validate", post(handlers::validate::validate))
         .route("/{resource_type}/{id}/$everything", get(handlers::everything::patient_everything))

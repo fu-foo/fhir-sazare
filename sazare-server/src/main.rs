@@ -118,6 +118,7 @@ async fn main() {
         compartment_def: CompartmentDef::patient_compartment(),
         jwk_cache: tokio::sync::RwLock::new(sazare_server::auth::JwkCache::new()),
         plugin_names,
+        ws_registry: Arc::new(sazare_server::websocket::WsRegistry::new()),
     });
 
     tracing::info!(

@@ -223,6 +223,11 @@ pub async fn capability_statement(State(state): State<Arc<AppState>>) -> Json<Va
 
     let mut rest = json!({
         "mode": "server",
+        // Advertise the R4 Subscription websocket endpoint so clients can discover it.
+        "extension": [{
+            "url": "http://hl7.org/fhir/StructureDefinition/capabilitystatement-websocket",
+            "valueUri": "/ws"
+        }],
         "resource": resources,
         "interaction": [
             {"code": "transaction"},

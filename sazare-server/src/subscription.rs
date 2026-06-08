@@ -79,20 +79,25 @@ pub fn validate_subscription(
         .and_then(|v| v.as_str())
         .unwrap_or("");
 
-    if channel_type != "rest-hook" {
-        return Err(format!(
-            "Unsupported channel type: '{}'. Only 'rest-hook' is supported",
-            channel_type
-        ));
-    }
-
-    let endpoint = channel
-        .get("endpoint")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
-
-    if endpoint.is_empty() {
-        return Err("channel.endpoint is required for rest-hook".to_string());
+    match channel_type {
+        "rest-hook" => {
+            let endpoint = channel
+                .get("endpoint")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if endpoint.is_empty() {
+                return Err("channel.endpoint is required for rest-hook".to_string());
+            }
+        }
+        // websocket clients connect to the server's /ws endpoint and `bind` by
+        // subscription id, so no channel.endpoint is required here.
+        "websocket" => {}
+        other => {
+            return Err(format!(
+                "Unsupported channel type: '{}'. Supported: rest-hook, websocket",
+                other
+            ));
+        }
     }
 
     Ok(())
@@ -201,8 +206,19 @@ impl SubscriptionManager {
             .and_then(|v| v.as_str())
             .unwrap_or("");
 
+        // websocket channel: notify bound clients with an R4 `ping <id>` frame.
+        if channel_type == "websocket" {
+            let sub_id = subscription.get("id").and_then(|v| v.as_str()).unwrap_or("");
+            let n = state.ws_registry.ping(sub_id).await;
+            debug!(
+                "websocket ping sent to {} client(s) for subscription {} ({}/{})",
+                n, sub_id, resource_type, resource_id
+            );
+            return Ok(());
+        }
+
         if channel_type != "rest-hook" {
-            return Ok(()); // Only rest-hook is supported
+            return Ok(()); // Other channel types are not delivered
         }
 
         let endpoint = channel
@@ -352,10 +368,18 @@ mod tests {
     #[test]
     fn test_unsupported_channel_type() {
         let mut sub = valid_subscription();
-        sub["channel"]["type"] = json!("websocket");
+        sub["channel"]["type"] = json!("email");
         let result = validate_subscription(&sub, &registry());
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Unsupported channel type"));
+    }
+
+    #[test]
+    fn test_websocket_channel_accepted_without_endpoint() {
+        // websocket clients connect to /ws and bind by id, so no endpoint needed.
+        let mut sub = valid_subscription();
+        sub["channel"] = json!({"type": "websocket"});
+        assert!(validate_subscription(&sub, &registry()).is_ok());
     }
 
     #[test]
