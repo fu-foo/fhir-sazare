@@ -13,7 +13,6 @@ pub mod handlers;
 pub mod plugins;
 pub mod subscription;
 pub mod tls;
-#[allow(dead_code)]
 pub mod webhook;
 pub mod websocket;
 
@@ -52,6 +51,8 @@ pub struct AppState {
     pub plugin_names: Vec<String>,
     /// Live WebSocket clients bound to Subscriptions (R4 websocket channel)
     pub ws_registry: Arc<websocket::WsRegistry>,
+    /// Lifecycle webhook dispatcher (BundleCreated / TaskCompleted)
+    pub webhook: Arc<webhook::WebhookManager>,
 }
 
 /// Conditional create result

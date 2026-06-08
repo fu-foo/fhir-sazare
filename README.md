@@ -28,6 +28,7 @@
 - **PATCH** — JSON Patch (RFC 6902)
 - **$everything** — Patient compartment operation
 - **Subscription** — REST-hook and WebSocket (R4 `bind`/`ping` at `/ws`) notifications on resource changes
+- **Webhooks** — Lifecycle event hooks (`BundleCreated`, `TaskCompleted`) to configured endpoints
 - **Authentication** — API key, Basic auth, JWT (HS256/RS256/JWK URL), SMART on FHIR scopes
 - **Compartment access control** — Patient-scoped token restricts access to own data
 - **TLS/HTTPS** — Optional TLS via config
@@ -422,6 +423,7 @@ Licensed under the [Apache License, Version 2.0](LICENSE).
 - JSON Patch (RFC 6902)
 - Patient `$everything` オペレーション
 - Subscription（rest-hook 通知 / WebSocket `/ws` の R4 `bind`・`ping` 通知）
+- Webhook（`BundleCreated`・`TaskCompleted` のライフサイクルイベントを設定エンドポイントへ通知）
 - `_summary` / `_elements` によるリソースフィルタリング
 - US Core / JP Core プロファイルによるバリデーション
 - US Core 適合 — Inferno US Core v7 & v8 の FHIR API テストスイートをパス（v7: `examples/us-core-seed.json` / v8: `examples/us-core-v8-seed.json`。TLS テストは HTTPS デプロイが前提）

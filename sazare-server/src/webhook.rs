@@ -31,6 +31,20 @@ impl WebhookManager {
         }
     }
 
+    /// Fire `TaskCompleted` if `resource` is a Task whose status is "completed".
+    /// Cheap no-op when webhooks are disabled or the resource doesn't qualify.
+    pub fn maybe_task_completed(&self, resource: &Value) {
+        if !self.settings.enabled {
+            return;
+        }
+        let is_completed_task = resource.get("resourceType").and_then(|v| v.as_str())
+            == Some("Task")
+            && resource.get("status").and_then(|v| v.as_str()) == Some("completed");
+        if is_completed_task {
+            self.trigger(WebhookEvent::TaskCompleted, resource.clone());
+        }
+    }
+
     /// Trigger webhook for an event
     pub fn trigger(&self, event: WebhookEvent, resource: Value) {
         if !self.settings.enabled {

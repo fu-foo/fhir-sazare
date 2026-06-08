@@ -181,11 +181,20 @@ pub async fn process_bundle(
         }
     };
 
-    if bundle_type == "transaction" {
+    let response = if bundle_type == "transaction" {
         transaction::process_transaction(&state, &audit_ctx, entries).await
     } else {
         batch::process_batch(&state, &audit_ctx, entries).await
+    };
+
+    // Fire the BundleCreated lifecycle webhook on a successful bundle.
+    if response.status().is_success() {
+        state
+            .webhook
+            .trigger(crate::webhook::WebhookEvent::BundleCreated, bundle);
     }
+
+    response
 }
 
 #[cfg(test)]

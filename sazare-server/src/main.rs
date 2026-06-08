@@ -119,6 +119,9 @@ async fn main() {
         jwk_cache: tokio::sync::RwLock::new(sazare_server::auth::JwkCache::new()),
         plugin_names,
         ws_registry: Arc::new(sazare_server::websocket::WsRegistry::new()),
+        webhook: Arc::new(sazare_server::webhook::WebhookManager::new(
+            config.webhook.clone(),
+        )),
     });
 
     tracing::info!(

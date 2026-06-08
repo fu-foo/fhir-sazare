@@ -33,6 +33,7 @@ async fn start_test_server() -> (String, TempDir) {
         jwk_cache: tokio::sync::RwLock::new(sazare_server::auth::JwkCache::new()),
         plugin_names: Vec::new(),
         ws_registry: Arc::new(sazare_server::websocket::WsRegistry::new()),
+        webhook: Arc::new(sazare_server::webhook::WebhookManager::new(Default::default())),
     });
 
     let app = build_router(state);
@@ -50,6 +51,86 @@ async fn start_test_server() -> (String, TempDir) {
     });
 
     (format!("http://{}", addr), temp_dir)
+}
+
+/// Sink endpoint that forwards received webhook bodies to a channel.
+async fn webhook_sink(
+    axum::extract::State(tx): axum::extract::State<tokio::sync::mpsc::UnboundedSender<Value>>,
+    axum::Json(body): axum::Json<Value>,
+) -> axum::http::StatusCode {
+    let _ = tx.send(body);
+    axum::http::StatusCode::OK
+}
+
+#[tokio::test]
+async fn test_webhook_task_completed_fires() {
+    use sazare_server::config::{WebhookEndpoint, WebhookSettings};
+    use tokio::sync::mpsc;
+
+    // A sink server that records the webhook bodies it receives.
+    let (tx, mut rx) = mpsc::unbounded_channel::<Value>();
+    let sink = axum::Router::new()
+        .route("/sink", axum::routing::post(webhook_sink))
+        .with_state(tx);
+    let sink_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let sink_addr = sink_listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(sink_listener, sink).await.unwrap() });
+    let sink_url = format!("http://{}/sink", sink_addr);
+
+    // A sazare server with webhooks enabled, pointing at the sink.
+    let temp_dir = TempDir::new().unwrap();
+    let mut config = ServerConfig::default();
+    config.webhook = WebhookSettings {
+        enabled: true,
+        endpoints: vec![WebhookEndpoint {
+            url: sink_url,
+            events: vec!["TaskCompleted".to_string()],
+            headers: Default::default(),
+        }],
+    };
+    let webhook = Arc::new(sazare_server::webhook::WebhookManager::new(config.webhook.clone()));
+    let state = Arc::new(AppState {
+        store: SqliteStore::open(temp_dir.path().join("r.sqlite")).unwrap(),
+        index: Mutex::new(SearchIndex::open(temp_dir.path().join("i.sqlite")).unwrap()),
+        audit: Arc::new(Mutex::new(AuditLog::open(temp_dir.path().join("a.sqlite")).unwrap())),
+        config,
+        profile_registry: ProfileRegistry::new(),
+        terminology_registry: TerminologyRegistry::new(),
+        search_param_registry: SearchParamRegistry::new(),
+        compartment_def: CompartmentDef::patient_compartment(),
+        jwk_cache: tokio::sync::RwLock::new(sazare_server::auth::JwkCache::new()),
+        plugin_names: Vec::new(),
+        ws_registry: Arc::new(sazare_server::websocket::WsRegistry::new()),
+        webhook,
+    });
+    let app = build_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
+            .await
+            .unwrap()
+    });
+    let base_url = format!("http://{}", addr);
+
+    // Creating a completed Task fires the TaskCompleted webhook.
+    let client = reqwest::Client::new();
+    client
+        .put(format!("{}/Task/task-1", base_url))
+        .json(&json!({
+            "resourceType": "Task", "id": "task-1",
+            "status": "completed", "intent": "order"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let received = tokio::time::timeout(std::time::Duration::from_secs(5), rx.recv())
+        .await
+        .expect("timed out waiting for webhook")
+        .unwrap();
+    assert_eq!(received["resourceType"], "Task");
+    assert_eq!(received["status"], "completed");
 }
 
 #[tokio::test]

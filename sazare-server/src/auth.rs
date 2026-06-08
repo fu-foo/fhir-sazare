@@ -518,6 +518,7 @@ mod tests {
             jwk_cache: RwLock::new(JwkCache::new()),
             plugin_names: Vec::new(),
             ws_registry: Arc::new(crate::websocket::WsRegistry::new()),
+            webhook: Arc::new(crate::webhook::WebhookManager::new(Default::default())),
         })
     }
 

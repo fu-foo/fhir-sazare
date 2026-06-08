@@ -179,6 +179,9 @@ pub async fn create(
         });
     }
 
+    // Lifecycle webhook: fire if this is a completed Task.
+    state.webhook.maybe_task_completed(&resource_value);
+
     Ok(response_with_etag(StatusCode::CREATED, resource_value).into_response())
 }
 
@@ -345,6 +348,9 @@ pub async fn update(
         });
     }
 
+    // Lifecycle webhook: fire if this is a completed Task.
+    state.webhook.maybe_task_completed(&resource_value);
+
     Ok(response_with_etag(StatusCode::OK, resource_value).into_response())
 }
 
@@ -483,6 +489,9 @@ pub async fn patch_resource(
             SubscriptionManager::notify(&state, &rt, &rid, &rv).await;
         });
     }
+
+    // Lifecycle webhook: fire if this is a completed Task.
+    state.webhook.maybe_task_completed(&resource);
 
     Ok(response_with_etag(StatusCode::OK, resource).into_response())
 }
