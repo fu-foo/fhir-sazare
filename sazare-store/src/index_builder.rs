@@ -97,6 +97,95 @@ impl IndexBuilder {
             ExtractionMode::JpNameRepresentation => {
                 Self::extract_jp_name_by_representation(resource, &def.path, &def.name, param_type_str, indices);
             }
+            ExtractionMode::JpExtensionValue => {
+                Self::extract_jp_extension_value(resource, &def.path, &def.name, param_type_str, indices);
+            }
+            ExtractionMode::JpDosagePeriodStart => {
+                Self::extract_jp_dosage_period_start(resource, &def.path, &def.name, param_type_str, indices);
+            }
+        }
+    }
+
+    /// JpExtensionValue: index a top-level extension (`path[0]`) identified by
+    /// URL (`path[1]`) whose value kind is `path[2]` (`string` / `coding` /
+    /// `identifier`). Strings are indexed lowercased; codings and identifiers
+    /// are indexed as tokens (code/value + system).
+    fn extract_jp_extension_value(
+        resource: &Value,
+        path: &[String],
+        name: &str,
+        param_type: &str,
+        indices: &mut Vec<(String, String, String, Option<String>)>,
+    ) {
+        let (url, kind) = match (path.get(1), path.get(2)) {
+            (Some(u), Some(k)) => (u.as_str(), k.as_str()),
+            _ => return,
+        };
+        let Some(exts) = resource.get(path[0].as_str()).and_then(|v| v.as_array()) else {
+            return;
+        };
+        for ext in exts.iter().filter(|e| {
+            e.get("url").and_then(|u| u.as_str()) == Some(url)
+        }) {
+            match kind {
+                "string" => {
+                    if let Some(s) = ext.get("valueString").and_then(|v| v.as_str()) {
+                        indices.push((name.to_string(), param_type.to_string(), s.to_lowercase(), None));
+                    }
+                }
+                "coding" => {
+                    if let Some(coding) = ext.get("valueCoding") {
+                        if let Some(code) = coding.get("code").and_then(|v| v.as_str()) {
+                            let system = coding.get("system").and_then(|v| v.as_str()).map(str::to_string);
+                            indices.push((name.to_string(), param_type.to_string(), code.to_string(), system));
+                        }
+                    }
+                }
+                "identifier" => {
+                    if let Some(id) = ext.get("valueIdentifier") {
+                        if let Some(value) = id.get("value").and_then(|v| v.as_str()) {
+                            let system = id.get("system").and_then(|v| v.as_str()).map(str::to_string);
+                            indices.push((name.to_string(), param_type.to_string(), value.to_string(), system));
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// JpDosagePeriodStart: index the `valuePeriod.start` of the extension
+    /// (`path[1]`) carried under each `MedicationRequest.dosageInstruction`
+    /// (`path[0]`), as a date.
+    fn extract_jp_dosage_period_start(
+        resource: &Value,
+        path: &[String],
+        name: &str,
+        param_type: &str,
+        indices: &mut Vec<(String, String, String, Option<String>)>,
+    ) {
+        let url = match path.get(1) {
+            Some(u) => u.as_str(),
+            None => return,
+        };
+        let Some(dosages) = resource.get(path[0].as_str()).and_then(|v| v.as_array()) else {
+            return;
+        };
+        for dosage in dosages {
+            let Some(exts) = dosage.get("extension").and_then(|v| v.as_array()) else {
+                continue;
+            };
+            for ext in exts.iter().filter(|e| {
+                e.get("url").and_then(|u| u.as_str()) == Some(url)
+            }) {
+                if let Some(start) = ext
+                    .get("valuePeriod")
+                    .and_then(|p| p.get("start"))
+                    .and_then(|v| v.as_str())
+                {
+                    indices.push((name.to_string(), param_type.to_string(), start.to_string(), None));
+                }
+            }
         }
     }
 

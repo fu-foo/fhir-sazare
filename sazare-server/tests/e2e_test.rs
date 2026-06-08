@@ -778,3 +778,76 @@ async fn test_metadata_advertises_jp_core() {
         profiles
     );
 }
+
+#[tokio::test]
+async fn test_jp_insurance_and_dosage_search() {
+    let (base_url, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let ext = |name: &str| {
+        format!("http://jpfhir.jp/fhir/core/Extension/StructureDefinition/{name}")
+    };
+
+    // Coverage with JP insured-person extensions.
+    create(&client, &base_url, "Coverage", &json!({
+        "resourceType": "Coverage",
+        "status": "active",
+        "beneficiary": {"reference": "Patient/x"},
+        "payor": [{"reference": "Organization/y"}],
+        "extension": [
+            {"url": ext("JP_Coverage_InsuredPersonNumber"), "valueString": "12345678"},
+            {"url": ext("JP_Coverage_InsuredPersonSymbol"), "valueString": "ABC-1"},
+            {"url": ext("JP_Coverage_InsuredPersonSubNumber"), "valueString": "01"}
+        ]
+    })).await;
+
+    // Organization with JP institution extensions.
+    create(&client, &base_url, "Organization", &json!({
+        "resourceType": "Organization",
+        "name": "テスト病院",
+        "extension": [
+            {"url": ext("JP_Organization_InsuranceOrganizationNo"),
+             "valueIdentifier": {"system": "urn:oid:1.2.392.100495.20.3.21", "value": "1312345678"}},
+            {"url": ext("JP_Organization_PrefectureNo"),
+             "valueCoding": {"system": "urn:oid:1.2.392.100495.20.2.41", "code": "13"}}
+        ]
+    })).await;
+
+    // MedicationRequest with a dosage period-of-use extension.
+    create(&client, &base_url, "MedicationRequest", &json!({
+        "resourceType": "MedicationRequest",
+        "status": "active",
+        "intent": "order",
+        "subject": {"reference": "Patient/x"},
+        "medicationCodeableConcept": {"text": "アムロジピン錠5mg"},
+        "dosageInstruction": [{
+            "extension": [{"url": ext("JP_MedicationDosage_PeriodOfUse"),
+                           "valuePeriod": {"start": "2025-12-01"}}]
+        }]
+    })).await;
+
+    async fn total(client: &reqwest::Client, base: &str, type_: &str, param: &str, value: &str) -> i64 {
+        let resp = client
+            .get(format!("{}/{}", base, type_))
+            .query(&[(param, value)])
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200, "search {} {}={} should 200", type_, param, value);
+        let bundle: Value = resp.json().await.unwrap();
+        bundle["total"].as_i64().unwrap_or(0)
+    }
+
+    // Coverage insured-person (string) searches.
+    assert_eq!(total(&client, &base_url, "Coverage", "jp-insured-personnumber", "12345678").await, 1);
+    assert_eq!(total(&client, &base_url, "Coverage", "jp-insured-personsymbol", "ABC-1").await, 1);
+    assert_eq!(total(&client, &base_url, "Coverage", "jp-insured-personsubnumber", "01").await, 1);
+    assert_eq!(total(&client, &base_url, "Coverage", "jp-insured-personnumber", "99999999").await, 0);
+
+    // Organization institution (token) searches.
+    assert_eq!(total(&client, &base_url, "Organization", "jp-insurance-organizationno", "1312345678").await, 1);
+    assert_eq!(total(&client, &base_url, "Organization", "jp-prefectureno", "13").await, 1);
+
+    // MedicationRequest dosage start (date) search.
+    assert_eq!(total(&client, &base_url, "MedicationRequest", "jp-medication-start", "ge2025-01-01").await, 1);
+    assert_eq!(total(&client, &base_url, "MedicationRequest", "jp-medication-start", "ge2026-01-01").await, 0);
+}
