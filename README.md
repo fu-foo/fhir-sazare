@@ -19,7 +19,7 @@
 - **Conditional operations** — Conditional create (`If-None-Exist`), update, and delete
 - **Resource filtering** — `_summary` (5 modes) and `_elements` support
 - **Validation** — Multi-phase validation with US Core and JP Core profile support
-- **JP Core** — HL7 FHIR JP Core v1.2.0 profiles, plus Japanese name search by kana (`name-kana`) and kanji (`name-kanji`)
+- **JP Core** — 44 HL7 FHIR JP Core v1.2.0 profiles, plus Japanese name search by kana (`name-kana`) / kanji (`name-kanji`) and JP insurance / medication search params
 - **Bulk data** — NDJSON `$export` and `$import`
 - **Plugin system** — Serve domain-specific SPAs at top-level paths (e.g. `/sample-patient-register/`)
 - **Web dashboard** — Browser-based server monitoring at `/`

@@ -46,6 +46,8 @@ for i,e in enumerate(b.get('entry',[])):
   echo "  Organization?jp-insurance-organizationno=1312345678 :"; count "$BASE/Organization?jp-insurance-organizationno=1312345678"
   echo "  Organization?jp-prefectureno=13                     :"; count "$BASE/Organization?jp-prefectureno=13"
   echo "  MedicationRequest?jp-medication-start=ge2025-01-01  :"; count "$BASE/MedicationRequest?jp-medication-start=ge2025-01-01"
+  echo "=== Find resources conforming to a JP Core profile ==="
+  echo "  Patient?_profile=.../JP_Patient                     :"; count "$BASE/Patient?_profile=http://jpfhir.jp/fhir/core/StructureDefinition/JP_Patient"
 else
   echo "=== Error response ==="; cat /tmp/jp-core-seed-response.json | python3 -m json.tool || cat /tmp/jp-core-seed-response.json
   exit 1

@@ -851,3 +851,30 @@ async fn test_jp_insurance_and_dosage_search() {
     assert_eq!(total(&client, &base_url, "MedicationRequest", "jp-medication-start", "ge2025-01-01").await, 1);
     assert_eq!(total(&client, &base_url, "MedicationRequest", "jp-medication-start", "ge2026-01-01").await, 0);
 }
+
+#[tokio::test]
+async fn test_search_by_profile() {
+    let (base_url, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let jp_patient = "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Patient";
+
+    let pid = create(&client, &base_url, "Patient", &json!({
+        "resourceType": "Patient",
+        "meta": {"profile": [jp_patient]},
+        "identifier": [{"system": "urn:oid:1.2.392.100495.20.3.51.1", "value": "1"}],
+        "name": [{"family": "山田"}]
+    })).await;
+    // A non-JP patient that must not match.
+    create(&client, &base_url, "Patient", &json!({"resourceType": "Patient", "name": [{"family": "Doe"}]})).await;
+
+    let resp = client
+        .get(format!("{}/Patient", base_url))
+        .query(&[("_profile", jp_patient)])
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let bundle: Value = resp.json().await.unwrap();
+    assert_eq!(bundle["total"], 1, "_profile search should return only the JP_Patient");
+    assert_eq!(bundle["entry"][0]["resource"]["id"], pid);
+}
