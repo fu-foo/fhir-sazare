@@ -357,31 +357,56 @@ fn build_security_section(config: &crate::config::ServerConfig) -> Option<Value>
 /// SMART on FHIR configuration endpoint (GET /.well-known/smart-configuration)
 pub async fn smart_configuration(State(state): State<Arc<AppState>>) -> Json<Value> {
     let jwt_settings = state.config.auth.jwt.as_ref();
+    let smart = state.config.auth.smart.as_ref();
 
     let issuer = jwt_settings
         .and_then(|j| j.issuer.as_deref())
         .unwrap_or("(not configured)");
 
-    Json(json!({
+    // The token endpoint is live only when Backend Services is configured.
+    let token_endpoint = smart.map(|s| {
+        s.token_endpoint
+            .clone()
+            .or_else(|| jwt_settings.and_then(|j| j.issuer.clone()).map(|i| format!("{i}/token")))
+            .unwrap_or_else(|| "/token".to_string())
+    });
+
+    let mut capabilities = vec![
+        "launch-standalone",
+        "permission-v2",
+        "client-confidential-symmetric",
+    ];
+    let mut grant_types = vec!["authorization_code"];
+    if smart.is_some() {
+        // SMART Backend Services (server-to-server, asymmetric client auth).
+        capabilities.push("client-confidential-asymmetric");
+        grant_types.push("client_credentials");
+    }
+
+    let mut config = json!({
         "issuer": issuer,
         "authorization_endpoint": "(external - configure in IdP)",
-        "token_endpoint": "(external - configure in IdP)",
-        "capabilities": [
-            "launch-standalone",
-            "permission-v2",
-            "client-confidential-symmetric"
-        ],
+        "capabilities": capabilities,
         "scopes_supported": [
-            "patient/*.read",
-            "patient/*.write",
-            "user/*.read",
-            "user/*.write",
-            "system/*.*"
+            "patient/*.read", "patient/*.write",
+            "user/*.read", "user/*.write",
+            "system/*.read", "system/*.write", "system/*.*"
         ],
         "response_types_supported": ["code"],
-        "grant_types_supported": ["authorization_code"],
+        "grant_types_supported": grant_types,
         "code_challenge_methods_supported": ["S256"]
-    }))
+    });
+
+    if let Some(te) = token_endpoint {
+        config["token_endpoint"] = json!(te);
+        config["token_endpoint_auth_methods_supported"] = json!(["private_key_jwt"]);
+        config["token_endpoint_auth_signing_alg_values_supported"] =
+            json!(["RS256", "RS384", "ES256", "ES384"]);
+    } else {
+        config["token_endpoint"] = json!("(external - configure in IdP)");
+    }
+
+    Json(config)
 }
 
 /// Generate search parameter metadata from the registry

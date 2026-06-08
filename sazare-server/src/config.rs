@@ -34,6 +34,38 @@ pub struct AuthSettings {
     pub api_keys: Vec<ApiKey>,
     pub basic_auth: Vec<BasicAuthUser>,
     pub jwt: Option<JwtSettings>,
+    /// SMART Backend Services (server-to-server) token issuance.
+    pub smart: Option<SmartSettings>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SmartSettings {
+    /// Absolute URL of this server's token endpoint; the value a client
+    /// assertion's `aud` must match. Defaults to `<issuer>/token` if unset.
+    #[serde(default)]
+    pub token_endpoint: Option<String>,
+    /// Access-token lifetime in seconds (default 300).
+    #[serde(default)]
+    pub token_ttl_secs: Option<u64>,
+    /// Registered backend-services clients allowed to obtain tokens.
+    #[serde(default)]
+    pub backend_clients: Vec<BackendClient>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BackendClient {
+    /// The `client_id` (also the assertion's `iss`/`sub`).
+    pub client_id: String,
+    /// URL serving the client's public JWKS (to verify its assertion).
+    #[serde(default)]
+    pub jwks_url: Option<String>,
+    /// Inline public JWKS, as an alternative to `jwks_url`.
+    #[serde(default)]
+    pub jwks: Option<serde_json::Value>,
+    /// Scopes this client may be granted (space- or comma-separated list of
+    /// allowed scope patterns). If empty, any requested system/ scope is granted.
+    #[serde(default)]
+    pub allowed_scopes: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

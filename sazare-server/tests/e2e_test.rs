@@ -340,6 +340,153 @@ async fn test_bulk_export_sync_fallback_and_bad_format() {
     assert_eq!(resp.status(), 400);
 }
 
+// Test RSA key (RS384) for SMART Backend Services: the private PEM signs the
+// client assertion; the JWKS is registered with the server to verify it.
+const SMART_TEST_PRIV_PEM: &str = "-----BEGIN PRIVATE KEY-----
+MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDa8PTmPplmNc/D
+5nyVz/rEXB+kUYo6O3d3oj5sY0JxwD7JAYZ73TZgxj7VkDC4p/Gvphr9N0McJNje
+HQ8YO4BhjLOTKKqWVyppGZLnzGFqeVRoMgPBCFdfvKvd4L605BKp2Ji+yuQzG0gg
+Zheld577B+Blgn0EdBFj+ss9+BRX/oYzuCDdmXtLFnCkBcEX0tynYcJfIKIsN9nf
+ebXkyRIoCrDSXBzpikvoYn3AGZw/NpYHNxiizWJTzZffhudU0++vJY000ceZzj5e
+ZSPiemw2ap5cS4t62rJMNmxUDVXoItNPQyEQ/KZbsVCKfaqmCW73rFOLfP3gCMWt
+I8C3LM29AgMBAAECggEABdMWOM/ehd0Vn2kQ1G15huLKhrUSn9T4KysaTQjg+iS6
+pt9PBBmQ+kcb4dOZsDfrkpgxLJ5dPzDtwg702Viv5Ch5mIci7qf3/V7MTTVfPBVp
+PPJjri16IZZj3h2+BRLyOimEesLsCj4GD7KXm3PQu23sttafW9B4q/e+k3H3nJWg
+vynl80tP5BpEQK5t//gUw1rEqqMlqKQzYA+ECu6cfDqybLJ/Vf072XeeOFugpbRi
+86llLKvTXsY6igXSiuylNcT9++R10Q3Z2RZn7dVxqg0Dq/0O8rUh3HNeMwRhOtXo
+ir6oHRlnqu1asIHcxCOxElmKAd6tYttViETRJnm2cwKBgQD66qBkHqSThEF6CsnD
+b8+LZ/63iKr/bJikje6ODMMTy3gmRx5Lp1R3N//RhSl1Bb4hftt5kX+es8OXPAM3
+e27bL4QaAEhnZSCK7ikKHc+mJq1qIiz4o/jBcNFBU/c+PGwZz7fIWJ1J57Wn3cPr
+3Gdf+X8ux3fiSfV2J/4K90HahwKBgQDfYH2x2ifBUcjMLAnlE7OgnodhQv67hUb1
+2WDaZem9oexhFGSmPTUxmoMrGIdQp88i0GaoYbGabKI4ZcrRJMPW/SQ9QwH3g1r5
+2ls59mNXNGuuGK56NMTuftujfft60tLvJHrZToEqoOj+hI9FW6mprGAKpKT4Hxwj
+A+J5I5ASmwKBgBG1FyaZpwGmFrzXIBADxwDOkQJAydiGwGr0fT5XFjlCZbNF15R9
+NY/ISuxtWlSg2B8jBbgZlYkMpKP6nzt+IX+kZc0z8egiEd7cGddV7T6Lgjd4O/Y8
+FCUKoinbFBq3RuW3a//eiRMbIA29r8LoZf8260vQ1dwJXiI9hkcd1e7nAoGAVvVw
+WVFtEpQtEFbAj15JGmk8mL+E/SlYQ5MZYkw0X29u3ygaOqEvWR0mnRtSajK5r3rj
+y/8kLdLGoB/4gczHNKWdev/f/yQywXug8gKaD7PHi6HuIoLye0oFZTNBOEJkfVZ9
+QKWQITE9IwAl6kFR3kzNorcPxcwOnw7/Flui1asCgYEAvoxDAQm0JYPHFuUaseSg
+uLWo8sIgz41CDC3de0WijcIBnhfW5rLugsScL88RdKh5nRZCx+a4bK6SJCwkmTWk
+H4PmuZYdT4hGcpoCrnEz3EkE+o1YbJyc9rr3JYwToTrPb2XxOawOxVb9O0/JBlaF
+RBZvtZSgEHvY9JvTeEu+Pog=
+-----END PRIVATE KEY-----";
+
+const SMART_TEST_JWKS: &str = r#"{"keys":[{"kty":"RSA","alg":"RS384","use":"sig","kid":"test-key-1","n":"2vD05j6ZZjXPw-Z8lc_6xFwfpFGKOjt3d6I-bGNCccA-yQGGe902YMY-1ZAwuKfxr6Ya_TdDHCTY3h0PGDuAYYyzkyiqllcqaRmS58xhanlUaDIDwQhXX7yr3eC-tOQSqdiYvsrkMxtIIGYXpXee-wfgZYJ9BHQRY_rLPfgUV_6GM7gg3Zl7SxZwpAXBF9Lcp2HCXyCiLDfZ33m15MkSKAqw0lwc6YpL6GJ9wBmcPzaWBzcYos1iU82X34bnVNPvryWNNNHHmc4-XmUj4npsNmqeXEuLetqyTDZsVA1V6CLTT0MhEPymW7FQin2qpglu96xTi3z94AjFrSPAtyzNvQ","e":"AQAB"}]}"#;
+
+#[tokio::test]
+async fn test_smart_backend_services_token_flow() {
+    use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
+    use sazare_server::config::{BackendClient, JwtSettings, SmartSettings};
+
+    let temp_dir = TempDir::new().unwrap();
+    let mut config = ServerConfig::default();
+    config.auth.enabled = true;
+    config.auth.jwt = Some(JwtSettings {
+        issuer: Some("https://sazare.test".into()),
+        audience: None,
+        secret: Some("backend-services-test-secret".into()),
+        public_key_file: None,
+        jwk_url: None,
+    });
+    config.auth.smart = Some(SmartSettings {
+        token_endpoint: Some("https://sazare.test/token".into()),
+        token_ttl_secs: Some(300),
+        backend_clients: vec![BackendClient {
+            client_id: "inferno-client".into(),
+            jwks_url: None,
+            jwks: Some(serde_json::from_str(SMART_TEST_JWKS).unwrap()),
+            allowed_scopes: vec![],
+        }],
+    });
+
+    let state = Arc::new(AppState {
+        store: SqliteStore::open(temp_dir.path().join("r.sqlite")).unwrap(),
+        index: Mutex::new(SearchIndex::open(temp_dir.path().join("i.sqlite")).unwrap()),
+        audit: Arc::new(Mutex::new(AuditLog::open(temp_dir.path().join("a.sqlite")).unwrap())),
+        config,
+        profile_registry: ProfileRegistry::new(),
+        terminology_registry: TerminologyRegistry::new(),
+        search_param_registry: SearchParamRegistry::new(),
+        compartment_def: CompartmentDef::patient_compartment(),
+        jwk_cache: tokio::sync::RwLock::new(sazare_server::auth::JwkCache::new()),
+        plugin_names: Vec::new(),
+        ws_registry: Arc::new(sazare_server::websocket::WsRegistry::new()),
+        webhook: Arc::new(sazare_server::webhook::WebhookManager::new(Default::default())),
+        export_jobs: Arc::new(sazare_server::bulk_export::ExportJobs::new()),
+    });
+    let app = build_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
+            .await
+            .unwrap()
+    });
+    let base_url = format!("http://{}", addr);
+    let client = reqwest::Client::new();
+
+    // Auth is enabled: an unauthenticated request is rejected.
+    let resp = client.get(format!("{}/Patient", base_url)).send().await.unwrap();
+    assert_eq!(resp.status(), 401, "auth enabled rejects anonymous");
+
+    // Build a client assertion signed with the client's private key.
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let assertion_claims = json!({
+        "iss": "inferno-client",
+        "sub": "inferno-client",
+        "aud": "https://sazare.test/token",
+        "exp": now + 300,
+        "iat": now,
+        "jti": "unique-jti-1"
+    });
+    let mut header = Header::new(Algorithm::RS384);
+    header.kid = Some("test-key-1".into());
+    let assertion = encode(
+        &header,
+        &assertion_claims,
+        &EncodingKey::from_rsa_pem(SMART_TEST_PRIV_PEM.as_bytes()).unwrap(),
+    )
+    .unwrap();
+
+    // Exchange the assertion for an access token.
+    let resp = client
+        .post(format!("{}/token", base_url))
+        .form(&[
+            ("grant_type", "client_credentials"),
+            ("client_assertion_type", "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"),
+            ("client_assertion", &assertion),
+            ("scope", "system/*.read"),
+        ])
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "token exchange succeeds");
+    let token_resp: Value = resp.json().await.unwrap();
+    assert_eq!(token_resp["token_type"], "bearer");
+    let access_token = token_resp["access_token"].as_str().unwrap();
+
+    // The issued token authorizes a request.
+    let resp = client
+        .get(format!("{}/Patient", base_url))
+        .bearer_auth(access_token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "issued bearer token is accepted");
+
+    // A bad grant type is rejected.
+    let resp = client
+        .post(format!("{}/token", base_url))
+        .form(&[("grant_type", "password")])
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 400);
+}
+
 #[tokio::test]
 async fn test_health_check() {
     let (base_url, _dir) = start_test_server().await;

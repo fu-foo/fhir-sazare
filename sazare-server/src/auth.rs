@@ -154,6 +154,7 @@ pub async fn auth_middleware(
     // Allow public endpoints without auth (FHIR spec requirements)
     let path = request.uri().path();
     if path == "/health" || path == "/metadata" || path == "/$plugins"
+        || path == "/token"
         || path.starts_with("/.well-known/")
         || state.plugin_names.iter().any(|name| {
             path == format!("/{name}") || path.starts_with(&format!("/{name}/"))
@@ -479,6 +480,7 @@ mod tests {
                     password: "admin123".to_string(),
                 }],
                 jwt: None,
+                smart: None,
             },
             ..ServerConfig::default()
         }

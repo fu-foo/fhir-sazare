@@ -12,6 +12,7 @@ pub mod config;
 pub mod dashboard;
 pub mod handlers;
 pub mod plugins;
+pub mod smart;
 pub mod subscription;
 pub mod tls;
 pub mod webhook;
@@ -148,6 +149,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/metadata", get(handlers::metadata::capability_statement))
         // SMART on FHIR configuration
         .route("/.well-known/smart-configuration", get(handlers::metadata::smart_configuration))
+        .route("/token", post(smart::token))
         .route("/ws", get(websocket::ws_handler))
         // Operations (must be before /{resource_type}/{id} to avoid matching as {id})
         .route("/{resource_type}/$validate", post(handlers::validate::validate))
