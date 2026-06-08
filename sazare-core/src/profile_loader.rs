@@ -164,6 +164,25 @@ impl ProfileLoader {
         const JP_CORE_PRACTITIONERROLE: &str = include_str!("../profiles/jp-core/jp-core-practitionerrole.json");
         const JP_CORE_PROCEDURE: &str = include_str!("../profiles/jp-core/jp-core-procedure.json");
         const JP_CORE_SPECIMEN_COMMON: &str = include_str!("../profiles/jp-core/jp-core-specimen-common.json");
+        const JP_CORE_DIAGNOSTICREPORT_DENTALORAL: &str = include_str!("../profiles/jp-core/jp-core-diagnosticreport-dentaloral.json");
+        const JP_CORE_DIAGNOSTICREPORT_ENDOSCOPY: &str = include_str!("../profiles/jp-core/jp-core-diagnosticreport-endoscopy.json");
+        const JP_CORE_DIAGNOSTICREPORT_MICROBIOLOGY: &str = include_str!("../profiles/jp-core/jp-core-diagnosticreport-microbiology.json");
+        const JP_CORE_DIAGNOSTICREPORT_RADIOLOGY: &str = include_str!("../profiles/jp-core/jp-core-diagnosticreport-radiology.json");
+        const JP_CORE_IMAGINGSTUDY_ENDOSCOPY: &str = include_str!("../profiles/jp-core/jp-core-imagingstudy-endoscopy.json");
+        const JP_CORE_IMAGINGSTUDY_RADIOLOGY: &str = include_str!("../profiles/jp-core/jp-core-imagingstudy-radiology.json");
+        const JP_CORE_MEDIA_ENDOSCOPY: &str = include_str!("../profiles/jp-core/jp-core-media-endoscopy.json");
+        const JP_CORE_MEDICATIONADMINISTRATION_INJECTION: &str = include_str!("../profiles/jp-core/jp-core-medicationadministration-injection.json");
+        const JP_CORE_MEDICATIONDISPENSE_INJECTION: &str = include_str!("../profiles/jp-core/jp-core-medicationdispense-injection.json");
+        const JP_CORE_MEDICATIONREQUEST_INJECTION: &str = include_str!("../profiles/jp-core/jp-core-medicationrequest-injection.json");
+        const JP_CORE_MEDICATIONSTATEMENT_INJECTION: &str = include_str!("../profiles/jp-core/jp-core-medicationstatement-injection.json");
+        const JP_CORE_OBSERVATION_DENTALORAL_MISSINGTOOTHCONDITION: &str = include_str!("../profiles/jp-core/jp-core-observation-dentaloral-missingtoothcondition.json");
+        const JP_CORE_OBSERVATION_DENTALORAL_TOOTHEXISTENCE: &str = include_str!("../profiles/jp-core/jp-core-observation-dentaloral-toothexistence.json");
+        const JP_CORE_OBSERVATION_DENTALORAL_TOOTHTREATMENTCONDITION: &str = include_str!("../profiles/jp-core/jp-core-observation-dentaloral-toothtreatmentcondition.json");
+        const JP_CORE_OBSERVATION_DENTALORAL_ECS: &str = include_str!("../profiles/jp-core/jp-core-observation-dentaloral-ecs.json");
+        const JP_CORE_OBSERVATION_ELECTROCARDIOGRAM: &str = include_str!("../profiles/jp-core/jp-core-observation-electrocardiogram.json");
+        const JP_CORE_OBSERVATION_ENDOSCOPY: &str = include_str!("../profiles/jp-core/jp-core-observation-endoscopy.json");
+        const JP_CORE_OBSERVATION_RADIOLOGY_FINDINGS: &str = include_str!("../profiles/jp-core/jp-core-observation-radiology-findings.json");
+        const JP_CORE_OBSERVATION_RADIOLOGY_IMPRESSION: &str = include_str!("../profiles/jp-core/jp-core-observation-radiology-impression.json");
 
         let embedded_jsons = vec![
             JP_CORE_PATIENT,
@@ -191,6 +210,25 @@ impl ProfileLoader {
             JP_CORE_PRACTITIONERROLE,
             JP_CORE_PROCEDURE,
             JP_CORE_SPECIMEN_COMMON,
+            JP_CORE_DIAGNOSTICREPORT_DENTALORAL,
+            JP_CORE_DIAGNOSTICREPORT_ENDOSCOPY,
+            JP_CORE_DIAGNOSTICREPORT_MICROBIOLOGY,
+            JP_CORE_DIAGNOSTICREPORT_RADIOLOGY,
+            JP_CORE_IMAGINGSTUDY_ENDOSCOPY,
+            JP_CORE_IMAGINGSTUDY_RADIOLOGY,
+            JP_CORE_MEDIA_ENDOSCOPY,
+            JP_CORE_MEDICATIONADMINISTRATION_INJECTION,
+            JP_CORE_MEDICATIONDISPENSE_INJECTION,
+            JP_CORE_MEDICATIONREQUEST_INJECTION,
+            JP_CORE_MEDICATIONSTATEMENT_INJECTION,
+            JP_CORE_OBSERVATION_DENTALORAL_MISSINGTOOTHCONDITION,
+            JP_CORE_OBSERVATION_DENTALORAL_TOOTHEXISTENCE,
+            JP_CORE_OBSERVATION_DENTALORAL_TOOTHTREATMENTCONDITION,
+            JP_CORE_OBSERVATION_DENTALORAL_ECS,
+            JP_CORE_OBSERVATION_ELECTROCARDIOGRAM,
+            JP_CORE_OBSERVATION_ENDOSCOPY,
+            JP_CORE_OBSERVATION_RADIOLOGY_FINDINGS,
+            JP_CORE_OBSERVATION_RADIOLOGY_IMPRESSION,
         ];
 
         let mut profiles = Vec::new();

@@ -1,0 +1,104 @@
+{
+ "resourceType": "Observation",
+ "id": "jp-observation-dentaloral-toothtreatmentcondition-example-1",
+ "meta": {
+  "profile": [
+   "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Observation_DentalOral_ToothTreatmentCondition"
+  ]
+ },
+ "text": {
+  "status": "generated",
+  "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p class=\"res-header-id\"><b>Generated Narrative: Observation jp-observation-dentaloral-toothtreatmentcondition-example-1</b></p><a name=\"jp-observation-dentaloral-toothtreatmentcondition-example-1\"> </a><a name=\"hcjp-observation-dentaloral-toothtreatmentcondition-example-1\"> </a><div style=\"display: inline-block; background-color: #d9e0e7; padding: 6px; margin: 4px; border: 1px solid #8da1b4; border-radius: 5px; line-height: 60%\"><p style=\"margin-bottom: 0px\"/><p style=\"margin-bottom: 0px\">Profile: <a href=\"StructureDefinition-jp-observation-dentaloral-toothtreatmentcondition.html\">JP Core Observation DentalOral Tooth Treatment Condition Profile</a></p></div><p><b>status</b>: Final</p><p><b>category</b>: <span title=\"Codes:{http://jpfhir.jp/fhir/core/CodeSystem/JP_SimpleObservationCategory_CS exam}\">現存歯の処置状態</span>, <span title=\"Codes:{http://loinc.org LP89803-8}\">Dental</span>, <span title=\"Codes:{http://jpfhir.jp/fhir/core/CodeSystem/JP_ObservationDentalCategory_CS DO-1-02}\">ToothTreatmentCondition</span></p><p><b>code</b>: <span title=\"Codes:{http://loinc.org 54570-7}\">Oral/Dental Status</span></p><p><b>subject</b>: <a href=\"Patient-jp-patient-example-1.html\">山田 太郎 Male, DoB: 1970-01-01 ( urn:oid:1.2.392.100495.20.3.51.11311234567#JP_local_patient_identifier_11311234567_NamingSystem#00000010)</a></p><p><b>effective</b>: 2022-10-01</p><p><b>issued</b>: 2022-10-24 17:30:00+0900</p><p><b>performer</b>: <a href=\"Practitioner-jp-practitioner-example-male-1.html\">Practitioner 大阪 一郎</a></p><p><b>bodySite</b>: <span title=\"Codes:{http://jpfhir.jp/fhir/core/CodeSystem/JP_DentalBodySite_CS 1015}\">右側上顎第２小臼歯</span></p><h3>Components</h3><table class=\"grid\"><tr><td style=\"display: none\">-</td><td><b>Code</b></td></tr><tr><td style=\"display: none\">*</td><td><span title=\"Codes:{http://jpfhir.jp/fhir/core/CodeSystem/JP_DentalPresentTeethObservation_CS TP-21-01}, {http://jpfhir.jp/fhir/core/CodeSystem/JP_DentalSimplePresentTeethObservation_CS TD-2-10}\">全部修復（全部金属冠・銀色）（ＦＭＣ）</span></td></tr></table></div>"
+ },
+ "status": "final",
+ "category": [
+  {
+   "coding": [
+    {
+     "system": "http://jpfhir.jp/fhir/core/CodeSystem/JP_SimpleObservationCategory_CS",
+     "code": "exam",
+     "display": "exam"
+    }
+   ],
+   "text": "現存歯の処置状態"
+  },
+  {
+   "coding": [
+    {
+     "system": "http://loinc.org",
+     "code": "LP89803-8",
+     "display": "Dental"
+    }
+   ]
+  },
+  {
+   "coding": [
+    {
+     "system": "http://jpfhir.jp/fhir/core/CodeSystem/JP_ObservationDentalCategory_CS",
+     "code": "DO-1-02",
+     "display": "ToothTreatmentCondition"
+    }
+   ]
+  }
+ ],
+ "code": {
+  "coding": [
+   {
+    "system": "http://loinc.org",
+    "code": "54570-7",
+    "display": "Oral/Dental Status"
+   }
+  ]
+ },
+ "subject": {
+  "reference": "Patient/jp-patient-example-1"
+ },
+ "effectiveDateTime": "2022-10-01",
+ "issued": "2022-10-24T17:30:00+09:00",
+ "performer": [
+  {
+   "reference": "Practitioner/jp-practitioner-example-male-1"
+  }
+ ],
+ "bodySite": {
+  "extension": [
+   {
+    "url": "http://jpfhir.jp/fhir/core/Extension/StructureDefinition/JP_Observation_DentalOral_ToothSurface",
+    "valueCodeableConcept": {
+     "coding": [
+      {
+       "system": "http://jpfhir.jp/fhir/core/CodeSystem/JP_DentalSurfaceBodyStructure_CS",
+       "code": "TP-18",
+       "display": "歯冠部"
+      }
+     ]
+    }
+   }
+  ],
+  "coding": [
+   {
+    "system": "http://jpfhir.jp/fhir/core/CodeSystem/JP_DentalBodySite_CS",
+    "code": "1015",
+    "display": "右側上顎第２小臼歯"
+   }
+  ]
+ },
+ "component": [
+  {
+   "code": {
+    "coding": [
+     {
+      "system": "http://jpfhir.jp/fhir/core/CodeSystem/JP_DentalPresentTeethObservation_CS",
+      "code": "TP-21-01",
+      "display": "全部修復（全部金属冠・銀色）（ＦＭＣ）"
+     },
+     {
+      "system": "http://jpfhir.jp/fhir/core/CodeSystem/JP_DentalSimplePresentTeethObservation_CS",
+      "code": "TD-2-10",
+      "display": "現在歯【処置歯○】（ブリッジＢｒ支台を含む）"
+     }
+    ]
+   }
+  }
+ ]
+}

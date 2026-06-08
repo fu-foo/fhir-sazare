@@ -1,0 +1,49 @@
+{
+ "resourceType": "Media",
+ "id": "jp-media-endoscopy-example-1",
+ "meta": {
+  "profile": [
+   "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Media_Endoscopy"
+  ]
+ },
+ "text": {
+  "status": "generated",
+  "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p class=\"res-header-id\"><b>Generated Narrative: Media jp-media-endoscopy-example-1</b></p><a name=\"jp-media-endoscopy-example-1\"> </a><a name=\"hcjp-media-endoscopy-example-1\"> </a><div style=\"display: inline-block; background-color: #d9e0e7; padding: 6px; margin: 4px; border: 1px solid #8da1b4; border-radius: 5px; line-height: 60%\"><p style=\"margin-bottom: 0px\"/><p style=\"margin-bottom: 0px\">Profile: <a href=\"StructureDefinition-jp-media-endoscopy.html\">JP Core media Endoscopy Profile</a></p></div><p><b>identifier</b>: <a href=\"NamingSystem-jp-example-local-identifiersystem.html\" title=\"JP_local_example_identifiersystem_NamingSystem\">JP_local_example_identifiersystem_NamingSystem</a>/202304250945280001</p><p><b>status</b>: Completed</p><p><b>type</b>: <span title=\"Codes:{http://terminology.hl7.org/CodeSystem/media-type image}\">Image</span></p><p><b>modality</b>: <span title=\"Codes:{http://dicom.nema.org/resources/ontology/DCM ES}\">Endoscopy</span></p><p><b>subject</b>: <a href=\"Patient-jp-patient-example-1.html\">東京 太郎</a></p><p><b>created</b>: 2023-04-26</p><p><b>height</b>: 1080</p><p><b>width</b>: 1920</p><h3>Contents</h3><table class=\"grid\"><tr><td style=\"display: none\">-</td><td><b>ContentType</b></td><td><b>Url</b></td><td><b>Creation</b></td></tr><tr><td style=\"display: none\">*</td><td>image/jpeg</td><td><a href=\"https://simplifier.net/resolve?scope=jpfhir-terminology@1.4.0&amp;canonical=http://samplehospital.org/fhir/binary/A20230426001\">http://samplehospital.org/fhir/binary/A20230426001</a></td><td>2023-04-26</td></tr></table></div>"
+ },
+ "identifier": [
+  {
+   "system": "http://samplehospital.org/fhir/endoscopysystem/imaging-orders",
+   "value": "202304250945280001"
+  }
+ ],
+ "status": "completed",
+ "type": {
+  "coding": [
+   {
+    "system": "http://terminology.hl7.org/CodeSystem/media-type",
+    "code": "image"
+   }
+  ]
+ },
+ "modality": {
+  "coding": [
+   {
+    "system": "http://dicom.nema.org/resources/ontology/DCM",
+    "code": "ES",
+    "display": "Endoscopy"
+   }
+  ]
+ },
+ "subject": {
+  "reference": "Patient/jp-patient-example-1",
+  "display": "東京 太郎"
+ },
+ "createdDateTime": "2023-04-26",
+ "height": 1080,
+ "width": 1920,
+ "content": {
+  "contentType": "image/jpeg",
+  "url": "http://samplehospital.org/fhir/binary/A20230426001",
+  "creation": "2023-04-26"
+ }
+}

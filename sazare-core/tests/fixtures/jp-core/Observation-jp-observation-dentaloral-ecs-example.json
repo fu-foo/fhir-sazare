@@ -1,0 +1,145 @@
+{
+ "resourceType": "Observation",
+ "id": "jp-observation-dentaloral-ecs-example",
+ "meta": {
+  "profile": [
+   "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Observation_DentalOral_eCS"
+  ]
+ },
+ "text": {
+  "status": "generated",
+  "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p class=\"res-header-id\"><b>Generated Narrative: Observation jp-observation-dentaloral-ecs-example</b></p><a name=\"jp-observation-dentaloral-ecs-example\"> </a><a name=\"hcjp-observation-dentaloral-ecs-example\"> </a><div style=\"display: inline-block; background-color: #d9e0e7; padding: 6px; margin: 4px; border: 1px solid #8da1b4; border-radius: 5px; line-height: 60%\"><p style=\"margin-bottom: 0px\"/><p style=\"margin-bottom: 0px\">Profile: <a href=\"StructureDefinition-jp-observation-dentaloral-ecs.html\">JP Core Observation DentalOral eCS Profile</a></p></div><p><b>status</b>: Final</p><p><b>category</b>: <span title=\"Codes:{http://jpfhir.jp/fhir/core/CodeSystem/JP_SimpleObservationCategory_CS exam}\">現存歯の処置状態</span>, <span title=\"Codes:{http://loinc.org LP89803-8}\">Dental</span>, <span title=\"Codes:{http://jpfhir.jp/fhir/core/CodeSystem/JP_ObservationDentalCategory_CS DO-1-04}\">ClinicalInformationSharing</span></p><p><b>code</b>: <span title=\"Codes:{http://loinc.org 57133-1}\">Referral note</span></p><p><b>subject</b>: <a href=\"Patient-jp-patient-example-1.html\">山田 太郎 Male, DoB: 1970-01-01 ( urn:oid:1.2.392.100495.20.3.51.11311234567#JP_local_patient_identifier_11311234567_NamingSystem#00000010)</a></p><p><b>effective</b>: 2022-10-01</p><p><b>issued</b>: 2022-10-24 17:30:00+0900</p><p><b>performer</b>: <a href=\"Practitioner-jp-practitioner-example-male-1.html\">Practitioner 大阪 一郎</a></p><p><b>value</b>: <span title=\"Codes:{http://jpfhir.jp/fhir/core/CodeSystem/JP_DentalPresentTeethObservation_CS TP-9-15}\">歯の破折（ＦｒＴ）</span></p><p><b>bodySite</b>: <span title=\"Codes:\"></span></p></div>"
+ },
+ "status": "final",
+ "category": [
+  {
+   "coding": [
+    {
+     "system": "http://jpfhir.jp/fhir/core/CodeSystem/JP_SimpleObservationCategory_CS",
+     "code": "exam",
+     "display": "exam"
+    }
+   ],
+   "text": "現存歯の処置状態"
+  },
+  {
+   "coding": [
+    {
+     "system": "http://loinc.org",
+     "code": "LP89803-8",
+     "display": "Dental"
+    }
+   ]
+  },
+  {
+   "coding": [
+    {
+     "system": "http://jpfhir.jp/fhir/core/CodeSystem/JP_ObservationDentalCategory_CS",
+     "code": "DO-1-04",
+     "display": "ClinicalInformationSharing"
+    }
+   ]
+  }
+ ],
+ "code": {
+  "coding": [
+   {
+    "system": "http://loinc.org",
+    "code": "57133-1",
+    "display": "Referral note"
+   }
+  ]
+ },
+ "subject": {
+  "reference": "Patient/jp-patient-example-1"
+ },
+ "effectiveDateTime": "2022-10-01",
+ "issued": "2022-10-24T17:30:00+09:00",
+ "performer": [
+  {
+   "reference": "Practitioner/jp-practitioner-example-male-1"
+  }
+ ],
+ "valueCodeableConcept": {
+  "coding": [
+   {
+    "system": "http://jpfhir.jp/fhir/core/CodeSystem/JP_DentalPresentTeethObservation_CS",
+    "code": "TP-9-15",
+    "display": "歯の破折（ＦｒＴ）"
+   }
+  ]
+ },
+ "bodySite": {
+  "extension": [
+   {
+    "url": "http://jpfhir.jp/fhir/core/Extension/StructureDefinition/JP_Observation_DentalOral_BodySiteStatus",
+    "valueCodeableConcept": {
+     "coding": [
+      {
+       "system": "http://jpfhir.jp/fhir/core/CodeSystem/JP_DentalBodySiteStatus_CS",
+       "code": "0"
+      }
+     ]
+    }
+   },
+   {
+    "extension": [
+     {
+      "url": "structure",
+      "valueCodeableConcept": {
+       "coding": [
+        {
+         "system": "http://jpfhir.jp/fhir/core/CodeSystem/JP_DentalBodySite_CS",
+         "code": "1042",
+         "display": "右側下顎側切歯"
+        }
+       ]
+      }
+     },
+     {
+      "url": "qualifier",
+      "valueCodeableConcept": {
+       "coding": [
+        {
+         "system": "http://jpfhir.jp/fhir/core/CodeSystem/JP_DentalSurfaceBodyStructure_CS",
+         "code": "TP-18",
+         "display": "歯冠部"
+        }
+       ]
+      }
+     }
+    ],
+    "url": "http://jpfhir.jp/fhir/core/Extension/StructureDefinition/JP_Observation_DentalOral_BodyStructure_eCS"
+   },
+   {
+    "extension": [
+     {
+      "url": "structure",
+      "valueCodeableConcept": {
+       "coding": [
+        {
+         "system": "http://jpfhir.jp/fhir/core/CodeSystem/JP_DentalBodySite_CS",
+         "code": "1041",
+         "display": "右側下顎中切歯"
+        }
+       ]
+      }
+     },
+     {
+      "url": "qualifier",
+      "valueCodeableConcept": {
+       "coding": [
+        {
+         "system": "http://jpfhir.jp/fhir/core/CodeSystem/JP_DentalSurfaceBodyStructure_CS",
+         "code": "TP-18",
+         "display": "歯冠部"
+        }
+       ]
+      }
+     }
+    ],
+    "url": "http://jpfhir.jp/fhir/core/Extension/StructureDefinition/JP_Observation_DentalOral_BodyStructure_eCS"
+   }
+  ]
+ }
+}

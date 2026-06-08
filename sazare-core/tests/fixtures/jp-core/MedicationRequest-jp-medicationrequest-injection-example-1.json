@@ -1,0 +1,228 @@
+{
+ "resourceType": "MedicationRequest",
+ "id": "jp-medicationrequest-injection-example-1",
+ "meta": {
+  "profile": [
+   "http://jpfhir.jp/fhir/core/StructureDefinition/JP_MedicationRequest_Injection"
+  ]
+ },
+ "text": {
+  "status": "generated",
+  "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p class=\"res-header-id\"><b>Generated Narrative: MedicationRequest jp-medicationrequest-injection-example-1</b></p><a name=\"jp-medicationrequest-injection-example-1\"> </a><a name=\"hcjp-medicationrequest-injection-example-1\"> </a><div style=\"display: inline-block; background-color: #d9e0e7; padding: 6px; margin: 4px; border: 1px solid #8da1b4; border-radius: 5px; line-height: 60%\"><p style=\"margin-bottom: 0px\"/><p style=\"margin-bottom: 0px\">Profile: <a href=\"StructureDefinition-jp-medicationrequest-injection.html\">JP Core MedicationRequest Injection Profile</a></p></div><p><b>identifier</b>: <a href=\"NamingSystem-jp-medication-rpgroup-number-namingsystem.html\" title=\"JP Core Medication RpGroup Number NamingSystem RP番号\">JP_Medication_RpGroup_Number_NamingSystem</a>/1, <a href=\"NamingSystem-jp-core-resourceInstance-identifier.html\" title=\"JP_core_resourceInstance_identifier_NamingSystem\">JP_core_resourceInstance_identifier_NamingSystem</a>/1234567890.1, <a href=\"NamingSystem-jp-IdSystem-prescriptionDocumentID-namingsystem.html\" title=\"JP_IdSystem_PrescriptionDocumentID_NamingSystem\">JP_IdSystem_PrescriptionDocumentID_NamingSystem</a>/20241101-0000000000000001</p><p><b>status</b>: Active</p><p><b>intent</b>: Order</p><p><b>category</b>: <span title=\"Codes:{http://terminology.hl7.org/CodeSystem/v2-0482 I}\">Inpatient Order</span>, <span title=\"Codes:{http://jpfhir.jp/fhir/core/CodeSystem/JP_MedicationCategoryMERIT9_CS IHP}\">入院処方</span>, <span title=\"Codes:{http://jpfhir.jp/fhir/core/CodeSystem/JHSI0001 FTP}\">定時処方</span></p><p><b>medication</b>: <a href=\"#hcjp-medicationrequest-injection-example-1/jp-medicationrequest-injection-medication-example-1\">Medication: status = active</a></p><p><b>subject</b>: <a href=\"Patient-jp-patient-example-1.html\">山田 太郎 Male, DoB: 1970-01-01 ( urn:oid:1.2.392.100495.20.3.51.11311234567#JP_local_patient_identifier_11311234567_NamingSystem#00000010)</a></p><p><b>authoredOn</b>: 2016-07-01 09:28:17+0900</p><p><b>requester</b>: <a href=\"Practitioner-jp-practitioner-example-female-1.html\">Practitioner 東京 春子</a></p><p><b>insurance</b>: <a href=\"Coverage-jp-coverage-example-1.html\">Coverage: extension = あいう,１８７,05; identifier = http://jpfhir.jp/fhir/clins/Idsystem/JP_Insurance_memberID#JP_insurance_memberID_identifier_NamingSystem#00012345:あいう:１８７:05; status = active; type = public healthcare; subscriberId = あいう:１８７; dependent = 05</a></p><blockquote><p><b>dosageInstruction</b></p><p><b>text</b>: 静脈注射 静脈内 左腕 １日おき</p><p><b>additionalInstruction</b>: <span title=\"Codes:{http://jami.jp/CodeSystem/MedicationUsageAdditional I1100000}\">１日おき</span></p><p><b>timing</b>: Once</p><p><b>site</b>: <span title=\"Codes:\"></span></p><p><b>route</b>: <span title=\"Codes:{http://jpfhir.jp/fhir/core/CodeSystem/route-codes IV}\">静脈内</span></p><p><b>method</b>: <span title=\"Codes:{http://jami.jp/CodeSystem/MedicationMethodDetailUsage 30}\">静脈注射</span></p><h3>DoseAndRates</h3><table class=\"grid\"><tr><td style=\"display: none\">-</td><td><b>Type</b></td><td><b>Dose[x]</b></td></tr><tr><td style=\"display: none\">*</td><td><span title=\"Codes:{http://jpfhir.jp/fhir/core/mhlw/CodeSystem/MedicationIngredientStrengthStrengthType 1}\">製剤量</span></td><td>2 mL<span style=\"background: LightGoldenRodYellow\"> (Details: JP Core Medication MERIT9 Unit CodeSystem  codeML = 'ｍＬ')</span></td></tr></table></blockquote><hr/><blockquote><p class=\"res-header-id\"><b>Generated Narrative: Medication #jp-medicationrequest-injection-medication-example-1</b></p><a name=\"jp-medicationrequest-injection-example-1/jp-medicationrequest-injection-medication-example-1\"> </a><a name=\"hcjp-medicationrequest-injection-example-1/jp-medicationrequest-injection-medication-example-1\"> </a><div style=\"display: inline-block; background-color: #d9e0e7; padding: 6px; margin: 4px; border: 1px solid #8da1b4; border-radius: 5px; line-height: 60%\"><p style=\"margin-bottom: 0px\"/><p style=\"margin-bottom: 0px\">Profile: <a href=\"StructureDefinition-jp-medication.html\">JP Core Medication Profile</a></p></div><p><b>status</b>: Active</p><h3>Ingredients</h3><table class=\"grid\"><tr><td style=\"display: none\">-</td><td><b>Extension</b></td><td><b>Item[x]</b></td><td><b>Strength</b></td></tr><tr><td style=\"display: none\">*</td><td/><td><span title=\"Codes:{http://medis.or.jp/CodeSystem/master-HOT9 100558502}\">ホリゾン注射液１０ｍｇ</span></td><td>1 アンプル<span style=\"background: LightGoldenRodYellow\"> (Details: JP Core Medication MERIT9 Unit CodeSystem  codeAMP = 'アンプル')</span>/1 回<span style=\"background: LightGoldenRodYellow\"> (Details: JP Core Medication MERIT9 Unit CodeSystem  codeTIME = '回')</span></td></tr></table></blockquote><hr/><blockquote><p class=\"res-header-id\"><b>Generated Narrative: BodyStructure #jp-medicationrequest-injection-bodystructure-example-1</b></p><a name=\"jp-medicationrequest-injection-example-1/jp-medicationrequest-injection-bodystructure-example-1\"> </a><a name=\"hcjp-medicationrequest-injection-example-1/jp-medicationrequest-injection-bodystructure-example-1\"> </a><p><b>location</b>: <span title=\"Codes:{http://terminology.hl7.org/CodeSystem/v2-0550 ARM}\">Arm</span></p><p><b>locationQualifier</b>: <span title=\"Codes:{http://terminology.hl7.org/CodeSystem/v2-0495 L}\">Left</span></p><p><b>patient</b>: <a href=\"Patient-jp-patient-example-1.html\">山田 太郎 Male, DoB: 1970-01-01 ( urn:oid:1.2.392.100495.20.3.51.11311234567#JP_local_patient_identifier_11311234567_NamingSystem#00000010)</a></p></blockquote></div>"
+ },
+ "contained": [
+  {
+   "resourceType": "Medication",
+   "id": "jp-medicationrequest-injection-medication-example-1",
+   "meta": {
+    "profile": [
+     "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Medication"
+    ]
+   },
+   "status": "active",
+   "ingredient": [
+    {
+     "extension": [
+      {
+       "url": "http://jpfhir.jp/fhir/core/Extension/StructureDefinition/JP_Medication_Ingredient_DrugNo",
+       "valueInteger": 1
+      }
+     ],
+     "itemCodeableConcept": {
+      "coding": [
+       {
+        "system": "http://medis.or.jp/CodeSystem/master-HOT9",
+        "code": "100558502",
+        "display": "ホリゾン注射液１０ｍｇ"
+       }
+      ]
+     },
+     "strength": {
+      "extension": [
+       {
+        "url": "http://jpfhir.jp/fhir/core/Extension/StructureDefinition/JP_Medication_IngredientStrength_StrengthType",
+        "valueCodeableConcept": {
+         "coding": [
+          {
+           "system": "http://jpfhir.jp/fhir/core/mhlw/CodeSystem/MedicationIngredientStrengthStrengthType",
+           "code": "1",
+           "display": "製剤量"
+          }
+         ]
+        }
+       }
+      ],
+      "numerator": {
+       "value": 1,
+       "unit": "アンプル",
+       "system": "http://jpfhir.jp/fhir/core/mhlw/CodeSystem/MedicationUnitMERIT9Code",
+       "code": "AMP"
+      },
+      "denominator": {
+       "value": 1,
+       "unit": "回",
+       "system": "http://jpfhir.jp/fhir/core/mhlw/CodeSystem/MedicationUnitMERIT9Code",
+       "code": "TIME"
+      }
+     }
+    }
+   ]
+  },
+  {
+   "resourceType": "BodyStructure",
+   "id": "jp-medicationrequest-injection-bodystructure-example-1",
+   "location": {
+    "coding": [
+     {
+      "system": "http://terminology.hl7.org/CodeSystem/v2-0550",
+      "code": "ARM",
+      "display": "Arm"
+     }
+    ]
+   },
+   "locationQualifier": [
+    {
+     "coding": [
+      {
+       "system": "http://terminology.hl7.org/CodeSystem/v2-0495",
+       "code": "L",
+       "display": "Left"
+      }
+     ]
+    }
+   ],
+   "patient": {
+    "reference": "Patient/jp-patient-example-1"
+   }
+  }
+ ],
+ "identifier": [
+  {
+   "system": "http://jpfhir.jp/fhir/core/mhlw/IdSystem/Medication-RPGroupNumber",
+   "value": "1"
+  },
+  {
+   "system": "http://jpfhir.jp/fhir/core/IdSystem/resourceInstance-identifier",
+   "value": "1234567890.1"
+  },
+  {
+   "system": "urn:oid:1.2.392.100495.20.3.11",
+   "value": "20241101-0000000000000001"
+  }
+ ],
+ "status": "active",
+ "intent": "order",
+ "category": [
+  {
+   "coding": [
+    {
+     "system": "http://terminology.hl7.org/CodeSystem/v2-0482",
+     "code": "I",
+     "display": "Inpatient Order"
+    }
+   ]
+  },
+  {
+   "coding": [
+    {
+     "system": "http://jpfhir.jp/fhir/core/CodeSystem/JP_MedicationCategoryMERIT9_CS",
+     "code": "IHP",
+     "display": "入院処方"
+    }
+   ]
+  },
+  {
+   "coding": [
+    {
+     "system": "http://jpfhir.jp/fhir/core/CodeSystem/JHSI0001",
+     "code": "FTP",
+     "display": "定時処方"
+    }
+   ]
+  }
+ ],
+ "medicationReference": {
+  "reference": "#jp-medicationrequest-injection-medication-example-1"
+ },
+ "subject": {
+  "reference": "Patient/jp-patient-example-1"
+ },
+ "authoredOn": "2016-07-01T09:28:17+09:00",
+ "requester": {
+  "reference": "Practitioner/jp-practitioner-example-female-1"
+ },
+ "insurance": [
+  {
+   "reference": "Coverage/jp-coverage-example-1"
+  }
+ ],
+ "dosageInstruction": [
+  {
+   "text": "静脈注射 静脈内 左腕 １日おき",
+   "additionalInstruction": [
+    {
+     "coding": [
+      {
+       "system": "http://jami.jp/CodeSystem/MedicationUsageAdditional",
+       "code": "I1100000",
+       "display": "１日おき"
+      }
+     ]
+    }
+   ],
+   "timing": {
+    "repeat": {
+     "boundsPeriod": {
+      "start": "2016-07-01T10:00:00+09:00"
+     }
+    }
+   },
+   "site": {
+    "extension": [
+     {
+      "url": "http://hl7.org/fhir/StructureDefinition/bodySite",
+      "valueReference": {
+       "reference": "#jp-medicationrequest-injection-bodystructure-example-1"
+      }
+     }
+    ]
+   },
+   "route": {
+    "coding": [
+     {
+      "system": "http://jpfhir.jp/fhir/core/CodeSystem/route-codes",
+      "code": "IV",
+      "display": "静脈内"
+     }
+    ]
+   },
+   "method": {
+    "coding": [
+     {
+      "system": "http://jami.jp/CodeSystem/MedicationMethodDetailUsage",
+      "code": "30",
+      "display": "静脈注射"
+     }
+    ]
+   },
+   "doseAndRate": [
+    {
+     "type": {
+      "coding": [
+       {
+        "system": "http://jpfhir.jp/fhir/core/mhlw/CodeSystem/MedicationIngredientStrengthStrengthType",
+        "code": "1"
+       }
+      ]
+     },
+     "doseQuantity": {
+      "value": 2,
+      "unit": "mL",
+      "system": "http://jpfhir.jp/fhir/core/mhlw/CodeSystem/MedicationUnitMERIT9Code",
+      "code": "ML"
+     }
+    }
+   ]
+  }
+ ]
+}

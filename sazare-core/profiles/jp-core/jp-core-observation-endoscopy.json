@@ -1,0 +1,255 @@
+{
+  "resourceType": "StructureDefinition",
+  "id": "jp-observation-endoscopy",
+  "url": "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Observation_Endoscopy",
+  "version": "1.2.0",
+  "name": "JP_Observation_Endoscopy",
+  "title": "JP Core Observation Endoscopy Profile",
+  "status": "active",
+  "date": "2025-07-30",
+  "publisher": "FHIR Japanese implementation research working group in Japan Association of Medical Informatics (JAMI)",
+  "contact": [
+    {
+      "name": "FHIR Japanese implementation research working group in Japan Association of Medical Informatics (JAMI)",
+      "telecom": [
+        {
+          "system": "url",
+          "value": "http://jpfhir.jp"
+        },
+        {
+          "system": "email",
+          "value": "office@hlfhir.jp"
+        }
+      ]
+    }
+  ],
+  "description": "このプロファイルはObservationリソースに対して、内視鏡を使用して実施された検査、治療による観察結果（診断、所見など）の情報を送受信するための制約と拡張を定めたものである。",
+  "jurisdiction": [
+    {
+      "coding": [
+        {
+          "system": "urn:iso:std:iso:3166",
+          "code": "JP",
+          "display": "Japan"
+        }
+      ]
+    }
+  ],
+  "copyright": "Copyright Japan FHIR Implementation Infrastructure Study Group in Japan Association of Medical Informatics (JAMI) 一般社団法人日本医療情報学会FHIR国内実装基盤研究会",
+  "fhirVersion": "4.0.1",
+  "mapping": [
+    {
+      "identity": "workflow",
+      "uri": "http://hl7.org/fhir/workflow",
+      "name": "Workflow Pattern"
+    },
+    {
+      "identity": "sct-concept",
+      "uri": "http://snomed.info/conceptdomain",
+      "name": "SNOMED CT Concept Domain Binding"
+    },
+    {
+      "identity": "v2",
+      "uri": "http://hl7.org/v2",
+      "name": "HL7 v2 Mapping"
+    },
+    {
+      "identity": "rim",
+      "uri": "http://hl7.org/v3",
+      "name": "RIM Mapping"
+    },
+    {
+      "identity": "w5",
+      "uri": "http://hl7.org/fhir/fivews",
+      "name": "FiveWs Pattern Mapping"
+    },
+    {
+      "identity": "sct-attr",
+      "uri": "http://snomed.org/attributebinding",
+      "name": "SNOMED CT Attribute Binding"
+    }
+  ],
+  "kind": "resource",
+  "abstract": false,
+  "type": "Observation",
+  "baseDefinition": "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Observation_Common",
+  "derivation": "constraint",
+  "differential": {
+    "element": [
+      {
+        "id": "Observation",
+        "path": "Observation",
+        "short": "内視鏡検査、治療による観察結果（診断、所見など）の情報。【詳細参照】",
+        "definition": "内視鏡検査、治療による観察結果（診断、所見など）の情報。",
+        "comment": "内視鏡検査、治療に関するobservation（所見や診断結果など）の制約プロフィール。"
+      },
+      {
+        "id": "Observation.identifier",
+        "path": "Observation.identifier",
+        "short": "内視鏡に関する当該項目に対して、施設内で割り振られる一意の識別子。",
+        "definition": "内視鏡に関する当該項目に対して、施設内で割り振られる一意の識別子。"
+      },
+      {
+        "id": "Observation.basedOn",
+        "path": "Observation.basedOn",
+        "short": "このObservationが実施されることになった依頼や計画、提案に関する情報。【詳細参照】",
+        "definition": "このObservationが実施されることになった依頼や計画、提案に関する情報。",
+        "comment": "【JP Core仕様】オーダ情報がある場合、このプロファイルでは ServiceRequest のリソースを参照。",
+        "type": [
+          {
+            "code": "Reference",
+            "targetProfile": [
+              "http://hl7.org/fhir/StructureDefinition/ServiceRequest"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "Observation.partOf",
+        "path": "Observation.partOf",
+        "short": "このObservationが親イベントの一部を成す要素であるとき、その親イベントに関する情報。【詳細参照】",
+        "definition": "このObservationが親イベントの一部を成す要素であるとき、その親イベントに関する情報。",
+        "comment": "【JP Core仕様】実施した手技の背景情報（質的診断情報など）にあたる場合 Procedure のリソースを参照。"
+      },
+      {
+        "id": "Observation.category",
+        "path": "Observation.category",
+        "short": "このObservationを分類するコード【詳細参照】",
+        "comment": "内視鏡検査の第1カテゴリはJP_SimpleObservationCategory_VSからprocedureを指定、第2カテゴリはLOINCのPartコードLP7796-8（内視鏡）固定とする。",
+        "min": 2,
+        "mustSupport": true
+      },
+      {
+        "id": "Observation.category:first",
+        "path": "Observation.category",
+        "sliceName": "first",
+        "short": "内視鏡検査の第1カテゴリはJP_SimpleObservationCategory_VSからprocedureを指定する。",
+        "mustSupport": true
+      },
+      {
+        "id": "Observation.category:first.coding.code",
+        "path": "Observation.category.coding.code",
+        "fixedCode": "procedure"
+      },
+      {
+        "id": "Observation.category:second",
+        "path": "Observation.category",
+        "sliceName": "second",
+        "short": "第2カテゴリはLOINCのPartコードLP7796-8（内視鏡）固定とする。ValueSetは指定しない",
+        "definition": "第2カテゴリはLOINCのPartコードLP7796-8（内視鏡）固定とする。ValueSetは指定しない",
+        "min": 1,
+        "max": "1",
+        "mustSupport": true
+      },
+      {
+        "id": "Observation.category:second.coding.system",
+        "path": "Observation.category.coding.system",
+        "min": 1,
+        "fixedUri": "http://loinc.org"
+      },
+      {
+        "id": "Observation.category:second.coding.code",
+        "path": "Observation.category.coding.code",
+        "min": 1,
+        "fixedCode": "LP7796-8"
+      },
+      {
+        "id": "Observation.code",
+        "path": "Observation.code",
+        "short": "このObservationの対象を特定するコード。【詳細参照】",
+        "definition": "このObservationの対象を特定するコード。",
+        "comment": "19778-0（Indications description Narrative Endoscopy（所見））、19811-9（Diagnosis Endoscopy Procedure Narrative（診断））、およびLOINC申請中のJED用語の臓器毎のFindings、Diagnosis（Characterization）から選択する。JED用語のLOINCコードが取得できたらCodableConceptとして拡張予定。",
+        "binding": {
+          "strength": "preferred",
+          "valueSet": "http://jpfhir.jp/fhir/core/ValueSet/JP_ObservationEndoscopyCode_VS"
+        }
+      },
+      {
+        "id": "Observation.subject",
+        "path": "Observation.subject",
+        "min": 1,
+        "type": [
+          {
+            "code": "Reference",
+            "targetProfile": [
+              "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Patient"
+            ]
+          }
+        ],
+        "mustSupport": true
+      },
+      {
+        "id": "Observation.focus",
+        "path": "Observation.focus",
+        "short": "配偶者、親、胎児、ドナーなど、このObservationのsubject要素が実際の対象でない場合、その実際の対象に関する情報。【詳細参照】",
+        "comment": "内視鏡では省略してよい。"
+      },
+      {
+        "id": "Observation.effective[x]",
+        "path": "Observation.effective[x]",
+        "comment": "【JP Core仕様】effectiveDateTime：診断、所見を記載した際の日時。effectivePeriod：診断、所見以外の観察結果を記載する際、必要に応じて使用。",
+        "type": [
+          {
+            "code": "dateTime"
+          },
+          {
+            "code": "Period"
+          }
+        ],
+        "mustSupport": true
+      },
+      {
+        "id": "Observation.value[x]",
+        "path": "Observation.value[x]",
+        "short": "内視鏡検査、治療の観察結果（診断、所見など）の情報を格納する。診断、所見の場合、病変単位で記載することが望ましい。【詳細参照】",
+        "definition": "内視鏡検査、治療の観察結果（診断、所見など）の情報を格納する。診断、所見の場合、病変単位で記載することが望ましい。",
+        "comment": "【JP Core仕様】主に診断、所見情報記載時に使用。text記載は必須とし、必要に応じてcodingも使用する。",
+        "type": [
+          {
+            "code": "CodeableConcept"
+          }
+        ],
+        "mustSupport": true,
+        "binding": {
+          "strength": "example",
+          "valueSet": "http://jpfhir.jp/fhir/core/ValueSet/JP_ObservationEndoscopyValueJed_VS"
+        }
+      },
+      {
+        "id": "Observation.referenceRange.type",
+        "path": "Observation.referenceRange.type",
+        "short": "参照範囲修飾子。",
+        "definition": "参照範囲修飾子。"
+      },
+      {
+        "id": "Observation.referenceRange.age",
+        "path": "Observation.referenceRange.age",
+        "short": "該当する場合、適用年齢。",
+        "definition": "該当する場合、適用年齢。"
+      },
+      {
+        "id": "Observation.hasMember",
+        "path": "Observation.hasMember",
+        "short": "内視鏡による観察結果を病変単位で表現する際、診断と所見のobservationを関連付けるためにhasMemberエレメントを使用。",
+        "definition": "内視鏡による観察結果を病変単位で表現する際、診断と所見のobservationを関連付けるためにhasMemberエレメントを使用。",
+        "comment": "【JP Core仕様】JP_Observation_Common：診断、所見以外のobservationを関連付ける場合に使用。",
+        "type": [
+          {
+            "code": "Reference",
+            "targetProfile": [
+              "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Observation_Common",
+              "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Observation_Endoscopy"
+            ]
+          }
+        ],
+        "mustSupport": true
+      },
+      {
+        "id": "Observation.component.referenceRange",
+        "path": "Observation.component.referenceRange",
+        "short": "コンポーネント結果の解釈のためのガイドの提供。",
+        "definition": "コンポーネント結果の解釈のためのガイドの提供。"
+      }
+    ]
+  }
+}

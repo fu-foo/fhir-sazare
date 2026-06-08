@@ -1,0 +1,99 @@
+{
+ "resourceType": "Observation",
+ "id": "jp-observation-dentaloral-toothexistence-example-6",
+ "meta": {
+  "profile": [
+   "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Observation_DentalOral_ToothExistence"
+  ]
+ },
+ "text": {
+  "status": "generated",
+  "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p class=\"res-header-id\"><b>Generated Narrative: Observation jp-observation-dentaloral-toothexistence-example-6</b></p><a name=\"jp-observation-dentaloral-toothexistence-example-6\"> </a><a name=\"hcjp-observation-dentaloral-toothexistence-example-6\"> </a><div style=\"display: inline-block; background-color: #d9e0e7; padding: 6px; margin: 4px; border: 1px solid #8da1b4; border-radius: 5px; line-height: 60%\"><p style=\"margin-bottom: 0px\"/><p style=\"margin-bottom: 0px\">Profile: <a href=\"StructureDefinition-jp-observation-dentaloral-toothexistence.html\">JP Core Observation DentalOral Tooth Existence Profile</a></p></div><p><b>status</b>: Final</p><p><b>category</b>: <span title=\"Codes:{http://jpfhir.jp/fhir/core/CodeSystem/JP_SimpleObservationCategory_CS exam}\">歯の有無</span>, <span title=\"Codes:{http://loinc.org LP89803-8}\">Dental</span>, <span title=\"Codes:{http://jpfhir.jp/fhir/core/CodeSystem/JP_ObservationDentalCategory_CS DO-1-01}\">ToothExistence</span></p><p><b>code</b>: <span title=\"Codes:{http://loinc.org 54570-7}\">Oral/Dental Status</span></p><p><b>subject</b>: <a href=\"Patient-jp-patient-example-1.html\">山田 太郎 Male, DoB: 1970-01-01 ( urn:oid:1.2.392.100495.20.3.51.11311234567#JP_local_patient_identifier_11311234567_NamingSystem#00000010)</a></p><p><b>effective</b>: 2022-10-01</p><p><b>issued</b>: 2022-10-24 17:30:00+0900</p><p><b>performer</b>: <a href=\"Practitioner-jp-practitioner-example-male-1.html\">Practitioner 大阪 一郎</a></p><p><b>value</b>: <span title=\"Codes:{http://jpfhir.jp/fhir/core/CodeSystem/JP_DentalFundamentalStatus_CS TB-3-2}\">欠損歯</span></p><p><b>bodySite</b>: <span title=\"Codes:{http://jpfhir.jp/fhir/core/CodeSystem/JP_DentalBodySite_CS 1045}\">右側下顎第２小臼歯</span></p><p><b>hasMember</b>: <a href=\"Observation-jp-observation-dentaloral-missingtoothcondition-example-6.html\">Observation Oral/Dental Status</a></p></div>"
+ },
+ "status": "final",
+ "category": [
+  {
+   "coding": [
+    {
+     "system": "http://jpfhir.jp/fhir/core/CodeSystem/JP_SimpleObservationCategory_CS",
+     "code": "exam",
+     "display": "exam"
+    }
+   ],
+   "text": "歯の有無"
+  },
+  {
+   "coding": [
+    {
+     "system": "http://loinc.org",
+     "code": "LP89803-8",
+     "display": "Dental"
+    }
+   ]
+  },
+  {
+   "coding": [
+    {
+     "system": "http://jpfhir.jp/fhir/core/CodeSystem/JP_ObservationDentalCategory_CS",
+     "code": "DO-1-01",
+     "display": "ToothExistence"
+    }
+   ]
+  }
+ ],
+ "code": {
+  "coding": [
+   {
+    "system": "http://loinc.org",
+    "code": "54570-7",
+    "display": "Oral/Dental Status"
+   }
+  ]
+ },
+ "subject": {
+  "reference": "Patient/jp-patient-example-1"
+ },
+ "effectiveDateTime": "2022-10-01",
+ "issued": "2022-10-24T17:30:00+09:00",
+ "performer": [
+  {
+   "reference": "Practitioner/jp-practitioner-example-male-1"
+  }
+ ],
+ "valueCodeableConcept": {
+  "coding": [
+   {
+    "system": "http://jpfhir.jp/fhir/core/CodeSystem/JP_DentalFundamentalStatus_CS",
+    "code": "TB-3-2",
+    "display": "欠損歯"
+   }
+  ]
+ },
+ "bodySite": {
+  "extension": [
+   {
+    "url": "http://jpfhir.jp/fhir/core/Extension/StructureDefinition/JP_Observation_DentalOral_BodySiteStatus",
+    "valueCodeableConcept": {
+     "coding": [
+      {
+       "system": "http://jpfhir.jp/fhir/core/CodeSystem/JP_DentalBodySiteStatus_CS",
+       "code": "0"
+      }
+     ]
+    }
+   }
+  ],
+  "coding": [
+   {
+    "system": "http://jpfhir.jp/fhir/core/CodeSystem/JP_DentalBodySite_CS",
+    "code": "1045",
+    "display": "右側下顎第２小臼歯"
+   }
+  ]
+ },
+ "hasMember": [
+  {
+   "reference": "Observation/jp-observation-dentaloral-missingtoothcondition-example-6"
+  }
+ ]
+}

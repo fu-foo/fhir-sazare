@@ -1,0 +1,261 @@
+{
+ "resourceType": "MedicationStatement",
+ "id": "jp-medicationstatement-injection-example-1",
+ "meta": {
+  "profile": [
+   "http://jpfhir.jp/fhir/core/StructureDefinition/JP_MedicationStatement_Injection"
+  ]
+ },
+ "text": {
+  "status": "extensions",
+  "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p class=\"res-header-id\"><b>Generated Narrative: MedicationStatement jp-medicationstatement-injection-example-1</b></p><a name=\"jp-medicationstatement-injection-example-1\"> </a><a name=\"hcjp-medicationstatement-injection-example-1\"> </a><div style=\"display: inline-block; background-color: #d9e0e7; padding: 6px; margin: 4px; border: 1px solid #8da1b4; border-radius: 5px; line-height: 60%\"><p style=\"margin-bottom: 0px\"/><p style=\"margin-bottom: 0px\">Profile: <a href=\"StructureDefinition-jp-medicationstatement-injection.html\">JP Core MedicationStatement Injection Profile</a></p></div><p><b>status</b>: Completed</p><p><b>medication</b>: <a href=\"#hcjp-medicationstatement-injection-example-1/jp-medicationstatement-injection-medication-example-1\">Medication: status = active</a></p><p><b>subject</b>: <a href=\"Patient-jp-patient-example-1.html\">山田 太郎 Male, DoB: 1970-01-01 ( urn:oid:1.2.392.100495.20.3.51.11311234567#JP_local_patient_identifier_11311234567_NamingSystem#00000010)</a></p><p><b>effective</b>: 2020-04-01 00:00:00+0900 --&gt; 2020-04-14 00:00:00+0900</p><p><b>dateAsserted</b>: 2020-05-01 12:28:17+0900</p><p><b>informationSource</b>: <a href=\"Patient-jp-patient-example-1.html\">山田 太郎 Male, DoB: 1970-01-01 ( urn:oid:1.2.392.100495.20.3.51.11311234567#JP_local_patient_identifier_11311234567_NamingSystem#00000010)</a></p><p><b>derivedFrom</b>: <a href=\"MedicationRequest-jp-medicationrequest-injection-example-2.html\">MedicationRequest: identifier = http://jpfhir.jp/fhir/core/mhlw/IdSystem/Medication-RPGroupNumber#JP_Medication_RpGroup_Number_NamingSystem#2,http://jpfhir.jp/fhir/core/IdSystem/resourceInstance-identifier#JP_core_resourceInstance_identifier_NamingSystem#1234567890.2.1; status = active; intent = order; category = Inpatient Order,入院処方,定時処方; medication[x] = -&gt;Medication: status = active; authoredOn = 2016-07-01 07:28:17+0900</a></p><p><b>reasonCode</b>: <span title=\"Codes:{http://medis.or.jp/CodeSystem/master-disease-exCode TQ7A}\">急性気管支炎</span></p><blockquote><p><b>dosage</b></p><p><b>JP Core Medication Dosage Device Extension</b>: <a href=\"#hcjp-medicationstatement-injection-example-1/jp-medicationstatement-injection-device-example-1\">Device: type = IV Pump</a></p><p><b>JP Core Medication Dosage Line Extension</b>: <span title=\"Codes:{http://jpfhir.jp/fhir/Examples/CodeSystem/JP_MedicationRequestDosageInstructionLine_CS 01}\">末梢ルート</span></p><p><b>text</b>: 主管 静脈注射 左腕</p><p><b>timing</b>: Once</p><p><b>site</b>: <span title=\"Codes:\"></span></p><p><b>route</b>: <span title=\"Codes:{http://jpfhir.jp/fhir/core/CodeSystem/route-codes IV}\">静脈内</span></p><p><b>method</b>: <span title=\"Codes:{http://jami.jp/CodeSystem/MedicationMethodBasicUsage 3}\">注射</span></p><h3>DoseAndRates</h3><table class=\"grid\"><tr><td style=\"display: none\">-</td><td><b>Dose[x]</b></td><td><b>Rate[x]</b></td></tr><tr><td style=\"display: none\">*</td><td>510 mL<span style=\"background: LightGoldenRodYellow\"> (Details: UCUM  codemL = 'mL')</span></td><td>102 mL<span style=\"background: LightGoldenRodYellow\"> (Details: UCUM  codemL = 'mL')</span>/1 時間<span style=\"background: LightGoldenRodYellow\"> (Details: UCUM  codeh = 'h')</span></td></tr></table></blockquote><hr/><blockquote><p class=\"res-header-id\"><b>Generated Narrative: Medication #jp-medicationstatement-injection-medication-example-1</b></p><a name=\"jp-medicationstatement-injection-example-1/jp-medicationstatement-injection-medication-example-1\"> </a><a name=\"hcjp-medicationstatement-injection-example-1/jp-medicationstatement-injection-medication-example-1\"> </a><div style=\"display: inline-block; background-color: #d9e0e7; padding: 6px; margin: 4px; border: 1px solid #8da1b4; border-radius: 5px; line-height: 60%\"><p style=\"margin-bottom: 0px\"/><p style=\"margin-bottom: 0px\">Profile: <a href=\"StructureDefinition-jp-medication.html\">JP Core Medication Profile</a></p></div><p><b>status</b>: Active</p><blockquote><p><b>ingredient</b></p><p><b>item</b>: <span title=\"Codes:{http://medis.or.jp/CodeSystem/master-HOT9 107750603}\">ソリタ－Ｔ３号輸液　５００ｍＬ</span></p><p><b>strength</b>: 1 本<span style=\"background: LightGoldenRodYellow\"> (Details: JP Core Medication MERIT9 Unit CodeSystem  codeHON = '本')</span>/1 回<span style=\"background: LightGoldenRodYellow\"> (Details: JP Core Medication MERIT9 Unit CodeSystem  codeTIME = '回')</span></p></blockquote><blockquote><p><b>ingredient</b></p><p><b>item</b>: <span title=\"Codes:{http://medis.or.jp/CodeSystem/master-HOT9 108010002}\">アドナ注（静脈用）５０ｍｇ　０．５％１０ｍＬ</span></p><p><b>strength</b>: 1 アンプル<span style=\"background: LightGoldenRodYellow\"> (Details: JP Core Medication MERIT9 Unit CodeSystem  codeAMP = 'アンプル')</span>/1 回<span style=\"background: LightGoldenRodYellow\"> (Details: JP Core Medication MERIT9 Unit CodeSystem  codeTIME = '回')</span></p></blockquote></blockquote><hr/><blockquote><p class=\"res-header-id\"><b>Generated Narrative: BodyStructure #jp-medicationstatement-injection-bodystructure-example-1</b></p><a name=\"jp-medicationstatement-injection-example-1/jp-medicationstatement-injection-bodystructure-example-1\"> </a><a name=\"hcjp-medicationstatement-injection-example-1/jp-medicationstatement-injection-bodystructure-example-1\"> </a><p><b>location</b>: <span title=\"Codes:{http://terminology.hl7.org/CodeSystem/v2-0550 ARM}\">Arm</span></p><p><b>locationQualifier</b>: <span title=\"Codes:{http://terminology.hl7.org/CodeSystem/v2-0495 L}\">Left</span></p><p><b>patient</b>: <a href=\"Patient-jp-patient-example-1.html\">山田 太郎 Male, DoB: 1970-01-01 ( urn:oid:1.2.392.100495.20.3.51.11311234567#JP_local_patient_identifier_11311234567_NamingSystem#00000010)</a></p></blockquote><hr/><blockquote><p class=\"res-header-id\"><b>Generated Narrative: Device #jp-medicationstatement-injection-device-example-1</b></p><a name=\"jp-medicationstatement-injection-example-1/jp-medicationstatement-injection-device-example-1\"> </a><a name=\"hcjp-medicationstatement-injection-example-1/jp-medicationstatement-injection-device-example-1\"> </a><p><b>type</b>: <span title=\"Codes:{http://terminology.hl7.org/CodeSystem/v2-0164 IVP}\">IV Pump</span></p></blockquote></div>"
+ },
+ "contained": [
+  {
+   "resourceType": "Medication",
+   "id": "jp-medicationstatement-injection-medication-example-1",
+   "meta": {
+    "profile": [
+     "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Medication"
+    ]
+   },
+   "status": "active",
+   "ingredient": [
+    {
+     "itemCodeableConcept": {
+      "coding": [
+       {
+        "system": "http://medis.or.jp/CodeSystem/master-HOT9",
+        "code": "107750603",
+        "display": "ソリタ－Ｔ３号輸液　５００ｍＬ"
+       }
+      ]
+     },
+     "strength": {
+      "extension": [
+       {
+        "url": "http://jpfhir.jp/fhir/core/Extension/StructureDefinition/JP_Medication_IngredientStrength_StrengthType",
+        "valueCodeableConcept": {
+         "coding": [
+          {
+           "system": "http://jpfhir.jp/fhir/core/mhlw/CodeSystem/MedicationIngredientStrengthStrengthType",
+           "code": "1",
+           "display": "製剤量"
+          }
+         ]
+        }
+       }
+      ],
+      "numerator": {
+       "value": 1,
+       "unit": "本",
+       "system": "http://jpfhir.jp/fhir/core/mhlw/CodeSystem/MedicationUnitMERIT9Code",
+       "code": "HON"
+      },
+      "denominator": {
+       "value": 1,
+       "unit": "回",
+       "system": "http://jpfhir.jp/fhir/core/mhlw/CodeSystem/MedicationUnitMERIT9Code",
+       "code": "TIME"
+      }
+     }
+    },
+    {
+     "itemCodeableConcept": {
+      "coding": [
+       {
+        "system": "http://medis.or.jp/CodeSystem/master-HOT9",
+        "code": "108010002",
+        "display": "アドナ注（静脈用）５０ｍｇ　０．５％１０ｍＬ"
+       }
+      ]
+     },
+     "strength": {
+      "extension": [
+       {
+        "url": "http://jpfhir.jp/fhir/core/Extension/StructureDefinition/JP_Medication_IngredientStrength_StrengthType",
+        "valueCodeableConcept": {
+         "coding": [
+          {
+           "system": "http://jpfhir.jp/fhir/core/mhlw/CodeSystem/MedicationIngredientStrengthStrengthType",
+           "code": "1",
+           "display": "製剤量"
+          }
+         ]
+        }
+       }
+      ],
+      "numerator": {
+       "value": 1,
+       "unit": "アンプル",
+       "system": "http://jpfhir.jp/fhir/core/mhlw/CodeSystem/MedicationUnitMERIT9Code",
+       "code": "AMP"
+      },
+      "denominator": {
+       "value": 1,
+       "unit": "回",
+       "system": "http://jpfhir.jp/fhir/core/mhlw/CodeSystem/MedicationUnitMERIT9Code",
+       "code": "TIME"
+      }
+     }
+    }
+   ]
+  },
+  {
+   "resourceType": "BodyStructure",
+   "id": "jp-medicationstatement-injection-bodystructure-example-1",
+   "location": {
+    "coding": [
+     {
+      "system": "http://terminology.hl7.org/CodeSystem/v2-0550",
+      "code": "ARM",
+      "display": "Arm"
+     }
+    ]
+   },
+   "locationQualifier": [
+    {
+     "coding": [
+      {
+       "system": "http://terminology.hl7.org/CodeSystem/v2-0495",
+       "code": "L",
+       "display": "Left"
+      }
+     ]
+    }
+   ],
+   "patient": {
+    "reference": "Patient/jp-patient-example-1"
+   }
+  },
+  {
+   "resourceType": "Device",
+   "id": "jp-medicationstatement-injection-device-example-1",
+   "type": {
+    "coding": [
+     {
+      "system": "http://terminology.hl7.org/CodeSystem/v2-0164",
+      "code": "IVP",
+      "display": "IV Pump"
+     }
+    ]
+   }
+  }
+ ],
+ "status": "completed",
+ "medicationReference": {
+  "reference": "#jp-medicationstatement-injection-medication-example-1"
+ },
+ "subject": {
+  "reference": "Patient/jp-patient-example-1"
+ },
+ "effectivePeriod": {
+  "start": "2020-04-01T00:00:00+09:00",
+  "end": "2020-04-14T00:00:00+09:00"
+ },
+ "dateAsserted": "2020-05-01T12:28:17+09:00",
+ "informationSource": {
+  "reference": "Patient/jp-patient-example-1"
+ },
+ "derivedFrom": [
+  {
+   "reference": "MedicationRequest/jp-medicationrequest-injection-example-2"
+  }
+ ],
+ "reasonCode": [
+  {
+   "coding": [
+    {
+     "system": "http://medis.or.jp/CodeSystem/master-disease-exCode",
+     "code": "TQ7A",
+     "display": "急性気管支炎"
+    }
+   ]
+  }
+ ],
+ "dosage": [
+  {
+   "extension": [
+    {
+     "url": "http://jpfhir.jp/fhir/core/Extension/StructureDefinition/JP_MedicationDosage_Device",
+     "valueReference": {
+      "reference": "#jp-medicationstatement-injection-device-example-1"
+     }
+    },
+    {
+     "url": "http://jpfhir.jp/fhir/core/Extension/StructureDefinition/JP_MedicationDosage_Line",
+     "valueCodeableConcept": {
+      "coding": [
+       {
+        "system": "http://jpfhir.jp/fhir/Examples/CodeSystem/JP_MedicationRequestDosageInstructionLine_CS",
+        "code": "01",
+        "display": "末梢ルート"
+       }
+      ]
+     }
+    }
+   ],
+   "text": "主管 静脈注射 左腕",
+   "timing": {
+    "repeat": {
+     "boundsPeriod": {
+      "start": "2016-07-01T08:00:00+09:00",
+      "end": "2016-07-01T13:00:00+09:00"
+     }
+    }
+   },
+   "site": {
+    "extension": [
+     {
+      "url": "http://hl7.org/fhir/StructureDefinition/bodySite",
+      "valueReference": {
+       "reference": "#jp-medicationstatement-injection-bodystructure-example-1"
+      }
+     }
+    ]
+   },
+   "route": {
+    "coding": [
+     {
+      "system": "http://jpfhir.jp/fhir/core/CodeSystem/route-codes",
+      "code": "IV",
+      "display": "静脈内"
+     }
+    ]
+   },
+   "method": {
+    "coding": [
+     {
+      "system": "http://jami.jp/CodeSystem/MedicationMethodBasicUsage",
+      "code": "3",
+      "display": "注射"
+     }
+    ]
+   },
+   "doseAndRate": [
+    {
+     "doseQuantity": {
+      "value": 510,
+      "unit": "mL",
+      "system": "http://unitsofmeasure.org",
+      "code": "mL"
+     },
+     "rateRatio": {
+      "numerator": {
+       "value": 102,
+       "unit": "mL",
+       "system": "http://unitsofmeasure.org",
+       "code": "mL"
+      },
+      "denominator": {
+       "value": 1,
+       "unit": "時間",
+       "system": "http://unitsofmeasure.org",
+       "code": "h"
+      }
+     }
+    }
+   ]
+  }
+ ]
+}

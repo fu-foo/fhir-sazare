@@ -1,0 +1,98 @@
+{
+ "resourceType": "ImagingStudy",
+ "id": "jp-imagingstudy-endoscopy-example-1",
+ "meta": {
+  "profile": [
+   "http://jpfhir.jp/fhir/core/StructureDefinition/JP_ImagingStudy_Endoscopy"
+  ]
+ },
+ "text": {
+  "status": "generated",
+  "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p class=\"res-header-id\"><b>Generated Narrative: ImagingStudy jp-imagingstudy-endoscopy-example-1</b></p><a name=\"jp-imagingstudy-endoscopy-example-1\"> </a><a name=\"hcjp-imagingstudy-endoscopy-example-1\"> </a><div style=\"display: inline-block; background-color: #d9e0e7; padding: 6px; margin: 4px; border: 1px solid #8da1b4; border-radius: 5px; line-height: 60%\"><p style=\"margin-bottom: 0px\"/><p style=\"margin-bottom: 0px\">Profile: <a href=\"StructureDefinition-jp-imagingstudy-endoscopy.html\">JP Core ImagingStudy Endoscopy Profile</a></p></div><p><b>identifier</b>: <a href=\"http://terminology.hl7.org/7.0.0/NamingSystem-dui.html\" title=\"An OID issued under DICOM OID rules. DICOM OIDs are represented as plain OIDs, with a prefix of &quot;urn:oid:&quot;. See https://www.dicomstandard.org/\">DICOM Unique Id</a>/urn:oid:2.16.124.113543.6003.1154777499.30246.19789.20230425001</p><p><b>status</b>: Available</p><p><b>modality</b>: <a href=\"http://hl7.org/fhir/R4/codesystem-dicom-dcim.html#dicom-dcim-ES\">DICOM ES</a>: Endoscopy</p><p><b>subject</b>: <a href=\"Patient-jp-patient-example-1.html\">山田 太郎</a></p><p><b>started</b>: 2023-04-21 15:54:32+0900</p><p><b>endpoint</b>: <a href=\"Endpoint-endpoint-dicom-wadors-example.html\">Endpoint ABC Hospital PACS DICOM WADO-RS endpoint</a></p><p><b>numberOfSeries</b>: 1</p><p><b>numberOfInstances</b>: 5</p><blockquote><p><b>series</b></p><p><b>uid</b>: 2.16.124.113543.6003.1154777499.30246.19789.20230425001.1</p><p><b>number</b>: 1</p><p><b>modality</b>: <a href=\"http://hl7.org/fhir/R4/codesystem-dicom-dcim.html#dicom-dcim-ES\">DICOM ES</a>: Endoscopy</p><p><b>numberOfInstances</b>: 5</p><p><b>endpoint</b>: <a href=\"Endpoint-endpoint-dicom-wadors-example.html\">Endpoint ABC Hospital PACS DICOM WADO-RS endpoint</a></p><blockquote><p><b>instance</b></p><p><b>uid</b>: 2.16.124.113543.6003.1154777499.30246.19789.20230425001.1.1</p><p><b>sopClass</b>: <a href=\"https://simplifier.net/resolve?scope=jpfhir-terminology@1.4.0&amp;canonical=http://hl7.org/fhir/uv/imaging-service-request-ig/CodeSystem/dicom-uids#dicom-uids-cs-1.462.46840.4610008.465.461.464.461.461.4677.461.461\">DICOM® Unique Identifiers 1.2.840.10008.5.1.4.1.1.77.1.1</a>: VLEndoscopicImageStorage</p><p><b>number</b>: 1</p></blockquote><blockquote><p><b>instance</b></p><p><b>uid</b>: 2.16.124.113543.6003.1154777499.30246.19789.20230425001.1.2</p><p><b>sopClass</b>: <a href=\"https://simplifier.net/resolve?scope=jpfhir-terminology@1.4.0&amp;canonical=http://hl7.org/fhir/uv/imaging-service-request-ig/CodeSystem/dicom-uids#dicom-uids-cs-1.462.46840.4610008.465.461.464.461.461.4677.461.461\">DICOM® Unique Identifiers 1.2.840.10008.5.1.4.1.1.77.1.1</a>: VLEndoscopicImageStorage</p><p><b>number</b>: 2</p></blockquote><blockquote><p><b>instance</b></p><p><b>uid</b>: 2.16.124.113543.6003.1154777499.30246.19789.20230425001.1.3</p><p><b>sopClass</b>: <a href=\"https://simplifier.net/resolve?scope=jpfhir-terminology@1.4.0&amp;canonical=http://hl7.org/fhir/uv/imaging-service-request-ig/CodeSystem/dicom-uids#dicom-uids-cs-1.462.46840.4610008.465.461.464.461.461.4677.461.461\">DICOM® Unique Identifiers 1.2.840.10008.5.1.4.1.1.77.1.1</a>: VLEndoscopicImageStorage</p><p><b>number</b>: 3</p></blockquote><blockquote><p><b>instance</b></p><p><b>uid</b>: 2.16.124.113543.6003.1154777499.30246.19789.20230425001.1.4</p><p><b>sopClass</b>: <a href=\"https://simplifier.net/resolve?scope=jpfhir-terminology@1.4.0&amp;canonical=http://hl7.org/fhir/uv/imaging-service-request-ig/CodeSystem/dicom-uids#dicom-uids-cs-1.462.46840.4610008.465.461.464.461.461.4677.461.461\">DICOM® Unique Identifiers 1.2.840.10008.5.1.4.1.1.77.1.1</a>: VLEndoscopicImageStorage</p><p><b>number</b>: 4</p></blockquote><blockquote><p><b>instance</b></p><p><b>uid</b>: 2.16.124.113543.6003.1154777499.30246.19789.20230425001.1.5</p><p><b>sopClass</b>: <a href=\"https://simplifier.net/resolve?scope=jpfhir-terminology@1.4.0&amp;canonical=http://hl7.org/fhir/uv/imaging-service-request-ig/CodeSystem/dicom-uids#dicom-uids-cs-1.462.46840.4610008.465.461.464.461.461.4677.461.461\">DICOM® Unique Identifiers 1.2.840.10008.5.1.4.1.1.77.1.1</a>: VLEndoscopicImageStorage</p><p><b>number</b>: 5</p></blockquote></blockquote></div>"
+ },
+ "identifier": [
+  {
+   "system": "urn:dicom:uid",
+   "value": "urn:oid:2.16.124.113543.6003.1154777499.30246.19789.20230425001"
+  }
+ ],
+ "status": "available",
+ "modality": [
+  {
+   "system": "http://dicom.nema.org/resources/ontology/DCM",
+   "code": "ES",
+   "display": "Endoscopy"
+  }
+ ],
+ "subject": {
+  "reference": "Patient/jp-patient-example-1",
+  "display": "山田 太郎"
+ },
+ "started": "2023-04-21T15:54:32+09:00",
+ "endpoint": [
+  {
+   "reference": "Endpoint/endpoint-dicom-wadors-example"
+  }
+ ],
+ "numberOfSeries": 1,
+ "numberOfInstances": 5,
+ "series": [
+  {
+   "uid": "2.16.124.113543.6003.1154777499.30246.19789.20230425001.1",
+   "number": 1,
+   "modality": {
+    "system": "http://dicom.nema.org/resources/ontology/DCM",
+    "code": "ES",
+    "display": "Endoscopy"
+   },
+   "numberOfInstances": 5,
+   "endpoint": [
+    {
+     "reference": "Endpoint/endpoint-dicom-wadors-example"
+    }
+   ],
+   "instance": [
+    {
+     "uid": "2.16.124.113543.6003.1154777499.30246.19789.20230425001.1.1",
+     "sopClass": {
+      "system": "http://hl7.org/fhir/uv/imaging-service-request-ig/CodeSystem/dicom-uids",
+      "code": "1.2.840.10008.5.1.4.1.1.77.1.1"
+     },
+     "number": 1
+    },
+    {
+     "uid": "2.16.124.113543.6003.1154777499.30246.19789.20230425001.1.2",
+     "sopClass": {
+      "system": "http://hl7.org/fhir/uv/imaging-service-request-ig/CodeSystem/dicom-uids",
+      "code": "1.2.840.10008.5.1.4.1.1.77.1.1"
+     },
+     "number": 2
+    },
+    {
+     "uid": "2.16.124.113543.6003.1154777499.30246.19789.20230425001.1.3",
+     "sopClass": {
+      "system": "http://hl7.org/fhir/uv/imaging-service-request-ig/CodeSystem/dicom-uids",
+      "code": "1.2.840.10008.5.1.4.1.1.77.1.1"
+     },
+     "number": 3
+    },
+    {
+     "uid": "2.16.124.113543.6003.1154777499.30246.19789.20230425001.1.4",
+     "sopClass": {
+      "system": "http://hl7.org/fhir/uv/imaging-service-request-ig/CodeSystem/dicom-uids",
+      "code": "1.2.840.10008.5.1.4.1.1.77.1.1"
+     },
+     "number": 4
+    },
+    {
+     "uid": "2.16.124.113543.6003.1154777499.30246.19789.20230425001.1.5",
+     "sopClass": {
+      "system": "http://hl7.org/fhir/uv/imaging-service-request-ig/CodeSystem/dicom-uids",
+      "code": "1.2.840.10008.5.1.4.1.1.77.1.1"
+     },
+     "number": 5
+    }
+   ]
+  }
+ ]
+}

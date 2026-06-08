@@ -1,0 +1,53 @@
+{
+ "resourceType": "ImagingStudy",
+ "id": "jp-imagingstudy-radiology-example-1",
+ "meta": {
+  "profile": [
+   "http://jpfhir.jp/fhir/core/StructureDefinition/JP_ImagingStudy_Radiology"
+  ]
+ },
+ "text": {
+  "status": "generated",
+  "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p class=\"res-header-id\"><b>Generated Narrative: ImagingStudy jp-imagingstudy-radiology-example-1</b></p><a name=\"jp-imagingstudy-radiology-example-1\"> </a><a name=\"hcjp-imagingstudy-radiology-example-1\"> </a><div style=\"display: inline-block; background-color: #d9e0e7; padding: 6px; margin: 4px; border: 1px solid #8da1b4; border-radius: 5px; line-height: 60%\"><p style=\"margin-bottom: 0px\"/><p style=\"margin-bottom: 0px\">Profile: <a href=\"StructureDefinition-jp-imagingstudy-radiology.html\">JP Core ImagingStudy Radiology Profile</a></p></div><p><b>identifier</b>: <a href=\"http://terminology.hl7.org/7.0.0/NamingSystem-dui.html\" title=\"An OID issued under DICOM OID rules. DICOM OIDs are represented as plain OIDs, with a prefix of &quot;urn:oid:&quot;. See https://www.dicomstandard.org/\">DICOM Unique Id</a>/urn:oid:2.16.124.113543.6003.1154777499.30246.19789.3503430045</p><p><b>status</b>: Available</p><p><b>subject</b>: <a href=\"Patient-jp-patient-example-1.html\">山田 太郎 Male, DoB: 1970-01-01 ( urn:oid:1.2.392.100495.20.3.51.11311234567#JP_local_patient_identifier_11311234567_NamingSystem#00000010)</a></p><p><b>started</b>: 2021-01-01 11:01:20+0900</p><p><b>numberOfSeries</b>: 1</p><p><b>numberOfInstances</b>: 1</p><blockquote><p><b>series</b></p><p><b>uid</b>: 2.16.124.113543.6003.2588828330.45298.17418.2723805630</p><p><b>number</b>: 3</p><p><b>modality</b>: <a href=\"http://hl7.org/fhir/R4/codesystem-dicom-dcim.html#dicom-dcim-CT\">DICOM CT</a>: Computed Tomography</p><p><b>description</b>: CT胸部スクリーニング</p><p><b>numberOfInstances</b>: 1</p><p><b>bodySite</b>: <a href=\"http://snomed.info/id/43799004\">SNOMED CT 43799004</a>: Thoracic cavity</p><h3>Instances</h3><table class=\"grid\"><tr><td style=\"display: none\">-</td><td><b>Uid</b></td><td><b>SopClass</b></td><td><b>Number</b></td></tr><tr><td style=\"display: none\">*</td><td>2.16.124.113543.6003.189642796.63084.16748.2599092903</td><td><a href=\"https://simplifier.net/resolve?scope=jpfhir-terminology@1.4.0&amp;canonical=http://hl7.org/fhir/uv/imaging-service-request-ig/CodeSystem/dicom-uids#dicom-uids-cs-1.462.46840.4610008.465.461.464.461.461.462\">DICOM® Unique Identifiers 1.2.840.10008.5.1.4.1.1.2</a>: CTImageStorage</td><td>1</td></tr></table></blockquote></div>"
+ },
+ "identifier": [
+  {
+   "system": "urn:dicom:uid",
+   "value": "urn:oid:2.16.124.113543.6003.1154777499.30246.19789.3503430045"
+  }
+ ],
+ "status": "available",
+ "subject": {
+  "reference": "Patient/jp-patient-example-1"
+ },
+ "started": "2021-01-01T11:01:20+09:00",
+ "numberOfSeries": 1,
+ "numberOfInstances": 1,
+ "series": [
+  {
+   "uid": "2.16.124.113543.6003.2588828330.45298.17418.2723805630",
+   "number": 3,
+   "modality": {
+    "system": "http://dicom.nema.org/resources/ontology/DCM",
+    "code": "CT"
+   },
+   "description": "CT胸部スクリーニング",
+   "numberOfInstances": 1,
+   "bodySite": {
+    "system": "http://snomed.info/sct",
+    "code": "43799004",
+    "display": "Thoracic cavity"
+   },
+   "instance": [
+    {
+     "uid": "2.16.124.113543.6003.189642796.63084.16748.2599092903",
+     "sopClass": {
+      "system": "http://hl7.org/fhir/uv/imaging-service-request-ig/CodeSystem/dicom-uids",
+      "code": "1.2.840.10008.5.1.4.1.1.2"
+     },
+     "number": 1
+    }
+   ]
+  }
+ ]
+}

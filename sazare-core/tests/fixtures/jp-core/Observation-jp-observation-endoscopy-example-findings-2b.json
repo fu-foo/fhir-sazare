@@ -1,0 +1,67 @@
+{
+ "resourceType": "Observation",
+ "id": "jp-observation-endoscopy-example-findings-2b",
+ "meta": {
+  "profile": [
+   "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Observation_Endoscopy"
+  ]
+ },
+ "text": {
+  "status": "generated",
+  "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p class=\"res-header-id\"><b>Generated Narrative: Observation jp-observation-endoscopy-example-findings-2b</b></p><a name=\"jp-observation-endoscopy-example-findings-2b\"> </a><a name=\"hcjp-observation-endoscopy-example-findings-2b\"> </a><div style=\"display: inline-block; background-color: #d9e0e7; padding: 6px; margin: 4px; border: 1px solid #8da1b4; border-radius: 5px; line-height: 60%\"><p style=\"margin-bottom: 0px\"/><p style=\"margin-bottom: 0px\">Profile: <a href=\"StructureDefinition-jp-observation-endoscopy.html\">JP Core Observation Endoscopy Profile</a></p></div><p><b>status</b>: Final</p><p><b>category</b>: <span title=\"Codes:{http://jpfhir.jp/fhir/core/CodeSystem/JP_SimpleObservationCategory_CS procedure}\">Procedure</span>, <span title=\"Codes:{http://loinc.org LP7796-8}\">内視鏡</span></p><p><b>code</b>: <span title=\"Codes:{http://loinc.org 19778-0}\">内視鏡所見</span></p><p><b>subject</b>: <a href=\"Patient-jp-patient-example-1.html\">山田 太郎</a></p><p><b>encounter</b>: <a href=\"Encounter-jp-encounter-example-1.html\">Encounter: status = finished; class = 外来 (ActCode#AMB); period = 2022-05-08 13:08:24+0900 --&gt; 2022-05-08 13:23:24+0900</a></p><p><b>effective</b>: 2024-06-30 10:24:30+0900</p><p><b>performer</b>: <a href=\"Practitioner-jp-practitioner-example-male-1.html\">Practitioner 大阪 一郎</a></p><p><b>value</b>: <span title=\"Codes:{urn:oid:1.2.392.200270.4.1000.1 Z2L20305}\">[大腸 肉眼型1] IIa</span></p></div>"
+ },
+ "status": "final",
+ "category": [
+  {
+   "coding": [
+    {
+     "system": "http://jpfhir.jp/fhir/core/CodeSystem/JP_SimpleObservationCategory_CS",
+     "code": "procedure",
+     "display": "Procedure"
+    }
+   ]
+  },
+  {
+   "coding": [
+    {
+     "system": "http://loinc.org",
+     "code": "LP7796-8",
+     "display": "内視鏡"
+    }
+   ]
+  }
+ ],
+ "code": {
+  "coding": [
+   {
+    "system": "http://loinc.org",
+    "code": "19778-0",
+    "display": "Indications description Narrative Endoscopy"
+   }
+  ],
+  "text": "内視鏡所見"
+ },
+ "subject": {
+  "reference": "Patient/jp-patient-example-1",
+  "display": "山田 太郎"
+ },
+ "encounter": {
+  "reference": "Encounter/jp-encounter-example-1"
+ },
+ "effectiveDateTime": "2024-06-30T10:24:30+09:00",
+ "performer": [
+  {
+   "reference": "Practitioner/jp-practitioner-example-male-1"
+  }
+ ],
+ "valueCodeableConcept": {
+  "coding": [
+   {
+    "system": "urn:oid:1.2.392.200270.4.1000.1",
+    "code": "Z2L20305",
+    "display": "[大腸 肉眼型1] IIa"
+   }
+  ],
+  "text": "[大腸 肉眼型1] IIa"
+ }
+}
