@@ -537,6 +537,80 @@ async fn test_search_include_and_revinclude() {
 }
 
 #[tokio::test]
+async fn test_search_multi_level_chain() {
+    // Condition -> encounter -> Encounter -> subject -> Patient.name
+    let (base_url, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+
+    let pid = create(
+        &client,
+        &base_url,
+        "Patient",
+        &json!({"resourceType": "Patient", "name": [{"family": "Zelda"}]}),
+    )
+    .await;
+    let eid = create(
+        &client,
+        &base_url,
+        "Encounter",
+        &json!({
+            "resourceType": "Encounter",
+            "status": "finished",
+            "class": {"code": "AMB"},
+            "subject": {"reference": format!("Patient/{}", pid)}
+        }),
+    )
+    .await;
+    create(
+        &client,
+        &base_url,
+        "Condition",
+        &json!({
+            "resourceType": "Condition",
+            "subject": {"reference": format!("Patient/{}", pid)},
+            "encounter": {"reference": format!("Encounter/{}", eid)}
+        }),
+    )
+    .await;
+
+    let total = |bundle: &Value| bundle["entry"].as_array().map(|a| a.len()).unwrap_or(0);
+
+    // Two-level chain resolves through Encounter to the Patient's name.
+    let resp = client
+        .get(format!(
+            "{}/Condition?encounter:Encounter.subject:Patient.name=Zelda",
+            base_url
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let bundle: Value = resp.json().await.unwrap();
+    assert_eq!(total(&bundle), 1, "multi-level chain should match the Condition");
+
+    // Negative control: a name that doesn't exist matches nothing.
+    let resp = client
+        .get(format!(
+            "{}/Condition?encounter:Encounter.subject:Patient.name=Nobody",
+            base_url
+        ))
+        .send()
+        .await
+        .unwrap();
+    let bundle: Value = resp.json().await.unwrap();
+    assert_eq!(total(&bundle), 0, "non-matching terminal value yields nothing");
+
+    // One-level chains still work.
+    let resp = client
+        .get(format!("{}/Condition?subject:Patient.name=Zelda", base_url))
+        .send()
+        .await
+        .unwrap();
+    let bundle: Value = resp.json().await.unwrap();
+    assert_eq!(total(&bundle), 1, "single-level chain still works");
+}
+
+#[tokio::test]
 async fn test_search_include_choice_type_medication_reference() {
     // Regression: `_include=MedicationRequest:medication` must resolve the
     // choice-type `medicationReference` element (not a bare `medication` field).

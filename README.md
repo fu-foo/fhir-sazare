@@ -181,11 +181,14 @@ curl "http://localhost:8080/Patient?name-kanji=山田"
 
 ### Chain Search
 
-Search by referenced resource attributes (1-level, type required):
+Search by referenced resource attributes (multi-level, type required at each hop):
 
 ```bash
 # Find Observations where the subject (Patient) has name "Doe"
 curl "http://localhost:8080/Observation?subject:Patient.name=Doe"
+
+# Multi-level: Conditions whose Encounter's subject (Patient) is named "Doe"
+curl "http://localhost:8080/Condition?encounter:Encounter.subject:Patient.name=Doe"
 ```
 
 ### Conditional Create
@@ -378,7 +381,7 @@ cargo run -- --config path/to/config.yaml
 ## Roadmap
 
 - [x] JP Core profile validation
-- [ ] Multi-level chain search
+- [x] Multi-level chain search
 - [ ] Subscription via WebSocket
 
 ---

@@ -11,19 +11,29 @@ pub struct SearchQuery {
     pub elements: Vec<String>,
 }
 
-/// A chained search parameter: `subject:Patient.name=Doe`
+/// A chained search parameter. One level: `subject:Patient.name=Doe`.
+/// Multi-level: `subject:Patient.organization:Organization.name=Acme` — the
+/// `links` walk references outward from the source resource, and the terminal
+/// `target_param`/`value` apply to the final target type.
 #[derive(Debug, Clone)]
 pub struct ChainParameter {
-    /// The reference parameter on the source resource (e.g. "subject")
-    pub reference_param: String,
-    /// The target resource type (e.g. "Patient")
-    pub target_type: String,
-    /// The search parameter on the target resource (e.g. "name")
+    /// Reference hops from the source resource outward (always at least one).
+    pub links: Vec<ChainLink>,
+    /// The search parameter on the final target resource (e.g. "name")
     pub target_param: String,
     /// The search value (e.g. "Doe")
     pub value: String,
-    /// Inferred type of the target parameter
+    /// Inferred type of the terminal parameter
     pub target_param_type: SearchParamType,
+}
+
+/// One reference hop within a chained search.
+#[derive(Debug, Clone)]
+pub struct ChainLink {
+    /// The reference parameter on the current resource (e.g. "subject")
+    pub reference_param: String,
+    /// The resource type it points to (e.g. "Patient")
+    pub target_type: String,
 }
 
 /// _summary parameter modes
@@ -153,23 +163,14 @@ impl SearchQuery {
                 (key.to_string(), None)
             };
 
-            // Detect chain search: modifier contains "." (e.g. "Patient.name")
+            // Detect chain search: modifier contains "." (e.g. "Patient.name",
+            // or multi-level "Patient.organization:Organization.name").
             if let Some(ref mod_str) = modifier
-                && let Some(dot_idx) = mod_str.find('.')
+                && mod_str.contains('.')
+                && let Some(chain) = parse_chain(&param_name, mod_str, &value)
             {
-                let target_type = mod_str[..dot_idx].to_string();
-                let target_param = mod_str[dot_idx + 1..].to_string();
-                if !target_type.is_empty() && !target_param.is_empty() {
-                    let target_param_type = infer_param_type(&target_param);
-                    chain_parameters.push(ChainParameter {
-                        reference_param: param_name,
-                        target_type,
-                        target_param: target_param.clone(),
-                        value: value.to_string(),
-                        target_param_type,
-                    });
-                    continue;
-                }
+                chain_parameters.push(chain);
+                continue;
             }
 
             // Infer parameter type from name (registry-aware when resource_type is provided)
@@ -206,6 +207,56 @@ impl SearchQuery {
     /// Get all parameters with a specific name
     pub fn get_params(&self, name: &str) -> Vec<&SearchParameter> {
         self.parameters.iter().filter(|p| p.name == name).collect()
+    }
+}
+
+/// Parse a (possibly multi-level) chained search parameter.
+///
+/// `reference_param` is the first reference param (left of the first `:`), and
+/// `modifier` is everything after it, e.g. `Patient.organization:Organization.name`.
+/// Each hop has the shape `<TargetType>.<rest>` where `rest` is either another
+/// hop (`<ref>:<Type>.…`) or the terminal search param.
+fn parse_chain(reference_param: &str, modifier: &str, value: &str) -> Option<ChainParameter> {
+    let mut links = Vec::new();
+    let mut current_ref = reference_param.to_string();
+    let mut rest = modifier;
+
+    loop {
+        // Each hop starts with the target type, then '.'.
+        let dot = rest.find('.')?;
+        let target_type = rest[..dot].to_string();
+        if target_type.is_empty() {
+            return None;
+        }
+        let after = &rest[dot + 1..];
+
+        // `after` is a further hop iff it contains "<ref>:<Type>." — i.e. a ':'
+        // whose suffix still has a '.'. Otherwise it is the terminal param (a
+        // bare param name, possibly with its own ':modifier').
+        if let Some(colon) = after.find(':') {
+            let post = &after[colon + 1..];
+            if post.contains('.') {
+                let next_ref = after[..colon].to_string();
+                if next_ref.is_empty() {
+                    return None;
+                }
+                links.push(ChainLink { reference_param: current_ref, target_type });
+                current_ref = next_ref;
+                rest = post;
+                continue;
+            }
+        }
+
+        if after.is_empty() {
+            return None;
+        }
+        links.push(ChainLink { reference_param: current_ref, target_type });
+        return Some(ChainParameter {
+            links,
+            target_param: after.to_string(),
+            value: value.to_string(),
+            target_param_type: infer_param_type(after),
+        });
     }
 }
 
@@ -335,11 +386,41 @@ mod tests {
         assert_eq!(query.chain_parameters.len(), 1);
 
         let chain = &query.chain_parameters[0];
-        assert_eq!(chain.reference_param, "subject");
-        assert_eq!(chain.target_type, "Patient");
+        assert_eq!(chain.links.len(), 1);
+        assert_eq!(chain.links[0].reference_param, "subject");
+        assert_eq!(chain.links[0].target_type, "Patient");
         assert_eq!(chain.target_param, "name");
         assert_eq!(chain.value, "Doe");
         assert_eq!(chain.target_param_type, SearchParamType::String);
+    }
+
+    #[test]
+    fn test_parse_chain_multi_level() {
+        // Observation -> subject -> Patient -> organization -> Organization.name
+        let query =
+            SearchQuery::parse("subject:Patient.organization:Organization.name=Acme").unwrap();
+        assert_eq!(query.chain_parameters.len(), 1);
+        let chain = &query.chain_parameters[0];
+        assert_eq!(chain.links.len(), 2);
+        assert_eq!(chain.links[0].reference_param, "subject");
+        assert_eq!(chain.links[0].target_type, "Patient");
+        assert_eq!(chain.links[1].reference_param, "organization");
+        assert_eq!(chain.links[1].target_type, "Organization");
+        assert_eq!(chain.target_param, "name");
+        assert_eq!(chain.value, "Acme");
+    }
+
+    #[test]
+    fn test_parse_chain_three_level() {
+        let query = SearchQuery::parse(
+            "patient:Patient.organization:Organization.partof:Organization.name=Health",
+        )
+        .unwrap();
+        let chain = &query.chain_parameters[0];
+        assert_eq!(chain.links.len(), 3);
+        assert_eq!(chain.links[2].reference_param, "partof");
+        assert_eq!(chain.links[2].target_type, "Organization");
+        assert_eq!(chain.target_param, "name");
     }
 
     #[test]

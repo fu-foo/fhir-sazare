@@ -231,13 +231,24 @@ impl<'a> SearchExecutor<'a> {
     /// Example: `subject:Patient.name=Doe` on Observation
     /// 1. Search Patient where name=Doe → [Patient/p1, Patient/p2]
     /// 2. Search Observation where subject = Patient/p1 OR Patient/p2
+    /// Resolve a (possibly multi-level) chained search. The terminal parameter
+    /// is searched against the final target type, then each reference hop is
+    /// walked backward toward `resource_type`. For
+    /// `Observation?subject:Patient.organization:Organization.name=Acme`:
+    ///   1. `Organization?name=Acme` -> org ids
+    ///   2. `Patient` whose `organization` references those orgs -> patient ids
+    ///   3. `Observation` whose `subject` references those patients -> result
     fn search_chain(
         &self,
         resource_type: &str,
         chain: &ChainParameter,
     ) -> Result<Vec<String>, String> {
-        // Step 1: Build a SearchParameter for the target type and search
-        let target_param = SearchParameter {
+        let Some(last) = chain.links.last() else {
+            return Ok(Vec::new());
+        };
+
+        // Search the final target type by the terminal parameter.
+        let terminal = SearchParameter {
             name: chain.target_param.clone(),
             value: chain.value.clone(),
             modifier: None,
@@ -248,30 +259,38 @@ impl<'a> SearchExecutor<'a> {
             },
             param_type: chain.target_param_type.clone(),
         };
+        let mut current_ids = self.search_parameter(&last.target_type, &terminal)?;
 
-        let target_ids = self.search_parameter(&chain.target_type, &target_param)?;
+        // Walk hops backward. For hop i, the resources holding `reference_param`
+        // are of the previous hop's target type (or `resource_type` at i == 0).
+        for i in (0..chain.links.len()).rev() {
+            if current_ids.is_empty() {
+                return Ok(Vec::new());
+            }
+            let link = &chain.links[i];
+            let source_type: &str = if i == 0 {
+                resource_type
+            } else {
+                &chain.links[i - 1].target_type
+            };
 
-        if target_ids.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        // Step 2: For each matched target, search source resources by reference
-        let mut all_source_ids = Vec::new();
-        for target_id in &target_ids {
-            let reference = format!("{}/{}", chain.target_type, target_id);
-            let ids = self.index.search_reference(
-                resource_type,
-                &chain.reference_param,
-                &reference,
-            ).map_err(|e| e.to_string())?;
-            for id in ids {
-                if !all_source_ids.contains(&id) {
-                    all_source_ids.push(id);
+            let mut next_ids: Vec<String> = Vec::new();
+            for cid in &current_ids {
+                let reference = format!("{}/{}", link.target_type, cid);
+                let ids = self
+                    .index
+                    .search_reference(source_type, &link.reference_param, &reference)
+                    .map_err(|e| e.to_string())?;
+                for id in ids {
+                    if !next_ids.contains(&id) {
+                        next_ids.push(id);
+                    }
                 }
             }
+            current_ids = next_ids;
         }
 
-        Ok(all_source_ids)
+        Ok(current_ids)
     }
 
     /// Load full resources for the given IDs
