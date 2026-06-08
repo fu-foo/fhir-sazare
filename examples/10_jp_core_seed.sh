@@ -37,9 +37,15 @@ for i,e in enumerate(b.get('entry',[])):
     print(f\"  [{i+1}] {r.get('status','?')} {r.get('location','')}\")
 "
   echo
-  echo "=== Try kana / kanji name search ==="
-  echo "  name-kana=ヤマダ :"; curl -s "${AUTH_ARGS[@]}" "$BASE/Patient?name-kana=ヤマダ" | python3 -c "import json,sys; print('   total =', json.load(sys.stdin).get('total'))"
-  echo "  name-kanji=山田  :"; curl -s "${AUTH_ARGS[@]}" "$BASE/Patient?name-kanji=山田" | python3 -c "import json,sys; print('   total =', json.load(sys.stdin).get('total'))"
+  count() { curl -s "${AUTH_ARGS[@]}" "$1" | python3 -c "import json,sys; print('   total =', json.load(sys.stdin).get('total'))"; }
+  echo "=== Try Japanese name search (kana / kanji) ==="
+  echo "  Patient?name-kana=ヤマダ :"; count "$BASE/Patient?name-kana=ヤマダ"
+  echo "  Patient?name-kanji=山田  :"; count "$BASE/Patient?name-kanji=山田"
+  echo "=== Try JP Core insurance / medication search ==="
+  echo "  Coverage?jp-insured-personnumber=34567              :"; count "$BASE/Coverage?jp-insured-personnumber=34567"
+  echo "  Organization?jp-insurance-organizationno=1312345678 :"; count "$BASE/Organization?jp-insurance-organizationno=1312345678"
+  echo "  Organization?jp-prefectureno=13                     :"; count "$BASE/Organization?jp-prefectureno=13"
+  echo "  MedicationRequest?jp-medication-start=ge2025-01-01  :"; count "$BASE/MedicationRequest?jp-medication-start=ge2025-01-01"
 else
   echo "=== Error response ==="; cat /tmp/jp-core-seed-response.json | python3 -m json.tool || cat /tmp/jp-core-seed-response.json
   exit 1

@@ -9,6 +9,23 @@
         "meta": {
           "profile": ["http://jpfhir.jp/fhir/core/StructureDefinition/JP_Organization"]
         },
+        "extension": [
+          {
+            "url": "http://jpfhir.jp/fhir/core/Extension/StructureDefinition/JP_Organization_InsuranceOrganizationNo",
+            "valueIdentifier": {
+              "system": "urn:oid:1.2.392.100495.20.3.21",
+              "value": "1312345678"
+            }
+          },
+          {
+            "url": "http://jpfhir.jp/fhir/core/Extension/StructureDefinition/JP_Organization_PrefectureNo",
+            "valueCoding": {
+              "system": "urn:oid:1.2.392.100495.20.2.41",
+              "code": "13",
+              "display": "東京都"
+            }
+          }
+        ],
         "identifier": [
           {
             "system": "http://jpfhir.jp/fhir/Insurer/StructureDefinition/JP_Organization_InsuranceMedicalInstitution",
@@ -118,6 +135,20 @@
         "meta": {
           "profile": ["http://jpfhir.jp/fhir/core/StructureDefinition/JP_Coverage"]
         },
+        "extension": [
+          {
+            "url": "http://jpfhir.jp/fhir/core/Extension/StructureDefinition/JP_Coverage_InsuredPersonSymbol",
+            "valueString": "12"
+          },
+          {
+            "url": "http://jpfhir.jp/fhir/core/Extension/StructureDefinition/JP_Coverage_InsuredPersonNumber",
+            "valueString": "34567"
+          },
+          {
+            "url": "http://jpfhir.jp/fhir/core/Extension/StructureDefinition/JP_Coverage_InsuredPersonSubNumber",
+            "valueString": "01"
+          }
+        ],
         "status": "active",
         "beneficiary": {"reference": "urn:uuid:pat-jp"},
         "payor": [{"reference": "urn:uuid:org-jp"}]
@@ -148,7 +179,18 @@
         },
         "subject": {"reference": "urn:uuid:pat-jp"},
         "authoredOn": "2025-12-01",
-        "requester": {"reference": "urn:uuid:prac-jp"}
+        "requester": {"reference": "urn:uuid:prac-jp"},
+        "dosageInstruction": [
+          {
+            "extension": [
+              {
+                "url": "http://jpfhir.jp/fhir/core/Extension/StructureDefinition/JP_MedicationDosage_PeriodOfUse",
+                "valuePeriod": {"start": "2025-12-01", "end": "2025-12-14"}
+              }
+            ],
+            "text": "1日1回 朝食後 14日分"
+          }
+        ]
       },
       "request": {"method": "POST", "url": "MedicationRequest"}
     }
