@@ -164,11 +164,11 @@
         },
         "identifier": [
           {
-            "system": "http://jpfhir.jp/fhir/core/Common/IdSystem/resourceInstance-identifier",
-            "value": "rp-1"
+            "system": "http://jpfhir.jp/fhir/core/mhlw/IdSystem/Medication-RPGroupNumber",
+            "value": "1"
           },
           {
-            "system": "http://jpfhir.jp/fhir/core/Common/IdSystem/JP_MedicationRequest_RP",
+            "system": "http://jpfhir.jp/fhir/core/mhlw/IdSystem/MedicationAdministrationIndex",
             "value": "1"
           }
         ],

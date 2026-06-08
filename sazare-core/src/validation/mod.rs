@@ -112,6 +112,47 @@ mod tests {
     }
 
     #[test]
+    fn test_jp_core_required_slice_enforced() {
+        // JP_MedicationRequest requires the identifier slices rpNumber and
+        // orderInRp (each fixes identifier.system). Identifiers with other
+        // systems do not satisfy them.
+        let bad = json!({
+            "resourceType": "MedicationRequest",
+            "meta": {"profile": ["http://jpfhir.jp/fhir/core/StructureDefinition/JP_MedicationRequest"]},
+            "status": "active",
+            "intent": "order",
+            "subject": {"reference": "Patient/x"},
+            "medicationCodeableConcept": {"text": "test"},
+            "authoredOn": "2025-12-01",
+            "identifier": [
+                {"system": "urn:example:other-a", "value": "1"},
+                {"system": "urn:example:other-b", "value": "2"}
+            ]
+        });
+        assert!(
+            validate_resource_all_phases(&bad, &jp_core_registry(), &TerminologyRegistry::new()).is_err(),
+            "MedicationRequest without the required identifier slices should fail"
+        );
+
+        // With the fixed slice systems present, it passes.
+        let good = json!({
+            "resourceType": "MedicationRequest",
+            "meta": {"profile": ["http://jpfhir.jp/fhir/core/StructureDefinition/JP_MedicationRequest"]},
+            "status": "active",
+            "intent": "order",
+            "subject": {"reference": "Patient/x"},
+            "medicationCodeableConcept": {"text": "test"},
+            "authoredOn": "2025-12-01",
+            "identifier": [
+                {"system": "http://jpfhir.jp/fhir/core/mhlw/IdSystem/Medication-RPGroupNumber", "value": "1"},
+                {"system": "http://jpfhir.jp/fhir/core/mhlw/IdSystem/MedicationAdministrationIndex", "value": "1"}
+            ]
+        });
+        let result = validate_resource_all_phases(&good, &jp_core_registry(), &TerminologyRegistry::new());
+        assert!(result.is_ok(), "conforming JP_MedicationRequest should pass: {:?}", result.err());
+    }
+
+    #[test]
     fn test_jp_core_patient_missing_identifier() {
         // JP_Patient requires identifier (min=1); omitting it must fail.
         let patient = json!({

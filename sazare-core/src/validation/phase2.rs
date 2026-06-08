@@ -69,6 +69,13 @@ impl Phase2Validator {
                         profile_url,
                         &mut issues,
                     );
+                    Self::validate_required_slices(
+                        resource,
+                        resource_type,
+                        elements,
+                        profile_url,
+                        &mut issues,
+                    );
                 }
             }
         }
@@ -86,6 +93,117 @@ impl Phase2Validator {
             Err(outcome)
         } else {
             Ok(issues)
+        }
+    }
+
+    /// Validate that required slices (a sliced element with `min >= 1`) are
+    /// present in the resource.
+    ///
+    /// We can't do full discriminator matching, but for the common case — a
+    /// slice discriminated by `value`/`pattern` on a simple child field
+    /// (`system`, `url`, `code`) whose fixed value is known from the profile —
+    /// we check that the resource has at least one matching entry. JP Core uses
+    /// this heavily (e.g. `MedicationRequest.identifier:rpNumber` fixes
+    /// `identifier.system`). When the fixed value can't be determined we skip,
+    /// so this never rejects conforming data (guarded by the JP example tests).
+    fn validate_required_slices(
+        resource: &Value,
+        resource_type: &str,
+        elements: &[Value],
+        profile_url: &str,
+        issues: &mut Vec<OperationOutcomeIssue>,
+    ) {
+        use std::collections::HashMap;
+        let by_id: HashMap<&str, &Value> = elements
+            .iter()
+            .filter_map(|e| e.get("id").and_then(|v| v.as_str()).map(|id| (id, e)))
+            .collect();
+
+        let prefix = format!("{}.", resource_type);
+        for element in elements {
+            let id = match element.get("id").and_then(|v| v.as_str()) {
+                Some(i) => i,
+                None => continue,
+            };
+            let min = element.get("min").and_then(|v| v.as_u64()).unwrap_or(0);
+            if min < 1 {
+                continue;
+            }
+            // Slice root: "<Type>.<base>:<slice>" with no '.' after the slice
+            // name (that would be a child element) and a single-level base.
+            let rel = match id.strip_prefix(&prefix) {
+                Some(r) => r,
+                None => continue,
+            };
+            let (base, slice) = match rel.split_once(':') {
+                Some(x) => x,
+                None => continue,
+            };
+            if base.is_empty() || base.contains('.') || slice.contains('.') || slice.contains(':') {
+                continue;
+            }
+
+            // Discriminator path from the parent (sliced) element.
+            let disc_path = by_id
+                .get(format!("{}{}", prefix, base).as_str())
+                .and_then(|p| p.get("slicing"))
+                .and_then(|s| s.get("discriminator"))
+                .and_then(|d| d.as_array())
+                .and_then(|arr| {
+                    arr.iter().find_map(|d| {
+                        let t = d.get("type").and_then(|v| v.as_str())?;
+                        if t == "value" || t == "pattern" {
+                            d.get("path").and_then(|v| v.as_str())
+                        } else {
+                            None
+                        }
+                    })
+                });
+            let disc_path = match disc_path {
+                Some(p) if p != "$this" && !p.contains('.') => p,
+                _ => continue,
+            };
+
+            // Fixed value of the discriminator for this slice: from the child
+            // element `<slice>.<disc>` or a pattern on the slice root.
+            let fixed = by_id
+                .get(format!("{}.{}", id, disc_path).as_str())
+                .and_then(|c| {
+                    ["fixedUri", "fixedCode", "fixedString", "fixedCanonical", "patternUri"]
+                        .iter()
+                        .find_map(|k| c.get(*k).and_then(|v| v.as_str()))
+                })
+                .or_else(|| {
+                    ["patternIdentifier", "patternCoding"]
+                        .iter()
+                        .find_map(|k| element.get(*k).and_then(|p| p.get(disc_path)).and_then(|v| v.as_str()))
+                });
+            let fixed = match fixed {
+                Some(f) => f,
+                None => continue,
+            };
+
+            let present = resource
+                .get(base)
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .any(|item| item.get(disc_path).and_then(|v| v.as_str()) == Some(fixed))
+                })
+                .unwrap_or(false);
+
+            if !present {
+                issues.push(OperationOutcomeIssue {
+                    severity: IssueSeverity::Error,
+                    code: IssueType::Required,
+                    diagnostics: Some(format!(
+                        "Profile '{}' requires slice '{}' on '{}' ({}={})",
+                        profile_url, slice, base, disc_path, fixed
+                    )),
+                    details: None,
+                    expression: Some(vec![format!("{}.{}", resource_type, base)]),
+                });
+            }
         }
     }
 
