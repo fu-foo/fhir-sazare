@@ -140,7 +140,9 @@ If no `config.yaml` is found, the server runs with sensible defaults (port 8080,
 | Method | Path | Description |
 |--------|------|-------------|
 | `POST` | `/` | Bundle (transaction / batch) |
-| `GET` | `/$export` | Bulk export — sync NDJSON, or async with `Prefer: respond-async` |
+| `GET` | `/$export` | System bulk export — sync NDJSON, or async with `Prefer: respond-async` |
+| `GET` | `/Patient/$export` | Patient-compartment bulk export |
+| `GET` | `/Group/{id}/$export` | Group-members' bulk export |
 | `GET`/`DELETE` | `/$export-status/{job}` | Async export job status / cancel |
 | `GET` | `/$export-file/{job}/{type}` | Download an async export NDJSON file |
 | `POST` | `/$import` | Bulk import (NDJSON) |
@@ -287,6 +289,8 @@ Asynchronous (FHIR Bulk Data Access IG — kick-off / poll / download):
 
 ```bash
 # 1. Kick-off: returns 202 with a Content-Location status URL
+#    System-level, or patient-level (/Patient/$export), or group-level
+#    (/Group/{id}/$export — only the group's member patients' compartments)
 curl -i "http://localhost:8080/\$export?_since=2024-01-01T00:00:00Z" \
   -H "Prefer: respond-async"
 

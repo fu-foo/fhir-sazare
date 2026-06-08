@@ -113,9 +113,20 @@ fn op_outcome(code: &str, diag: String) -> Value {
     })
 }
 
-/// Build per-type NDJSON for the requested types, applying the `_since` filter.
+/// Which resources a `$export` covers.
+pub enum ExportScope {
+    /// All resources (`[base]/$export`).
+    System,
+    /// Every resource in the Patient compartment (`[base]/Patient/$export`).
+    AllPatients,
+    /// Only the given patients' compartments (`[base]/Group/{id}/$export`).
+    Patients(Vec<String>),
+}
+
+/// Build per-type NDJSON for the requested scope, applying `_type` and `_since`.
 pub fn build_export_files(
     state: &AppState,
+    scope: &ExportScope,
     type_filter: &Option<Vec<String>>,
     since: &Option<String>,
 ) -> Result<Vec<(String, String)>, String> {
@@ -137,6 +148,32 @@ pub fn build_export_files(
             && !types.iter().any(|t| t == &rtype)
         {
             continue;
+        }
+        // Scope filtering: restrict to the Patient compartment as needed.
+        match scope {
+            ExportScope::System => {}
+            ExportScope::AllPatients => {
+                if !state.compartment_def.is_in_compartment(&rtype) {
+                    continue;
+                }
+            }
+            ExportScope::Patients(ids) => {
+                if !state.compartment_def.is_in_compartment(&rtype) {
+                    continue;
+                }
+                let resource: Value = match serde_json::from_slice(&data) {
+                    Ok(v) => v,
+                    Err(_) => continue,
+                };
+                let belongs = ids.iter().any(|pid| {
+                    state
+                        .compartment_def
+                        .resource_belongs_to_patient(&rtype, &resource, pid)
+                });
+                if !belongs {
+                    continue;
+                }
+            }
         }
         let Ok(text) = std::str::from_utf8(&data) else {
             continue;
@@ -182,11 +219,15 @@ fn parse_type_filter(params: &ExportParams) -> Option<Vec<String>> {
     })
 }
 
-/// `GET /$export` — async kick-off when `Prefer: respond-async`, else legacy sync NDJSON.
-pub async fn export(
-    State(state): State<Arc<AppState>>,
+/// Shared `$export` logic for every level. Async when `Prefer: respond-async`,
+/// otherwise a legacy single concatenated NDJSON body. `request_path` is the
+/// operation path recorded in the manifest's `request` field.
+async fn run_export(
+    state: Arc<AppState>,
     headers: HeaderMap,
-    Query(params): Query<ExportParams>,
+    scope: ExportScope,
+    request_path: &str,
+    params: ExportParams,
 ) -> Response {
     // Validate _outputFormat (NDJSON only).
     if let Some(fmt) = &params._outputFormat {
@@ -216,7 +257,7 @@ pub async fn export(
 
     // Legacy synchronous path: concatenate everything into one NDJSON body.
     if !want_async {
-        return match build_export_files(&state, &type_filter, &params._since) {
+        return match build_export_files(&state, &scope, &type_filter, &params._since) {
             Ok(files) => {
                 let body: String = files.into_iter().map(|(_, n)| n).collect();
                 (
@@ -238,7 +279,7 @@ pub async fn export(
     let base = base_url(&headers);
     let job_id = uuid::Uuid::new_v4().to_string();
     let transaction_time = chrono::Utc::now().to_rfc3339();
-    let request_url = format!("{base}/$export");
+    let request_url = format!("{base}{request_path}");
     state
         .export_jobs
         .start(job_id.clone(), transaction_time, request_url)
@@ -248,7 +289,7 @@ pub async fn export(
     let job_id2 = job_id.clone();
     let since = params._since.clone();
     tokio::spawn(async move {
-        match build_export_files(&state2, &type_filter, &since) {
+        match build_export_files(&state2, &scope, &type_filter, &since) {
             Ok(files) => state2.export_jobs.complete(&job_id2, files).await,
             Err(e) => state2.export_jobs.fail(&job_id2, e).await,
         }
@@ -260,6 +301,80 @@ pub async fn export(
         [(header::CONTENT_LOCATION, status_url)],
     )
         .into_response()
+}
+
+/// `GET /$export` — system-level export.
+pub async fn export(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Query(params): Query<ExportParams>,
+) -> Response {
+    run_export(state, headers, ExportScope::System, "/$export", params).await
+}
+
+/// `GET /Patient/$export` — every Patient compartment.
+pub async fn patient_export(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Query(params): Query<ExportParams>,
+) -> Response {
+    run_export(
+        state,
+        headers,
+        ExportScope::AllPatients,
+        "/Patient/$export",
+        params,
+    )
+    .await
+}
+
+/// `GET /Group/{id}/$export` — the compartments of the Group's member patients.
+pub async fn group_export(
+    State(state): State<Arc<AppState>>,
+    Path(group_id): Path<String>,
+    headers: HeaderMap,
+    Query(params): Query<ExportParams>,
+) -> Response {
+    // Load the Group and collect its member Patient ids.
+    let group = match state.store.get("Group", &group_id) {
+        Ok(Some(data)) => match serde_json::from_slice::<Value>(&data) {
+            Ok(v) => v,
+            Err(e) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(op_outcome("exception", format!("Bad Group: {e}"))),
+                )
+                    .into_response();
+            }
+        },
+        _ => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(op_outcome("not-found", format!("Group/{group_id} not found"))),
+            )
+                .into_response();
+        }
+    };
+
+    let patient_ids: Vec<String> = group
+        .get("member")
+        .and_then(|m| m.as_array())
+        .map(|members| {
+            members
+                .iter()
+                .filter_map(|m| {
+                    m.get("entity")
+                        .and_then(|e| e.get("reference"))
+                        .and_then(|r| r.as_str())
+                        .and_then(|r| r.strip_prefix("Patient/"))
+                        .map(|id| id.to_string())
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let path = format!("/Group/{group_id}/$export");
+    run_export(state, headers, ExportScope::Patients(patient_ids), &path, params).await
 }
 
 /// `GET /$export-status/{job_id}` — poll job status / return the manifest.

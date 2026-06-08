@@ -201,6 +201,87 @@ async fn test_bulk_data_async_export() {
 }
 
 #[tokio::test]
+async fn test_bulk_patient_and_group_export() {
+    let (base_url, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+
+    create(&client, &base_url, "Patient", &json!({"resourceType": "Patient", "id": "p1"})).await;
+    create(&client, &base_url, "Patient", &json!({"resourceType": "Patient", "id": "p2"})).await;
+    create(
+        &client,
+        &base_url,
+        "Observation",
+        &json!({"resourceType": "Observation", "id": "o1", "status": "final",
+                "code": {"text": "x"}, "subject": {"reference": "Patient/p1"}}),
+    )
+    .await;
+    create(
+        &client,
+        &base_url,
+        "Observation",
+        &json!({"resourceType": "Observation", "id": "o2", "status": "final",
+                "code": {"text": "y"}, "subject": {"reference": "Patient/p2"}}),
+    )
+    .await;
+    // Organization is outside the Patient compartment.
+    create(&client, &base_url, "Organization", &json!({"resourceType": "Organization", "name": "Acme"})).await;
+    create(
+        &client,
+        &base_url,
+        "Group",
+        &json!({"resourceType": "Group", "id": "g1", "type": "person", "actual": true,
+                "member": [{"entity": {"reference": "Patient/p1"}}]}),
+    )
+    .await;
+
+    let types_of = |body: &str| -> Vec<String> {
+        body.lines()
+            .filter(|l| !l.trim().is_empty())
+            .map(|l| {
+                serde_json::from_str::<Value>(l).unwrap()["resourceType"]
+                    .as_str()
+                    .unwrap()
+                    .to_string()
+            })
+            .collect()
+    };
+
+    // Patient-level export excludes non-compartment resources (Organization).
+    let body = client
+        .get(format!("{}/Patient/$export", base_url))
+        .send()
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    let types = types_of(&body);
+    assert!(types.contains(&"Patient".to_string()) && types.contains(&"Observation".to_string()));
+    assert!(!types.contains(&"Organization".to_string()), "Organization is outside the Patient compartment");
+
+    // Group export returns only the member patient's compartment.
+    let body = client
+        .get(format!("{}/Group/g1/$export", base_url))
+        .send()
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    let ids: Vec<String> = body
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| serde_json::from_str::<Value>(l).unwrap()["id"].as_str().unwrap().to_string())
+        .collect();
+    assert!(ids.contains(&"p1".to_string()) && ids.contains(&"o1".to_string()));
+    assert!(!ids.contains(&"p2".to_string()) && !ids.contains(&"o2".to_string()), "non-member data excluded");
+
+    // Unknown group -> 404.
+    let resp = client.get(format!("{}/Group/nope/$export", base_url)).send().await.unwrap();
+    assert_eq!(resp.status(), 404);
+}
+
+#[tokio::test]
 async fn test_bulk_export_sync_fallback_and_bad_format() {
     let (base_url, _dir) = start_test_server().await;
     let client = reqwest::Client::new();

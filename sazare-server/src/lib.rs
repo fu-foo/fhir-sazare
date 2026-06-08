@@ -134,6 +134,8 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/$plugins", get(plugins::list_plugins))
         // Bulk operations — async Bulk Data IG export (with sync fallback) + import
         .route("/$export", get(bulk_export::export))
+        .route("/Patient/$export", get(bulk_export::patient_export))
+        .route("/Group/{id}/$export", get(bulk_export::group_export))
         .route(
             "/$export-status/{job_id}",
             get(bulk_export::export_status).delete(bulk_export::export_delete),
