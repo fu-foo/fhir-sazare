@@ -1,0 +1,372 @@
+{
+  "resourceType": "StructureDefinition",
+  "id": "jp-immunization",
+  "url": "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Immunization",
+  "version": "1.2.0",
+  "name": "JP_Immunization",
+  "title": "JP Core Immunization Profile",
+  "status": "active",
+  "date": "2025-07-30",
+  "publisher": "FHIR Japanese implementation research working group in Japan Association of Medical Informatics (JAMI)",
+  "contact": [
+    {
+      "name": "FHIR Japanese implementation research working group in Japan Association of Medical Informatics (JAMI)",
+      "telecom": [
+        {
+          "system": "url",
+          "value": "http://jpfhir.jp"
+        },
+        {
+          "system": "email",
+          "value": "office@hlfhir.jp"
+        }
+      ]
+    }
+  ],
+  "description": "このプロファイルはImmunizationリソースに対して日本での予防接種情報を送受信するための制約と拡張を加えたものである。",
+  "jurisdiction": [
+    {
+      "coding": [
+        {
+          "system": "urn:iso:std:iso:3166",
+          "code": "JP",
+          "display": "Japan"
+        }
+      ]
+    }
+  ],
+  "copyright": "Copyright Japan FHIR Implementation Infrastructure Study Group in Japan Association of Medical Informatics (JAMI) 一般社団法人日本医療情報学会FHIR国内実装基盤研究会",
+  "fhirVersion": "4.0.1",
+  "mapping": [
+    {
+      "identity": "workflow",
+      "uri": "http://hl7.org/fhir/workflow",
+      "name": "Workflow Pattern"
+    },
+    {
+      "identity": "v2",
+      "uri": "http://hl7.org/v2",
+      "name": "HL7 v2 Mapping"
+    },
+    {
+      "identity": "rim",
+      "uri": "http://hl7.org/v3",
+      "name": "RIM Mapping"
+    },
+    {
+      "identity": "w5",
+      "uri": "http://hl7.org/fhir/fivews",
+      "name": "FiveWs Pattern Mapping"
+    },
+    {
+      "identity": "cda",
+      "uri": "http://hl7.org/v3/cda",
+      "name": "CDA (R2)"
+    }
+  ],
+  "kind": "resource",
+  "abstract": false,
+  "type": "Immunization",
+  "baseDefinition": "http://hl7.org/fhir/StructureDefinition/Immunization",
+  "derivation": "constraint",
+  "differential": {
+    "element": [
+      {
+        "id": "Immunization",
+        "path": "Immunization",
+        "short": "予防接種",
+        "definition": "予防接種時の記録，あるいは予防接種について患者や医療従事者などが報告した記録。"
+      },
+      {
+        "id": "Immunization.id",
+        "path": "Immunization.id",
+        "short": "このResourceに対する論理ID"
+      },
+      {
+        "id": "Immunization.extension",
+        "path": "Immunization.extension",
+        "slicing": {
+          "discriminator": [
+            {
+              "type": "value",
+              "path": "url"
+            }
+          ],
+          "rules": "open"
+        }
+      },
+      {
+        "id": "Immunization.extension:dueDateOfNextDose",
+        "path": "Immunization.extension",
+        "sliceName": "dueDateOfNextDose",
+        "min": 0,
+        "max": "1",
+        "type": [
+          {
+            "code": "Extension",
+            "profile": [
+              "http://jpfhir.jp/fhir/core/Extension/StructureDefinition/JP_Immunization_DueDateOfNextDose"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "Immunization.extension:manufacturedDate",
+        "path": "Immunization.extension",
+        "sliceName": "manufacturedDate",
+        "min": 0,
+        "max": "1",
+        "type": [
+          {
+            "code": "Extension",
+            "profile": [
+              "http://jpfhir.jp/fhir/core/Extension/StructureDefinition/JP_Immunization_ManufacturedDate"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "Immunization.extension:certificatedDate",
+        "path": "Immunization.extension",
+        "sliceName": "certificatedDate",
+        "min": 0,
+        "max": "1",
+        "type": [
+          {
+            "code": "Extension",
+            "profile": [
+              "http://jpfhir.jp/fhir/core/Extension/StructureDefinition/JP_Immunization_CertificatedDate"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "Immunization.status",
+        "path": "Immunization.status",
+        "definition": "予防接種記録の現在の状態を示すコード",
+        "binding": {
+          "extension": [
+            {
+              "url": "http://hl7.org/fhir/StructureDefinition/elementdefinition-bindingName",
+              "valueString": "ImmunizationStatus"
+            }
+          ],
+          "strength": "required",
+          "description": "予防接種の現在の状態を表すコード",
+          "valueSet": "http://hl7.org/fhir/ValueSet/immunization-status|4.0.1"
+        }
+      },
+      {
+        "id": "Immunization.statusReason",
+        "path": "Immunization.statusReason",
+        "short": "実施しなかった理由"
+      },
+      {
+        "id": "Immunization.vaccineCode",
+        "path": "Immunization.vaccineCode",
+        "short": "接種されたワクチン製剤",
+        "definition": "接種されたあるいは接種予定のワクチン。",
+        "comment": "全てのターミノロジがこのパターンに当てはまるわけではない。モデルによってはCodeableConceptではなく，独自構造でCodingを直接指定して文書やコーディング，その解釈や事前条件や事後条件との関連について示される。",
+        "binding": {
+          "strength": "preferred",
+          "valueSet": "http://jpfhir.jp/fhir/core/ValueSet/JP_MedicationCode_Immunization_VS"
+        }
+      },
+      {
+        "id": "Immunization.patient",
+        "path": "Immunization.patient",
+        "short": "予防接種を受けた人",
+        "definition": "予防接種を受けた，あるいは受けなかった患者。",
+        "type": [
+          {
+            "code": "Reference",
+            "targetProfile": [
+              "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Patient"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "Immunization.encounter",
+        "path": "Immunization.encounter",
+        "short": "予防接種を受けた診察",
+        "definition": "患者が医療従事者から予防接種を受けた外来，入院あるいは他の対面の状態を表す。",
+        "type": [
+          {
+            "code": "Reference",
+            "targetProfile": [
+              "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Encounter"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "Immunization.occurrence[x]",
+        "path": "Immunization.occurrence[x]",
+        "short": "ワクチンを接種した日時",
+        "definition": "ワクチンを接種した日あるいは接種予定だった日。"
+      },
+      {
+        "id": "Immunization.recorded",
+        "path": "Immunization.recorded",
+        "short": "予防接種を受けた対象者の記録として最初に記載された日"
+      },
+      {
+        "id": "Immunization.reportOrigin",
+        "path": "Immunization.reportOrigin",
+        "short": "二次的に報告された記録の発生源を示す",
+        "definition": "予防接種を実施した時に，ワクチンを接種した人以外からの報告からの情報である場合のデータの発生源。"
+      },
+      {
+        "id": "Immunization.location",
+        "path": "Immunization.location",
+        "short": "ワクチンを接種した場所",
+        "definition": "接種医療機関。ワクチン接種がどこで実施されたかを表す。サービスが提供された場所。接種された身体部位ではない。",
+        "type": [
+          {
+            "code": "Reference",
+            "targetProfile": [
+              "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Location"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "Immunization.manufacturer",
+        "path": "Immunization.manufacturer",
+        "short": "ワクチンメーカー",
+        "definition": "ワクチメーカーの名前。",
+        "type": [
+          {
+            "code": "Reference",
+            "targetProfile": [
+              "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Organization"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "Immunization.lotNumber",
+        "path": "Immunization.lotNumber",
+        "short": "ワクチンのロット番号",
+        "definition": "ワクチン製剤のロット番号。"
+      },
+      {
+        "id": "Immunization.expirationDate",
+        "path": "Immunization.expirationDate",
+        "short": "ワクチンの使用期限",
+        "definition": "ワクチンの消費期限を表す日。"
+      },
+      {
+        "id": "Immunization.site",
+        "path": "Immunization.site",
+        "short": "ワクチンが接種された身体部位",
+        "definition": "ワクチンが接種された身体部位",
+        "binding": {
+          "strength": "preferred",
+          "valueSet": "http://jpfhir.jp/fhir/core/ValueSet/JP_MedicationBodySiteJAMIExternal_VS"
+        }
+      },
+      {
+        "id": "Immunization.route",
+        "path": "Immunization.route",
+        "short": "ワクチンを接種した経路",
+        "definition": "ワクチンが体内へと接種された経路。"
+      },
+      {
+        "id": "Immunization.doseQuantity",
+        "path": "Immunization.doseQuantity",
+        "short": "ワクチンの投与量",
+        "definition": "ワクチン製剤が接種された量",
+        "type": [
+          {
+            "code": "Quantity",
+            "profile": [
+              "http://jpfhir.jp/fhir/core/StructureDefinition/JP_MedicationSimpleQuantity"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "Immunization.performer",
+        "path": "Immunization.performer",
+        "short": "ワクチン接種を実施した人",
+        "definition": "誰が予防接種を実施したかを表す。"
+      },
+      {
+        "id": "Immunization.performer.actor",
+        "path": "Immunization.performer.actor",
+        "type": [
+          {
+            "code": "Reference",
+            "targetProfile": [
+              "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Practitioner",
+              "http://jpfhir.jp/fhir/core/StructureDefinition/JP_PractitionerRole",
+              "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Organization"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "Immunization.note",
+        "path": "Immunization.note",
+        "short": "予防接種についての補足的記録",
+        "definition": "他の属性で伝達することができない予防接種に関する他の記録。"
+      },
+      {
+        "id": "Immunization.reasonCode",
+        "path": "Immunization.reasonCode",
+        "short": "予防接種を接種した理由",
+        "definition": "予防接種が行われた理由"
+      },
+      {
+        "id": "Immunization.reasonReference",
+        "path": "Immunization.reasonReference",
+        "short": "予防接種を実施した理由",
+        "definition": "予防接種が実施された理由を表すCondition，ObservationあるいはDiagnosticReportリソースを参照する。"
+      },
+      {
+        "id": "Immunization.isSubpotent",
+        "path": "Immunization.isSubpotent",
+        "short": "効力量",
+        "definition": "量が通常の効力より弱いと考えられているかどうかを示す。デフォルトでは示されている量と同等の効力をもつと考えられている。"
+      },
+      {
+        "id": "Immunization.subpotentReason",
+        "path": "Immunization.subpotentReason",
+        "short": "効力が減弱する理由",
+        "definition": "効力が減弱すると考えられている理由。"
+      },
+      {
+        "id": "Immunization.education",
+        "path": "Immunization.education",
+        "short": "患者に提示された教材",
+        "definition": "ワクチンを接種するときに患者（あるいは保護者）に提示された教材。"
+      },
+      {
+        "id": "Immunization.programEligibility",
+        "path": "Immunization.programEligibility",
+        "short": "ワクチン接種計画での患者適格性",
+        "definition": "ワクチン接種計画での患者適格性を示す"
+      },
+      {
+        "id": "Immunization.fundingSource",
+        "path": "Immunization.fundingSource",
+        "short": "ワクチン接種計画の資金源",
+        "definition": "ワクチンが実際に接種されるときの資金源を示す。これは患者適格性（たとえば，公的に購入されたワクチンには適格性があるが，在庫の問題で私的資金で購入されたワクチンを投与するような場合）とは異なることがある。"
+      },
+      {
+        "id": "Immunization.reaction",
+        "path": "Immunization.reaction",
+        "short": "予防接種後に起こった反応についての詳細な記録",
+        "definition": "予防接種に関連する時期に発生した副反応を示す分類されたデータ。"
+      },
+      {
+        "id": "Immunization.protocolApplied",
+        "path": "Immunization.protocolApplied",
+        "short": "提供者が実施したプロトコール",
+        "definition": "ワクチンを接種した提供者が実施したプロトコール（推奨される手順の集合）。"
+      }
+    ]
+  }
+}

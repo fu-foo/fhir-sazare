@@ -130,6 +130,56 @@ impl ProfileLoader {
         tracing::info!("Loaded {} embedded US-Core profiles", profiles.len());
         profiles
     }
+
+    /// Get embedded JP-Core profiles (HL7 FHIR JP Core, no download required).
+    ///
+    /// Profiles are embedded as differentials (snapshot stripped) sourced from
+    /// the official `jp-core.r4` package. Validation is cardinality-based, so
+    /// the meaningful constraints enforced today are mandatory elements.
+    pub fn get_embedded_jp_core_profiles() -> Vec<Value> {
+        tracing::info!("Loading embedded JP-Core profiles...");
+
+        const JP_CORE_PATIENT: &str = include_str!("../profiles/jp-core/jp-core-patient.json");
+        const JP_CORE_ORGANIZATION: &str = include_str!("../profiles/jp-core/jp-core-organization.json");
+        const JP_CORE_PRACTITIONER: &str = include_str!("../profiles/jp-core/jp-core-practitioner.json");
+        const JP_CORE_ENCOUNTER: &str = include_str!("../profiles/jp-core/jp-core-encounter.json");
+        const JP_CORE_CONDITION: &str = include_str!("../profiles/jp-core/jp-core-condition.json");
+        const JP_CORE_ALLERGYINTOLERANCE: &str = include_str!("../profiles/jp-core/jp-core-allergyintolerance.json");
+        const JP_CORE_IMMUNIZATION: &str = include_str!("../profiles/jp-core/jp-core-immunization.json");
+        const JP_CORE_MEDICATION: &str = include_str!("../profiles/jp-core/jp-core-medication.json");
+        const JP_CORE_MEDICATIONREQUEST: &str = include_str!("../profiles/jp-core/jp-core-medicationrequest.json");
+        const JP_CORE_COVERAGE: &str = include_str!("../profiles/jp-core/jp-core-coverage.json");
+        const JP_CORE_LOCATION: &str = include_str!("../profiles/jp-core/jp-core-location.json");
+        const JP_CORE_OBSERVATION_BODYMEASUREMENT: &str = include_str!("../profiles/jp-core/jp-core-observation-bodymeasurement.json");
+
+        let embedded_jsons = vec![
+            JP_CORE_PATIENT,
+            JP_CORE_ORGANIZATION,
+            JP_CORE_PRACTITIONER,
+            JP_CORE_ENCOUNTER,
+            JP_CORE_CONDITION,
+            JP_CORE_ALLERGYINTOLERANCE,
+            JP_CORE_IMMUNIZATION,
+            JP_CORE_MEDICATION,
+            JP_CORE_MEDICATIONREQUEST,
+            JP_CORE_COVERAGE,
+            JP_CORE_LOCATION,
+            JP_CORE_OBSERVATION_BODYMEASUREMENT,
+        ];
+
+        let mut profiles = Vec::new();
+        for json_str in embedded_jsons {
+            match serde_json::from_str::<Value>(json_str) {
+                Ok(profile) => profiles.push(profile),
+                Err(e) => {
+                    tracing::error!("Failed to parse embedded JP-Core profile: {}", e);
+                }
+            }
+        }
+
+        tracing::info!("Loaded {} embedded JP-Core profiles", profiles.len());
+        profiles
+    }
 }
 
 #[cfg(test)]

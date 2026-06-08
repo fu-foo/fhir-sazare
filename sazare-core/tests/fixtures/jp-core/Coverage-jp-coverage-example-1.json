@@ -1,0 +1,84 @@
+{
+ "resourceType": "Coverage",
+ "id": "jp-coverage-example-1",
+ "meta": {
+  "profile": [
+   "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Coverage"
+  ]
+ },
+ "text": {
+  "status": "extensions",
+  "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p class=\"res-header-id\"><b>Generated Narrative: Coverage jp-coverage-example-1</b></p><a name=\"jp-coverage-example-1\"> </a><a name=\"hcjp-coverage-example-1\"> </a><div style=\"display: inline-block; background-color: #d9e0e7; padding: 6px; margin: 4px; border: 1px solid #8da1b4; border-radius: 5px; line-height: 60%\"><p style=\"margin-bottom: 0px\"/><p style=\"margin-bottom: 0px\">Profile: <a href=\"StructureDefinition-jp-coverage.html\">JP Core Coverage Profile</a></p></div><p><b>JP Core Coverage InsuredPersonSymbol Extension</b>: あいう</p><p><b>JP Core Coverage InsuredPersonNumber Extension</b>: １８７</p><p><b>JP Core Coverage InsuredPersonSubNumber Extension</b>: 05</p><p><b>identifier</b>: <a href=\"NamingSystem-jp-insurance-memberID-identifier.html\" title=\"JP_insurance_memberID_identifier_NamingSystem\">JP_insurance_memberID_identifier_NamingSystem</a>/00012345:あいう:１８７:05</p><p><b>status</b>: Active</p><p><b>type</b>: <span title=\"Codes:{http://terminology.hl7.org/CodeSystem/v3-ActCode PUBLICPOL}\">public healthcare</span></p><p><b>subscriberId</b>: あいう:１８７</p><p><b>beneficiary</b>: <a href=\"Patient-jp-patient-example-1.html\">山田 太郎 Male, DoB: 1970-01-01 ( urn:oid:1.2.392.100495.20.3.51.11311234567#JP_local_patient_identifier_11311234567_NamingSystem#00000010)</a></p><p><b>dependent</b>: 05</p><p><b>payor</b>: <a href=\"#hcjp-coverage-example-1/jp-organization-example-assigner\">Organization あじさい健康保険組合</a></p><hr/><blockquote><p class=\"res-header-id\"><b>Generated Narrative: Organization #jp-organization-example-assigner</b></p><a name=\"jp-coverage-example-1/jp-organization-example-assigner\"> </a><a name=\"hcjp-coverage-example-1/jp-organization-example-assigner\"> </a><div style=\"display: inline-block; background-color: #d9e0e7; padding: 6px; margin: 4px; border: 1px solid #8da1b4; border-radius: 5px; line-height: 60%\"><p style=\"margin-bottom: 0px\"/><p style=\"margin-bottom: 0px\">Profile: <a href=\"StructureDefinition-jp-organization.html\">JP Core Organization Profile</a></p></div><p><b>identifier</b>: <a href=\"NamingSystem-jp-insurer-number-namingsystem.html\" title=\"JP Core Insurer Number NamingSystem 保険者番号\">JP_Insurer_Number_NamingSystem</a>/12345</p><p><b>type</b>: <span title=\"Codes:{http://terminology.hl7.org/CodeSystem/organization-type pay}\">Payer</span></p><p><b>name</b>: あじさい健康保険組合</p></blockquote></div>"
+ },
+ "contained": [
+  {
+   "resourceType": "Organization",
+   "id": "jp-organization-example-assigner",
+   "meta": {
+    "profile": [
+     "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Organization"
+    ]
+   },
+   "identifier": [
+    {
+     "system": "http://jpfhir.jp/fhir/core/mhlw/IdSystem/InsurerNumber",
+     "value": "12345"
+    }
+   ],
+   "type": [
+    {
+     "coding": [
+      {
+       "system": "http://terminology.hl7.org/CodeSystem/organization-type",
+       "code": "pay",
+       "display": "Payer"
+      }
+     ]
+    }
+   ],
+   "name": "あじさい健康保険組合"
+  }
+ ],
+ "extension": [
+  {
+   "url": "http://jpfhir.jp/fhir/core/Extension/StructureDefinition/JP_Coverage_InsuredPersonSymbol",
+   "valueString": "あいう"
+  },
+  {
+   "url": "http://jpfhir.jp/fhir/core/Extension/StructureDefinition/JP_Coverage_InsuredPersonNumber",
+   "valueString": "１８７"
+  },
+  {
+   "url": "http://jpfhir.jp/fhir/core/Extension/StructureDefinition/JP_Coverage_InsuredPersonSubNumber",
+   "valueString": "05"
+  }
+ ],
+ "identifier": [
+  {
+   "system": "http://jpfhir.jp/fhir/clins/Idsystem/JP_Insurance_memberID",
+   "value": "00012345:あいう:１８７:05",
+   "assigner": {
+    "reference": "#jp-organization-example-assigner"
+   }
+  }
+ ],
+ "status": "active",
+ "type": {
+  "coding": [
+   {
+    "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+    "code": "PUBLICPOL"
+   }
+  ]
+ },
+ "subscriberId": "あいう:１８７",
+ "beneficiary": {
+  "reference": "Patient/jp-patient-example-1"
+ },
+ "dependent": "05",
+ "payor": [
+  {
+   "reference": "#jp-organization-example-assigner"
+  }
+ ]
+}

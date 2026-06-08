@@ -1,0 +1,61 @@
+{
+ "resourceType": "Medication",
+ "id": "jp-medication-example-1",
+ "meta": {
+  "profile": [
+   "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Medication"
+  ]
+ },
+ "text": {
+  "status": "generated",
+  "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p class=\"res-header-id\"><b>Generated Narrative: Medication jp-medication-example-1</b></p><a name=\"jp-medication-example-1\"> </a><a name=\"hcjp-medication-example-1\"> </a><div style=\"display: inline-block; background-color: #d9e0e7; padding: 6px; margin: 4px; border: 1px solid #8da1b4; border-radius: 5px; line-height: 60%\"><p style=\"margin-bottom: 0px\"/><p style=\"margin-bottom: 0px\">Profile: <a href=\"StructureDefinition-jp-medication.html\">JP Core Medication Profile</a></p></div><p><b>status</b>: Active</p><h3>Ingredients</h3><table class=\"grid\"><tr><td style=\"display: none\">-</td><td><b>Extension</b></td><td><b>Item[x]</b></td><td><b>Strength</b></td></tr><tr><td style=\"display: none\">*</td><td/><td><span title=\"Codes:{http://medis.or.jp/CodeSystem/master-HOT9 100558502}\">ホリゾン注射液１０ｍｇ</span></td><td>1 アンプル<span style=\"background: LightGoldenRodYellow\"> (Details: JP Core Medication MERIT9 Unit CodeSystem  codeAMP = 'アンプル')</span>/1 回<span style=\"background: LightGoldenRodYellow\"> (Details: JP Core Medication MERIT9 Unit CodeSystem  codeTIME = '回')</span></td></tr></table></div>"
+ },
+ "status": "active",
+ "ingredient": [
+  {
+   "extension": [
+    {
+     "url": "http://jpfhir.jp/fhir/core/Extension/StructureDefinition/JP_Medication_Ingredient_DrugNo",
+     "valueInteger": 1
+    }
+   ],
+   "itemCodeableConcept": {
+    "coding": [
+     {
+      "system": "http://medis.or.jp/CodeSystem/master-HOT9",
+      "code": "100558502",
+      "display": "ホリゾン注射液１０ｍｇ"
+     }
+    ]
+   },
+   "strength": {
+    "extension": [
+     {
+      "url": "http://jpfhir.jp/fhir/core/Extension/StructureDefinition/JP_Medication_IngredientStrength_StrengthType",
+      "valueCodeableConcept": {
+       "coding": [
+        {
+         "system": "http://jpfhir.jp/fhir/core/mhlw/CodeSystem/MedicationIngredientStrengthStrengthType",
+         "code": "1",
+         "display": "製剤量"
+        }
+       ]
+      }
+     }
+    ],
+    "numerator": {
+     "value": 1,
+     "unit": "アンプル",
+     "system": "http://jpfhir.jp/fhir/core/mhlw/CodeSystem/MedicationUnitMERIT9Code",
+     "code": "AMP"
+    },
+    "denominator": {
+     "value": 1,
+     "unit": "回",
+     "system": "http://jpfhir.jp/fhir/core/mhlw/CodeSystem/MedicationUnitMERIT9Code",
+     "code": "TIME"
+    }
+   }
+  }
+ ]
+}

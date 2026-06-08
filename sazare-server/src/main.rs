@@ -63,6 +63,8 @@ async fn main() {
     let mut profile_registry = ProfileRegistry::new();
     let us_core_profiles = ProfileLoader::get_embedded_us_core_profiles();
     profile_registry.load_profiles(us_core_profiles);
+    let jp_core_profiles = ProfileLoader::get_embedded_jp_core_profiles();
+    profile_registry.load_profiles(jp_core_profiles);
 
     // Load custom profiles from profiles/ directory if it exists
     match ProfileLoader::load_from_directory("profiles") {

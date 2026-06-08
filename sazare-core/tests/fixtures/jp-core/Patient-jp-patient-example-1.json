@@ -1,0 +1,96 @@
+{
+ "resourceType": "Patient",
+ "id": "jp-patient-example-1",
+ "meta": {
+  "profile": [
+   "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Patient"
+  ]
+ },
+ "text": {
+  "status": "generated",
+  "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p class=\"res-header-id\"><b>Generated Narrative: Patient jp-patient-example-1</b></p><a name=\"jp-patient-example-1\"> </a><a name=\"hcjp-patient-example-1\"> </a><div style=\"display: inline-block; background-color: #d9e0e7; padding: 6px; margin: 4px; border: 1px solid #8da1b4; border-radius: 5px; line-height: 60%\"><p style=\"margin-bottom: 0px\"/><p style=\"margin-bottom: 0px\">Profile: <a href=\"StructureDefinition-jp-patient.html\">JP Core Patient Profile</a></p></div><p style=\"border: 1px #661aff solid; background-color: #e6e6ff; padding: 10px;\">山田 太郎 Male, DoB: 1970-01-01 ( urn:oid:1.2.392.100495.20.3.51.11311234567#JP_local_patient_identifier_11311234567_NamingSystem#00000010)</p><hr/><table class=\"grid\"><tr><td style=\"background-color: #f3f5da\" title=\"Alternate names (see the one above)\">Alt. Name:</td><td colspan=\"3\">ヤマダ タロウ</td></tr><tr><td style=\"background-color: #f3f5da\" title=\"Ways to contact the Patient\">Contact Detail</td><td colspan=\"3\"><ul><li>ph: 0312345678(Home)</li><li>東京都新宿区</li></ul></td></tr><tr><td style=\"background-color: #f3f5da\" title=\"The registered place of birth of the patient. A sytem may use the address.text if they don't store the birthPlace address in discrete elements.\"><a href=\"http://hl7.org/fhir/extensions/5.2.0/StructureDefinition-patient-birthPlace.html\">Patient Birth Place</a></td><td colspan=\"3\">東京 </td></tr><tr><td style=\"background-color: #f3f5da\" title=\"人種(Race)に関する情報を格納するためのExtension。\"><a href=\"StructureDefinition-jp-patient-race.html\">JP Core Patient Race Extension</a></td><td colspan=\"3\"><span title=\"Codes:{http://terminology.hl7.org/CodeSystem/v3-Race 2039-6}\">Japanese</span></td></tr><tr><td style=\"background-color: #f3f5da\" title=\"The patient's professed religious affiliations.\"><a href=\"http://hl7.org/fhir/extensions/5.2.0/StructureDefinition-patient-religion.html\">Patient Religion</a></td><td colspan=\"3\"><span title=\"Codes:{http://terminology.hl7.org/CodeSystem/v3-ReligiousAffiliation 1046}\">Shinto</span></td></tr></table></div>"
+ },
+ "extension": [
+  {
+   "url": "http://hl7.org/fhir/StructureDefinition/patient-religion",
+   "valueCodeableConcept": {
+    "coding": [
+     {
+      "system": "http://terminology.hl7.org/CodeSystem/v3-ReligiousAffiliation",
+      "code": "1046",
+      "display": "Shinto"
+     }
+    ]
+   }
+  },
+  {
+   "url": "http://hl7.org/fhir/StructureDefinition/patient-birthPlace",
+   "valueAddress": {
+    "state": "東京"
+   }
+  },
+  {
+   "url": "http://jpfhir.jp/fhir/core/Extension/StructureDefinition/JP_Patient_Race",
+   "valueCodeableConcept": {
+    "coding": [
+     {
+      "system": "http://terminology.hl7.org/CodeSystem/v3-Race",
+      "code": "2039-6",
+      "display": "Japanese"
+     }
+    ]
+   }
+  }
+ ],
+ "identifier": [
+  {
+   "system": "urn:oid:1.2.392.100495.20.3.51.11311234567",
+   "value": "00000010"
+  }
+ ],
+ "name": [
+  {
+   "extension": [
+    {
+     "url": "http://hl7.org/fhir/StructureDefinition/iso21090-EN-representation",
+     "valueCode": "IDE"
+    }
+   ],
+   "use": "usual",
+   "text": "山田 太郎",
+   "family": "山田",
+   "given": [
+    "太郎"
+   ]
+  },
+  {
+   "extension": [
+    {
+     "url": "http://hl7.org/fhir/StructureDefinition/iso21090-EN-representation",
+     "valueCode": "SYL"
+    }
+   ],
+   "use": "usual",
+   "text": "ヤマダ タロウ",
+   "family": "ヤマダ",
+   "given": [
+    "タロウ"
+   ]
+  }
+ ],
+ "telecom": [
+  {
+   "system": "phone",
+   "value": "0312345678",
+   "use": "home"
+  }
+ ],
+ "gender": "male",
+ "birthDate": "1970-01-01",
+ "address": [
+  {
+   "text": "東京都新宿区",
+   "postalCode": "160-0023"
+  }
+ ]
+}

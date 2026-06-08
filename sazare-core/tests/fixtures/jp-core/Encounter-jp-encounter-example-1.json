@@ -1,0 +1,38 @@
+{
+ "resourceType": "Encounter",
+ "id": "jp-encounter-example-1",
+ "meta": {
+  "profile": [
+   "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Encounter"
+  ]
+ },
+ "text": {
+  "status": "generated",
+  "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p class=\"res-header-id\"><b>Generated Narrative: Encounter jp-encounter-example-1</b></p><a name=\"jp-encounter-example-1\"> </a><a name=\"hcjp-encounter-example-1\"> </a><div style=\"display: inline-block; background-color: #d9e0e7; padding: 6px; margin: 4px; border: 1px solid #8da1b4; border-radius: 5px; line-height: 60%\"><p style=\"margin-bottom: 0px\"/><p style=\"margin-bottom: 0px\">Profile: <a href=\"StructureDefinition-jp-encounter.html\">JP Core Encounter Profile</a></p></div><p><b>status</b>: Finished</p><p><b>class</b>: <a href=\"https://simplifier.net/resolve?scope=jpfhir-terminology@1.4.0&amp;canonical=http://terminology.hl7.org/CodeSystem/v3-ActCode#v3-ActCode-AMB\">ActCode AMB</a>: 外来</p><p><b>subject</b>: <a href=\"Patient-jp-patient-example-1.html\">山田 太郎</a></p><h3>Participants</h3><table class=\"grid\"><tr><td style=\"display: none\">-</td><td><b>Individual</b></td></tr><tr><td style=\"display: none\">*</td><td><a href=\"Practitioner-jp-practitioner-example-female-1.html\">東京 春子</a></td></tr></table><p><b>period</b>: 2022-05-08 13:08:24+0900 --&gt; 2022-05-08 13:23:24+0900</p><p><b>serviceProvider</b>: <a href=\"Organization-jp-organization-example-clinic.html\">太郎花子クリニック</a></p></div>"
+ },
+ "status": "finished",
+ "class": {
+  "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+  "code": "AMB"
+ },
+ "subject": {
+  "reference": "Patient/jp-patient-example-1",
+  "display": "山田 太郎"
+ },
+ "participant": [
+  {
+   "individual": {
+    "reference": "Practitioner/jp-practitioner-example-female-1",
+    "display": "東京 春子"
+   }
+  }
+ ],
+ "period": {
+  "start": "2022-05-08T13:08:24+09:00",
+  "end": "2022-05-08T13:23:24+09:00"
+ },
+ "serviceProvider": {
+  "reference": "Organization/jp-organization-example-clinic",
+  "display": "太郎花子クリニック"
+ }
+}

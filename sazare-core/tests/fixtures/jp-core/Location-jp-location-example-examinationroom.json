@@ -1,0 +1,46 @@
+{
+ "resourceType": "Location",
+ "id": "jp-location-example-examinationroom",
+ "meta": {
+  "profile": [
+   "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Location"
+  ]
+ },
+ "text": {
+  "status": "generated",
+  "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p class=\"res-header-id\"><b>Generated Narrative: Location jp-location-example-examinationroom</b></p><a name=\"jp-location-example-examinationroom\"> </a><a name=\"hcjp-location-example-examinationroom\"> </a><div style=\"display: inline-block; background-color: #d9e0e7; padding: 6px; margin: 4px; border: 1px solid #8da1b4; border-radius: 5px; line-height: 60%\"><p style=\"margin-bottom: 0px\"/><p style=\"margin-bottom: 0px\">Profile: <a href=\"StructureDefinition-jp-location.html\">JP Core Location Profile</a></p></div><p><b>identifier</b>: G-101</p><p><b>status</b>: Active</p><p><b>name</b>: 外来101診察室</p><p><b>description</b>: 外来101診察室</p><p><b>mode</b>: Instance</p><p><b>type</b>: <span title=\"Codes:{http://terminology.hl7.org/CodeSystem/v3-RoleCode OF}\">Outpatient facility</span></p><p><b>telecom</b>: ph: 8193</p><p><b>physicalType</b>: <span title=\"Codes:{http://terminology.hl7.org/CodeSystem/location-physical-type ro}\">Room</span></p></div>"
+ },
+ "identifier": [
+  {
+   "value": "G-101"
+  }
+ ],
+ "status": "active",
+ "name": "外来101診察室",
+ "description": "外来101診察室",
+ "mode": "instance",
+ "type": [
+  {
+   "coding": [
+    {
+     "system": "http://terminology.hl7.org/CodeSystem/v3-RoleCode",
+     "code": "OF"
+    }
+   ]
+  }
+ ],
+ "telecom": [
+  {
+   "system": "phone",
+   "value": "8193"
+  }
+ ],
+ "physicalType": {
+  "coding": [
+   {
+    "system": "http://terminology.hl7.org/CodeSystem/location-physical-type",
+    "code": "ro"
+   }
+  ]
+ }
+}

@@ -132,6 +132,21 @@ impl Phase2Validator {
         issues: &mut Vec<OperationOutcomeIssue>,
     ) {
         for element in elements {
+            // Skip sliced element definitions (id like "Type.field:sliceName...").
+            // We have no slice discrimination here, so applying a slice's min/max
+            // to the aggregate count of the base path is wrong — e.g. a slice with
+            // max=1 would falsely reject an element that legitimately repeats
+            // (`identifier` with 3 entries vs. an `identifier:rpNumber` slice).
+            // Only plain (non-sliced) elements are checked.
+            if element
+                .get("id")
+                .and_then(|v| v.as_str())
+                .map(|id| id.contains(':'))
+                .unwrap_or(false)
+            {
+                continue;
+            }
+
             let path = match element.get("path").and_then(|v| v.as_str()) {
                 Some(p) => p,
                 None => continue,

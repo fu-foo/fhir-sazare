@@ -1,0 +1,42 @@
+{
+ "resourceType": "Practitioner",
+ "id": "jp-practitioner-example-male-2",
+ "meta": {
+  "profile": [
+   "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Practitioner"
+  ]
+ },
+ "text": {
+  "status": "generated",
+  "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p class=\"res-header-id\"><b>Generated Narrative: Practitioner jp-practitioner-example-male-2</b></p><a name=\"jp-practitioner-example-male-2\"> </a><a name=\"hcjp-practitioner-example-male-2\"> </a><div style=\"display: inline-block; background-color: #d9e0e7; padding: 6px; margin: 4px; border: 1px solid #8da1b4; border-radius: 5px; line-height: 60%\"><p style=\"margin-bottom: 0px\"/><p style=\"margin-bottom: 0px\">Profile: <a href=\"StructureDefinition-jp-practitioner.html\">JP Core Practitioner Profile</a></p></div><p><b>name</b>: 愛知 太郎, アイチ タロウ</p><p><b>gender</b>: Male</p></div>"
+ },
+ "name": [
+  {
+   "extension": [
+    {
+     "url": "http://hl7.org/fhir/StructureDefinition/iso21090-EN-representation",
+     "valueCode": "IDE"
+    }
+   ],
+   "text": "愛知 太郎",
+   "family": "愛知",
+   "given": [
+    "太郎"
+   ]
+  },
+  {
+   "extension": [
+    {
+     "url": "http://hl7.org/fhir/StructureDefinition/iso21090-EN-representation",
+     "valueCode": "SYL"
+    }
+   ],
+   "text": "アイチ タロウ",
+   "family": "チバ",
+   "given": [
+    "タロウ"
+   ]
+  }
+ ],
+ "gender": "male"
+}

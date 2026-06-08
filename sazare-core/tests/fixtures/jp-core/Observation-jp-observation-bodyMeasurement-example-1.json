@@ -1,0 +1,62 @@
+{
+ "resourceType": "Observation",
+ "id": "jp-observation-bodyMeasurement-example-1",
+ "meta": {
+  "profile": [
+   "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Observation_BodyMeasurement"
+  ]
+ },
+ "text": {
+  "status": "generated",
+  "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p class=\"res-header-id\"><b>Generated Narrative: Observation jp-observation-bodyMeasurement-example-1</b></p><a name=\"jp-observation-bodyMeasurement-example-1\"> </a><a name=\"hcjp-observation-bodyMeasurement-example-1\"> </a><div style=\"display: inline-block; background-color: #d9e0e7; padding: 6px; margin: 4px; border: 1px solid #8da1b4; border-radius: 5px; line-height: 60%\"><p style=\"margin-bottom: 0px\"/><p style=\"margin-bottom: 0px\">Profile: <a href=\"StructureDefinition-jp-observation-bodymeasurement.html\">JP Core Observation BodyMeasurement Profile</a></p></div><p><b>status</b>: Final</p><p><b>category</b>: <span title=\"Codes:{http://jpfhir.jp/fhir/core/CodeSystem/JP_SimpleObservationCategory_CS body-measurement}\">Body Measurement</span>, <span title=\"Codes:{http://jpfhir.jp/fhir/core/CodeSystem/JP_ObservationBodyMeasurementCategory_CS weight}\">体重</span></p><p><b>code</b>: <span title=\"Codes:{http://abc-hospital.local/fhir/Observation/localcode abc-local-456}, {http://jpfhir.jp/fhir/core/CodeSystem/JP_ObservationBodyMeasurementCode_CS 31000296}\">abc-local-456</span></p><p><b>subject</b>: <a href=\"Patient-jp-patient-example-1.html\">山田 太郎 Male, DoB: 1970-01-01 ( urn:oid:1.2.392.100495.20.3.51.11311234567#JP_local_patient_identifier_11311234567_NamingSystem#00000010)</a></p><p><b>encounter</b>: <a href=\"Encounter-jp-encounter-example-1.html\">Encounter: status = finished; class = 外来 (ActCode#AMB); period = 2022-05-08 13:08:24+0900 --&gt; 2022-05-08 13:23:24+0900</a></p><p><b>effective</b>: 2021-10-19 10:00:00+0900</p><p><b>performer</b>: <a href=\"Practitioner-jp-practitioner-example-male-1.html\">Practitioner 大阪 一郎</a></p><p><b>value</b>: 63.5 kg</p></div>"
+ },
+ "status": "final",
+ "category": [
+  {
+   "coding": [
+    {
+     "system": "http://jpfhir.jp/fhir/core/CodeSystem/JP_SimpleObservationCategory_CS",
+     "code": "body-measurement",
+     "display": "Body Measurement"
+    }
+   ]
+  },
+  {
+   "coding": [
+    {
+     "system": "http://jpfhir.jp/fhir/core/CodeSystem/JP_ObservationBodyMeasurementCategory_CS",
+     "code": "weight",
+     "display": "体重"
+    }
+   ]
+  }
+ ],
+ "code": {
+  "coding": [
+   {
+    "system": "http://abc-hospital.local/fhir/Observation/localcode",
+    "code": "abc-local-456"
+   },
+   {
+    "system": "http://jpfhir.jp/fhir/core/CodeSystem/JP_ObservationBodyMeasurementCode_CS",
+    "code": "31000296"
+   }
+  ]
+ },
+ "subject": {
+  "reference": "Patient/jp-patient-example-1"
+ },
+ "encounter": {
+  "reference": "Encounter/jp-encounter-example-1"
+ },
+ "effectiveDateTime": "2021-10-19T10:00:00+09:00",
+ "performer": [
+  {
+   "reference": "Practitioner/jp-practitioner-example-male-1"
+  }
+ ],
+ "valueQuantity": {
+  "value": 63.5,
+  "unit": "kg"
+ }
+}

@@ -1,0 +1,295 @@
+{
+  "resourceType": "StructureDefinition",
+  "id": "jp-encounter",
+  "url": "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Encounter",
+  "version": "1.2.0",
+  "name": "JP_Encounter",
+  "title": "JP Core Encounter Profile",
+  "status": "active",
+  "date": "2025-07-30",
+  "publisher": "FHIR Japanese implementation research working group in Japan Association of Medical Informatics (JAMI)",
+  "contact": [
+    {
+      "name": "FHIR Japanese implementation research working group in Japan Association of Medical Informatics (JAMI)",
+      "telecom": [
+        {
+          "system": "url",
+          "value": "http://jpfhir.jp"
+        },
+        {
+          "system": "email",
+          "value": "office@hlfhir.jp"
+        }
+      ]
+    }
+  ],
+  "description": "このプロファイルはEncounterリソースに対して、来院/入院情報のデータを送受信するための基礎となる制約と拡張を定めたものである。",
+  "jurisdiction": [
+    {
+      "coding": [
+        {
+          "system": "urn:iso:std:iso:3166",
+          "code": "JP",
+          "display": "Japan"
+        }
+      ]
+    }
+  ],
+  "copyright": "Copyright Japan FHIR Implementation Infrastructure Study Group in Japan Association of Medical Informatics (JAMI) 一般社団法人日本医療情報学会FHIR国内実装基盤研究会",
+  "fhirVersion": "4.0.1",
+  "mapping": [
+    {
+      "identity": "workflow",
+      "uri": "http://hl7.org/fhir/workflow",
+      "name": "Workflow Pattern"
+    },
+    {
+      "identity": "rim",
+      "uri": "http://hl7.org/v3",
+      "name": "RIM Mapping"
+    },
+    {
+      "identity": "w5",
+      "uri": "http://hl7.org/fhir/fivews",
+      "name": "FiveWs Pattern Mapping"
+    },
+    {
+      "identity": "v2",
+      "uri": "http://hl7.org/v2",
+      "name": "HL7 v2 Mapping"
+    }
+  ],
+  "kind": "resource",
+  "abstract": false,
+  "type": "Encounter",
+  "baseDefinition": "http://hl7.org/fhir/StructureDefinition/Encounter",
+  "derivation": "constraint",
+  "differential": {
+    "element": [
+      {
+        "id": "Encounter",
+        "path": "Encounter",
+        "short": "患者にサービスが提供されている間の相互作用",
+        "definition": "医療サービスの提供または患者の健康状態の評価を目的とした、患者と医療提供者との間の相互作用。Encounterと表現される。  \n【JP Core仕様】外来受診、救急受診、入院、退院、対面診察、電話診察、など。"
+      },
+      {
+        "id": "Encounter.extension",
+        "path": "Encounter.extension",
+        "slicing": {
+          "discriminator": [
+            {
+              "type": "value",
+              "path": "url"
+            }
+          ],
+          "ordered": false,
+          "rules": "open"
+        }
+      },
+      {
+        "id": "Encounter.extension:associatedEncounter",
+        "path": "Encounter.extension",
+        "sliceName": "associatedEncounter",
+        "short": "関連するEncounter",
+        "definition": "関連するEncounter",
+        "min": 0,
+        "max": "1",
+        "type": [
+          {
+            "code": "Extension",
+            "profile": [
+              "http://hl7.org/fhir/StructureDefinition/encounter-associatedEncounter|4.0.1"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "Encounter.identifier",
+        "path": "Encounter.identifier",
+        "short": "このEncounterが知られている識別子（複数可）",
+        "definition": "このEncounterが知られている識別子（複数可）。"
+      },
+      {
+        "id": "Encounter.status",
+        "path": "Encounter.status",
+        "short": "planned | arrived | triaged | in-progress | onleave | finished | cancelled + / 予定｜到着｜トリアージ｜進行中｜保留中｜終了｜キャンセル+",
+        "definition": "planned | arrived | triaged | in-progress | onleave | finished | cancelled +.  \n予定｜到着｜トリアージ｜進行中｜保留中｜終了｜キャンセル+.",
+        "comment": "内部のビジネス・ルールは、ステータス(およびクラス)間で発生する可能性のある適切な遷移を検出することに注意すること。",
+        "isModifierReason": "この要素は、リソースを有効なものとして扱うべきではないことを意味する status entered-in-error を含む status 要素であるため、修飾子としてラベル付けされる。"
+      },
+      {
+        "id": "Encounter.statusHistory",
+        "path": "Encounter.statusHistory",
+        "short": "過去のEncounterのステータス一覧【詳細参照】",
+        "definition": "ステータス履歴(status History)は、リソースの歴史的なバージョンを読み込んだり、サーバに保存させたりすることなく、Encounterリソースがステータス履歴を含むことを可能にする。",
+        "comment": "現在のステータスは、ステータスの履歴ではなく、常にリソースの現在のバージョンにある。"
+      },
+      {
+        "id": "Encounter.statusHistory.status",
+        "path": "Encounter.statusHistory.status",
+        "short": "planned | arrived | triaged | in-progress | onleave | finished | cancelled + / 予定｜到着｜トリアージ｜進行中｜保留中｜終了｜キャンセル+.",
+        "definition": "planned | arrived | triaged | in-progress | onleave | finished | cancelled +.  \n予定｜到着｜トリアージ｜進行中｜保留中｜終了｜キャンセル+.",
+        "comment": "文字列のサイズは 1MB を超えてはならないことに注意すること。"
+      },
+      {
+        "id": "Encounter.statusHistory.period",
+        "path": "Encounter.statusHistory.period",
+        "short": "そのエピソードが指定された状態になっていた時間",
+        "definition": "そのエピソードが指定された状態になっていた時間。",
+        "comment": "期間とは時間の範囲で指定される。範囲全体が適用されるか（たとえば、「患者はこの時間範囲で入院していた」）、または範囲から1つの値が適用されるか（たとえば、「これら2回の間に患者に与える」）を指定する。 期間が必要な場合は、タイプをInterval | Durationとして指定する。"
+      },
+      {
+        "id": "Encounter.class",
+        "path": "Encounter.class",
+        "short": "患者との受療行動の分類【詳細参照】",
+        "definition": "外来（外来）、入院、救急、在宅医療、その他の地域差による患者Encounterの分類を表す概念。",
+        "comment": "コードは列挙やコードリストの中で非常にカジュアルに定義されることもあれば、SNOMED CTのような非常にフォーマルな定義まである。 - 詳細は[HL7 v3コア・プリンシプル](https://www.hl7.org/implement/standards/product_brief.cfm?product_id=481)を参照すること。"
+      },
+      {
+        "id": "Encounter.classHistory",
+        "path": "Encounter.classHistory",
+        "short": "過去のEncounter classのリスト【詳細参照】",
+        "definition": "クラスの履歴は、リソースの履歴を経由することなく、Encounterの遷移を追跡することを可能にする。これは、入院患者が緊急時にEncounterした後、入院患者のシナリオに移行する場合に使用される。このようにして、新しいEncounterを再開しないようにすることで、検査/診断結果がより簡単に患者を追跡することができ、再処理を必要とせず、救急から入院への退院の際に紛失したりキャンセルされたりすることがないことを保証する。"
+      },
+      {
+        "id": "Encounter.classHistory.class",
+        "path": "Encounter.classHistory.class",
+        "short": "inpatient | outpatient | ambulatory | emergency + / 入院｜外来｜外来｜救急＋",
+        "definition": "inpatient | outpatient | ambulatory | emergency +.  \n入院｜外来｜外来｜救急＋。",
+        "comment": "コードは列挙やコードリストの中で非常にカジュアルに定義されることもあれば、SNOMED CTのような非常にフォーマルな定義まである- 詳細は[HL7 v3コア・プリンシプル](https://www.hl7.org/implement/standards/product_brief.cfm?product_id=481)を参照すること。"
+      },
+      {
+        "id": "Encounter.classHistory.period",
+        "path": "Encounter.classHistory.period",
+        "short": "指定されたクラスにエピソードがあった時間",
+        "definition": "指定されたクラスにエピソードがあった時間。",
+        "comment": "期間とは時間の範囲で指定される。範囲全体が適用されるか（たとえば、「患者はこの時間範囲で入院していた」）、または範囲から1つの値が適用されるか（たとえば、「これら2回の間に患者に与える」）を指定する。 期間が必要な場合は、タイプをInterval | Durationとして指定する。"
+      },
+      {
+        "id": "Encounter.subject",
+        "path": "Encounter.subject",
+        "type": [
+          {
+            "code": "Reference",
+            "targetProfile": [
+              "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Patient",
+              "http://hl7.org/fhir/StructureDefinition/Group"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "Encounter.participant.individual",
+        "path": "Encounter.participant.individual",
+        "type": [
+          {
+            "code": "Reference",
+            "targetProfile": [
+              "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Practitioner",
+              "http://jpfhir.jp/fhir/core/StructureDefinition/JP_PractitionerRole",
+              "http://hl7.org/fhir/StructureDefinition/RelatedPerson"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "Encounter.reasonReference",
+        "path": "Encounter.reasonReference",
+        "type": [
+          {
+            "code": "Reference",
+            "targetProfile": [
+              "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Condition",
+              "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Condition_Diagnosis",
+              "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Procedure",
+              "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Observation_Common",
+              "http://hl7.org/fhir/StructureDefinition/ImmunizationRecommendation"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "Encounter.diagnosis.condition",
+        "path": "Encounter.diagnosis.condition",
+        "type": [
+          {
+            "code": "Reference",
+            "targetProfile": [
+              "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Condition",
+              "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Condition_Diagnosis",
+              "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Procedure"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "Encounter.hospitalization.origin",
+        "path": "Encounter.hospitalization.origin",
+        "type": [
+          {
+            "code": "Reference",
+            "targetProfile": [
+              "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Location",
+              "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Organization"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "Encounter.hospitalization.destination",
+        "path": "Encounter.hospitalization.destination",
+        "type": [
+          {
+            "code": "Reference",
+            "targetProfile": [
+              "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Location",
+              "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Organization"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "Encounter.location.location",
+        "path": "Encounter.location.location",
+        "type": [
+          {
+            "code": "Reference",
+            "targetProfile": [
+              "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Location"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "Encounter.serviceProvider",
+        "path": "Encounter.serviceProvider",
+        "type": [
+          {
+            "code": "Reference",
+            "targetProfile": [
+              "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Organization"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "Encounter.partOf",
+        "path": "Encounter.partOf",
+        "type": [
+          {
+            "extension": [
+              {
+                "url": "http://hl7.org/fhir/StructureDefinition/structuredefinition-hierarchy",
+                "valueBoolean": true
+              }
+            ],
+            "code": "Reference",
+            "targetProfile": [
+              "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Encounter"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

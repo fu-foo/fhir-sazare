@@ -86,4 +86,44 @@ mod tests {
 
         assert!(validate_resource_all_phases(&patient, &profile_reg, &terminology_reg).is_err());
     }
+
+    fn jp_core_registry() -> ProfileRegistry {
+        let mut reg = ProfileRegistry::new();
+        reg.load_profiles(crate::profile_loader::ProfileLoader::get_embedded_jp_core_profiles());
+        reg
+    }
+
+    #[test]
+    fn test_jp_core_patient_valid() {
+        // A JP_Patient with the mandatory identifier (and identifier.value).
+        let patient = json!({
+            "resourceType": "Patient",
+            "meta": {"profile": ["http://jpfhir.jp/fhir/core/StructureDefinition/JP_Patient"]},
+            "identifier": [{
+                "system": "urn:oid:1.2.392.100495.20.3.51.1",
+                "value": "00000010"
+            }],
+            "name": [{"family": "山田", "given": ["太郎"]}],
+            "gender": "male"
+        });
+
+        let result = validate_resource_all_phases(&patient, &jp_core_registry(), &TerminologyRegistry::new());
+        assert!(result.is_ok(), "valid JP_Patient should pass: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_jp_core_patient_missing_identifier() {
+        // JP_Patient requires identifier (min=1); omitting it must fail.
+        let patient = json!({
+            "resourceType": "Patient",
+            "meta": {"profile": ["http://jpfhir.jp/fhir/core/StructureDefinition/JP_Patient"]},
+            "name": [{"family": "山田", "given": ["太郎"]}],
+            "gender": "male"
+        });
+
+        assert!(
+            validate_resource_all_phases(&patient, &jp_core_registry(), &TerminologyRegistry::new()).is_err(),
+            "JP_Patient without identifier should fail profile validation"
+        );
+    }
 }

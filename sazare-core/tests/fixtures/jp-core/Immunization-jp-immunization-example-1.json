@@ -1,0 +1,90 @@
+{
+ "resourceType": "Immunization",
+ "id": "jp-immunization-example-1",
+ "meta": {
+  "profile": [
+   "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Immunization"
+  ]
+ },
+ "text": {
+  "status": "extensions",
+  "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p class=\"res-header-id\"><b>Generated Narrative: Immunization jp-immunization-example-1</b></p><a name=\"jp-immunization-example-1\"> </a><a name=\"hcjp-immunization-example-1\"> </a><div style=\"display: inline-block; background-color: #d9e0e7; padding: 6px; margin: 4px; border: 1px solid #8da1b4; border-radius: 5px; line-height: 60%\"><p style=\"margin-bottom: 0px\"/><p style=\"margin-bottom: 0px\">Profile: <a href=\"StructureDefinition-jp-immunization.html\">JP Core Immunization Profile</a></p></div><p><b>JP Core Immunization DueDateOfNextDose Extension</b>: 2021-10-10</p><p><b>JP Core Immunization ManufacturedDate Extension</b>: 2021-03-01</p><p><b>JP Core Immunization CertificatedDate Extension</b>: 2021-03-15</p><p><b>status</b>: Completed</p><p><b>vaccineCode</b>: <span title=\"Codes:{http://capstandard.jp/iyaku.info/CodeSystem/YJ-code 6311400A1010}\">肺炎球菌ワクチン</span></p><p><b>patient</b>: <a href=\"Patient-jp-patient-example-1.html\">山田 太郎 Male, DoB: 1970-01-01 ( urn:oid:1.2.392.100495.20.3.51.11311234567#JP_local_patient_identifier_11311234567_NamingSystem#00000010)</a></p><p><b>occurrence</b>: 2021-07-01 10:30:00+0900</p><p><b>lotNumber</b>: 12345678</p><p><b>site</b>: <span title=\"Codes:{http://terminology.hl7.org/CodeSystem/v3-ActSite LA}\">left arm</span></p><p><b>doseQuantity</b>: 0.45 mL<span style=\"background: LightGoldenRodYellow\"> (Details: UCUM  codemL = 'mL')</span></p><h3>Performers</h3><table class=\"grid\"><tr><td style=\"display: none\">-</td><td><b>Function</b></td><td><b>Actor</b></td></tr><tr><td style=\"display: none\">*</td><td><span title=\"Codes:{http://terminology.hl7.org/CodeSystem/v2-0443 AP}\">Administering Provider</span></td><td><a href=\"Practitioner-jp-practitioner-example-male-1.html\">大阪 一郎</a></td></tr></table><h3>ProtocolApplieds</h3><table class=\"grid\"><tr><td style=\"display: none\">-</td><td><b>TargetDisease</b></td><td><b>DoseNumber[x]</b></td></tr><tr><td style=\"display: none\">*</td><td><span title=\"Codes:{http://medis.or.jp/CodeSystem/master-disease-exCode VQH3}\">肺炎球菌感染症</span></td><td>1</td></tr></table></div>"
+ },
+ "extension": [
+  {
+   "url": "http://jpfhir.jp/fhir/core/Extension/StructureDefinition/JP_Immunization_DueDateOfNextDose",
+   "valueDate": "2021-10-10"
+  },
+  {
+   "url": "http://jpfhir.jp/fhir/core/Extension/StructureDefinition/JP_Immunization_ManufacturedDate",
+   "valueDate": "2021-03-01"
+  },
+  {
+   "url": "http://jpfhir.jp/fhir/core/Extension/StructureDefinition/JP_Immunization_CertificatedDate",
+   "valueDate": "2021-03-15"
+  }
+ ],
+ "status": "completed",
+ "vaccineCode": {
+  "coding": [
+   {
+    "system": "http://capstandard.jp/iyaku.info/CodeSystem/YJ-code",
+    "code": "6311400A1010",
+    "display": "肺炎球菌ワクチン"
+   }
+  ]
+ },
+ "patient": {
+  "reference": "Patient/jp-patient-example-1"
+ },
+ "occurrenceDateTime": "2021-07-01T10:30:00+09:00",
+ "lotNumber": "12345678",
+ "site": {
+  "coding": [
+   {
+    "system": "http://terminology.hl7.org/CodeSystem/v3-ActSite",
+    "code": "LA",
+    "display": "left arm"
+   }
+  ]
+ },
+ "doseQuantity": {
+  "value": 0.45,
+  "unit": "mL",
+  "system": "http://unitsofmeasure.org",
+  "code": "mL"
+ },
+ "performer": [
+  {
+   "function": {
+    "coding": [
+     {
+      "system": "http://terminology.hl7.org/CodeSystem/v2-0443",
+      "code": "AP",
+      "display": "Administering Provider"
+     }
+    ]
+   },
+   "actor": {
+    "reference": "Practitioner/jp-practitioner-example-male-1",
+    "display": "大阪 一郎"
+   }
+  }
+ ],
+ "protocolApplied": [
+  {
+   "targetDisease": [
+    {
+     "coding": [
+      {
+       "system": "http://medis.or.jp/CodeSystem/master-disease-exCode",
+       "code": "VQH3",
+       "display": "肺炎球菌感染症"
+      }
+     ]
+    }
+   ],
+   "doseNumberPositiveInt": 1
+  }
+ ]
+}

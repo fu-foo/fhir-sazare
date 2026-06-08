@@ -1,0 +1,31 @@
+{
+ "resourceType": "Organization",
+ "id": "jp-organization-example-inspection",
+ "meta": {
+  "profile": [
+   "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Organization"
+  ]
+ },
+ "text": {
+  "status": "generated",
+  "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p class=\"res-header-id\"><b>Generated Narrative: Organization jp-organization-example-inspection</b></p><a name=\"jp-organization-example-inspection\"> </a><a name=\"hcjp-organization-example-inspection\"> </a><div style=\"display: inline-block; background-color: #d9e0e7; padding: 6px; margin: 4px; border: 1px solid #8da1b4; border-radius: 5px; line-height: 60%\"><p style=\"margin-bottom: 0px\"/><p style=\"margin-bottom: 0px\">Profile: <a href=\"StructureDefinition-jp-organization.html\">JP Core Organization Profile</a></p></div><p><b>identifier</b>: <a href=\"NamingSystem-jp-example-local-identifiersystem.html\" title=\"JP_local_example_identifiersystem_NamingSystem\">JP_local_example_identifiersystem_NamingSystem</a>/000-000-000</p><p><b>type</b>: <span title=\"Codes:{http://terminology.hl7.org/CodeSystem/organization-type team}\">Organizational team</span></p><p><b>name</b>: ひまわりＡＢＣ検査株式会社健康保険組合</p></div>"
+ },
+ "identifier": [
+  {
+   "system": "http://abc-hospital.local/fhir/Organization/localcode",
+   "value": "000-000-000"
+  }
+ ],
+ "type": [
+  {
+   "coding": [
+    {
+     "system": "http://terminology.hl7.org/CodeSystem/organization-type",
+     "code": "team",
+     "display": "Organizational team"
+    }
+   ]
+  }
+ ],
+ "name": "ひまわりＡＢＣ検査株式会社健康保険組合"
+}
