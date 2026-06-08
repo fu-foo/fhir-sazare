@@ -370,15 +370,18 @@ impl<'a> SearchExecutor<'a> {
 
             let (_source_type, search_param) = (parts[0], parts[1]);
 
-            // Extract references from source resources
+            // Extract references from source resources. A single search param can
+            // resolve multiple references (array-valued elements like `performer`),
+            // so fan out over all of them.
             for resource in resources {
-                if let Some(reference) = extract_reference(resource, search_param)
-                    && let Some((ref_type, ref_id)) = parse_reference(&reference)
-                    && let Ok(Some(data)) = self.store.get(ref_type, ref_id)
-                {
-                    let included_resource: Value =
-                        serde_json::from_slice(&data).unwrap_or_default();
-                    included.push(included_resource);
+                for reference in extract_references(resource, search_param) {
+                    if let Some((ref_type, ref_id)) = parse_reference(&reference)
+                        && let Ok(Some(data)) = self.store.get(ref_type, ref_id)
+                    {
+                        let included_resource: Value =
+                            serde_json::from_slice(&data).unwrap_or_default();
+                        included.push(included_resource);
+                    }
                 }
             }
         }
@@ -387,13 +390,38 @@ impl<'a> SearchExecutor<'a> {
     }
 }
 
-/// Extract a reference value from a resource
-fn extract_reference(resource: &Value, field: &str) -> Option<String> {
-    resource
-        .get(field)
-        .and_then(|v| v.get("reference"))
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
+/// Extract the reference strings an `_include`/`_revinclude` search param points
+/// at within a source resource. Handles the three shapes a FHIR reference element
+/// can take:
+///   - a single Reference object (e.g. `subject`)
+///   - an array of Reference objects (e.g. `performer`, `result`)
+///   - a choice-type element stored under `<field>Reference` (e.g. the
+///     `medication` search param resolves `medicationReference`)
+///
+/// A choice-type element bound to a non-reference (e.g. `medicationCodeableConcept`)
+/// yields nothing, since there is no resource to include.
+fn extract_references(resource: &Value, field: &str) -> Vec<String> {
+    // Prefer the element named exactly like the search param; fall back to the
+    // choice-type variant `<field>Reference` (FHIR capitalizes the type suffix).
+    let value = match resource.get(field) {
+        Some(v) => v,
+        None => match resource.get(format!("{field}Reference")) {
+            Some(v) => v,
+            None => return Vec::new(),
+        },
+    };
+
+    let ref_of = |v: &Value| {
+        v.get("reference")
+            .and_then(|r| r.as_str())
+            .map(|s| s.to_string())
+    };
+
+    match value {
+        Value::Array(arr) => arr.iter().filter_map(ref_of).collect(),
+        Value::Object(_) => ref_of(value).into_iter().collect(),
+        _ => Vec::new(),
+    }
 }
 
 /// Parse a FHIR reference string (e.g., "Patient/123")
@@ -423,14 +451,52 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_reference() {
+    fn test_extract_references_single() {
         let resource = serde_json::json!({
-            "subject": {
-                "reference": "Patient/123"
-            }
+            "subject": { "reference": "Patient/123" }
         });
+        assert_eq!(extract_references(&resource, "subject"), vec!["Patient/123"]);
+    }
 
-        let reference = extract_reference(&resource, "subject").unwrap();
-        assert_eq!(reference, "Patient/123");
+    #[test]
+    fn test_extract_references_choice_type() {
+        // `_include=MedicationRequest:medication` must resolve `medicationReference`.
+        let resource = serde_json::json!({
+            "medicationReference": { "reference": "Medication/med-1" }
+        });
+        assert_eq!(
+            extract_references(&resource, "medication"),
+            vec!["Medication/med-1"]
+        );
+    }
+
+    #[test]
+    fn test_extract_references_choice_type_codeable_concept_yields_nothing() {
+        // A CodeableConcept-valued choice has no resource to include.
+        let resource = serde_json::json!({
+            "medicationCodeableConcept": { "text": "aspirin" }
+        });
+        assert!(extract_references(&resource, "medication").is_empty());
+    }
+
+    #[test]
+    fn test_extract_references_array() {
+        // Array-valued elements (e.g. performer) resolve to multiple references.
+        let resource = serde_json::json!({
+            "performer": [
+                { "reference": "Practitioner/p1" },
+                { "reference": "Organization/o1" }
+            ]
+        });
+        assert_eq!(
+            extract_references(&resource, "performer"),
+            vec!["Practitioner/p1", "Organization/o1"]
+        );
+    }
+
+    #[test]
+    fn test_extract_references_missing() {
+        let resource = serde_json::json!({ "status": "active" });
+        assert!(extract_references(&resource, "subject").is_empty());
     }
 }

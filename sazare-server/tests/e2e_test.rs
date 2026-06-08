@@ -537,6 +537,60 @@ async fn test_search_include_and_revinclude() {
 }
 
 #[tokio::test]
+async fn test_search_include_choice_type_medication_reference() {
+    // Regression: `_include=MedicationRequest:medication` must resolve the
+    // choice-type `medicationReference` element (not a bare `medication` field).
+    let (base_url, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+
+    let med_id = create(
+        &client,
+        &base_url,
+        "Medication",
+        &json!({
+            "resourceType": "Medication",
+            "code": {"coding": [{"system": "http://www.nlm.nih.gov/research/umls/rxnorm", "code": "860975"}]}
+        }),
+    )
+    .await;
+    create(
+        &client,
+        &base_url,
+        "MedicationRequest",
+        &json!({
+            "resourceType": "MedicationRequest",
+            "status": "active",
+            "intent": "order",
+            "medicationReference": {"reference": format!("Medication/{}", med_id)},
+            "subject": {"reference": "Patient/example"}
+        }),
+    )
+    .await;
+
+    let resp = client
+        .get(format!(
+            "{}/MedicationRequest?_include=MedicationRequest:medication",
+            base_url
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let bundle: Value = resp.json().await.unwrap();
+    let types: Vec<&str> = bundle["entry"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["resource"]["resourceType"].as_str().unwrap())
+        .collect();
+    assert!(types.contains(&"MedicationRequest"), "result has the MedicationRequest");
+    assert!(
+        types.contains(&"Medication"),
+        "_include should resolve the choice-type medicationReference and pull in the Medication, got {types:?}"
+    );
+}
+
+#[tokio::test]
 async fn test_json_patch() {
     let (base_url, _dir) = start_test_server().await;
     let client = reqwest::Client::new();
