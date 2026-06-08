@@ -31,3 +31,25 @@
 localhost {
 	reverse_proxy localhost:8080
 }
+
+# --- Inferno test kit (Docker) recipe — verified to pass standalone_auth_tls ---
+# Inferno runs in Docker and reaches the host as `host.docker.internal`, so the
+# cert must cover that name and the Inferno containers must trust Caddy's CA.
+# `auto_https disable_redirects` keeps Caddy off :80 (the test kit's nginx owns it).
+#
+#   1) caddy start --config Caddyfile.example   # uses the block below
+#   2) CA=~/Library/Application\ Support/Caddy/pki/authorities/local/root.crt
+#      for c in us-core-test-kit-inferno-1 us-core-test-kit-worker-1; do
+#        docker cp "$CA" $c:/tmp/caddy.crt
+#        docker exec $c sh -c 'cat /tmp/caddy.crt >> /usr/lib/ssl/cert.pem'
+#      done
+#      docker compose restart inferno worker   # sidekiq caches the CA at boot
+#   3) Run the suite with url = https://host.docker.internal:8443
+#
+# {
+# 	auto_https disable_redirects
+# }
+# host.docker.internal:8443 {
+# 	tls internal
+# 	reverse_proxy 127.0.0.1:8080
+# }
