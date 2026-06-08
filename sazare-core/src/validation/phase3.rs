@@ -40,6 +40,15 @@ impl Phase3Validator {
             ("Procedure", "status", "http://hl7.org/fhir/ValueSet/event-status"),
             ("Immunization", "status", "http://hl7.org/fhir/ValueSet/immunization-status"),
             ("AllergyIntolerance", "criticality", "http://hl7.org/fhir/ValueSet/allergy-intolerance-criticality"),
+            ("MedicationDispense", "status", "http://hl7.org/fhir/ValueSet/medicationdispense-status"),
+            ("ServiceRequest", "status", "http://hl7.org/fhir/ValueSet/request-status"),
+            ("ServiceRequest", "intent", "http://hl7.org/fhir/ValueSet/request-intent"),
+            ("DiagnosticReport", "status", "http://hl7.org/fhir/ValueSet/diagnostic-report-status"),
+            ("Specimen", "status", "http://hl7.org/fhir/ValueSet/specimen-status"),
+            ("Coverage", "status", "http://hl7.org/fhir/ValueSet/fm-status"),
+            ("CarePlan", "status", "http://hl7.org/fhir/ValueSet/request-status"),
+            ("CareTeam", "status", "http://hl7.org/fhir/ValueSet/care-team-status"),
+            ("Goal", "lifecycleStatus", "http://hl7.org/fhir/ValueSet/goal-status"),
         ];
 
         for (rt, field, value_set) in BINDINGS {
@@ -162,6 +171,15 @@ mod tests {
         // Immunization.status
         assert!(check(json!({"resourceType": "Immunization", "status": "completed"})).is_ok());
         assert!(check(json!({"resourceType": "Immunization", "status": "final"})).is_err());
+        // DiagnosticReport.status
+        assert!(check(json!({"resourceType": "DiagnosticReport", "status": "final"})).is_ok());
+        assert!(check(json!({"resourceType": "DiagnosticReport", "status": "active"})).is_err());
+        // ServiceRequest.status / intent
+        assert!(check(json!({"resourceType": "ServiceRequest", "status": "active", "intent": "order"})).is_ok());
+        assert!(check(json!({"resourceType": "ServiceRequest", "status": "final", "intent": "order"})).is_err());
+        // Goal.lifecycleStatus
+        assert!(check(json!({"resourceType": "Goal", "lifecycleStatus": "active"})).is_ok());
+        assert!(check(json!({"resourceType": "Goal", "lifecycleStatus": "done"})).is_err());
     }
 
     #[test]

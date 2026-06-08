@@ -169,6 +169,43 @@ impl TerminologyRegistry {
             "http://hl7.org/fhir/ValueSet/allergy-intolerance-criticality",
             &["low", "high", "unable-to-assess"],
         ));
+        registry.add_value_set(vs(
+            "http://hl7.org/fhir/ValueSet/medicationdispense-status",
+            &["preparation", "in-progress", "cancelled", "on-hold", "completed",
+              "entered-in-error", "stopped", "declined", "unknown"],
+        ));
+        registry.add_value_set(vs(
+            "http://hl7.org/fhir/ValueSet/request-status",
+            &["draft", "active", "on-hold", "revoked", "completed",
+              "entered-in-error", "unknown"],
+        ));
+        registry.add_value_set(vs(
+            "http://hl7.org/fhir/ValueSet/request-intent",
+            &["proposal", "plan", "directive", "order", "original-order",
+              "reflex-order", "filler-order", "instance-order", "option"],
+        ));
+        registry.add_value_set(vs(
+            "http://hl7.org/fhir/ValueSet/diagnostic-report-status",
+            &["registered", "partial", "preliminary", "final", "amended",
+              "corrected", "appended", "cancelled", "entered-in-error", "unknown"],
+        ));
+        registry.add_value_set(vs(
+            "http://hl7.org/fhir/ValueSet/specimen-status",
+            &["available", "unavailable", "unsatisfactory", "entered-in-error"],
+        ));
+        registry.add_value_set(vs(
+            "http://hl7.org/fhir/ValueSet/fm-status",
+            &["active", "cancelled", "draft", "entered-in-error"],
+        ));
+        registry.add_value_set(vs(
+            "http://hl7.org/fhir/ValueSet/care-team-status",
+            &["proposed", "active", "suspended", "inactive", "entered-in-error"],
+        ));
+        registry.add_value_set(vs(
+            "http://hl7.org/fhir/ValueSet/goal-status",
+            &["proposed", "planned", "accepted", "active", "on-hold", "completed",
+              "cancelled", "entered-in-error", "rejected"],
+        ));
 
         registry
     }
