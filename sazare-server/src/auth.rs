@@ -415,12 +415,27 @@ fn extract_resource_action(method: &Method, path: &str) -> Option<(String, Strin
         return None;
     }
 
-    // Skip non-resource paths
+    // Skip non-resource paths. The Bulk Data operation endpoints ($export and
+    // its async status/file/cancel paths) are gated by token presence + system
+    // scope at the operation level, not by per-resource CRUD scope.
     let first = segments[0];
     if matches!(
         first,
-        "health" | "metadata" | "$export" | "$import" | "$status" | ".well-known" | "plugins"
+        "health"
+            | "metadata"
+            | "$export"
+            | "$export-status"
+            | "$export-file"
+            | "$import"
+            | "$status"
+            | ".well-known"
+            | "plugins"
     ) {
+        return None;
+    }
+    // Operation-level bulk export on a resource type, e.g. Patient/$export or
+    // Group/{id}/$export.
+    if segments.last() == Some(&"$export") {
         return None;
     }
 

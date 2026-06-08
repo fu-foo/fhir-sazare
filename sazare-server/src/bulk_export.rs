@@ -416,9 +416,11 @@ pub async fn export_status(
                 })
                 .collect();
             let manifest = json!({
+                // When auth is enabled the file endpoints require the bearer token,
+                // so clients must be told to send it on download.
+                "requiresAccessToken": state.config.auth.enabled,
                 "transactionTime": job.transaction_time,
                 "request": job.request_url,
-                "requiresAccessToken": false,
                 "output": output,
                 "error": [],
             });

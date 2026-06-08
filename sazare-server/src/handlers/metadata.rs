@@ -383,9 +383,16 @@ pub async fn smart_configuration(State(state): State<Arc<AppState>>) -> Json<Val
         grant_types.push("client_credentials");
     }
 
+    // authorization_endpoint must be a syntactically valid URI for SMART discovery,
+    // even when only Backend Services (which doesn't use it) is implemented.
+    let authorization_endpoint = jwt_settings
+        .and_then(|j| j.issuer.clone())
+        .map(|i| format!("{i}/authorize"))
+        .unwrap_or_else(|| "(external - configure in IdP)".to_string());
+
     let mut config = json!({
         "issuer": issuer,
-        "authorization_endpoint": "(external - configure in IdP)",
+        "authorization_endpoint": authorization_endpoint,
         "capabilities": capabilities,
         "scopes_supported": [
             "patient/*.read", "patient/*.write",
