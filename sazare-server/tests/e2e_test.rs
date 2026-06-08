@@ -687,3 +687,44 @@ async fn test_bundle_batch() {
     // POST still creates.
     assert!(entries[2]["response"]["status"].as_str().unwrap().contains("201"));
 }
+
+#[tokio::test]
+async fn test_jp_kana_name_search() {
+    let (base_url, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+
+    // JP Core Patient with both kanji (IDE) and kana (SYL) name representations.
+    let rep = "http://hl7.org/fhir/StructureDefinition/iso21090-EN-representation";
+    let patient = json!({
+        "resourceType": "Patient",
+        "name": [
+            {"extension": [{"url": rep, "valueCode": "IDE"}], "use": "usual",
+             "text": "山田 太郎", "family": "山田", "given": ["太郎"]},
+            {"extension": [{"url": rep, "valueCode": "SYL"}], "use": "usual",
+             "text": "ヤマダ タロウ", "family": "ヤマダ", "given": ["タロウ"]}
+        ],
+        "gender": "male"
+    });
+    create(&client, &base_url, "Patient", &patient).await;
+
+    async fn total(client: &reqwest::Client, base: &str, param: &str, value: &str) -> i64 {
+        let resp = client
+            .get(format!("{}/Patient", base))
+            .query(&[(param, value)])
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        let bundle: Value = resp.json().await.unwrap();
+        bundle["total"].as_i64().unwrap_or(0)
+    }
+
+    // Plain `name` indexes every representation, so it matches kanji and kana alike.
+    assert_eq!(total(&client, &base_url, "name", "山田").await, 1, "name should match kanji");
+    assert_eq!(total(&client, &base_url, "name", "ヤマダ").await, 1, "name should match kana too");
+
+    // `name-kana` matches only the SYL (kana) representation.
+    assert_eq!(total(&client, &base_url, "name-kana", "ヤマダ").await, 1, "name-kana matches kana");
+    assert_eq!(total(&client, &base_url, "name-kana", "タロウ").await, 1, "name-kana matches kana given");
+    assert_eq!(total(&client, &base_url, "name-kana", "山田").await, 0, "name-kana must NOT match kanji");
+}

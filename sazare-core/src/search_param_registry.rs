@@ -52,6 +52,11 @@ pub enum ExtractionMode {
     /// `path[0]` is the extension container ("extension"), `path[1]` the
     /// extension URL; yields the extension's `valueDateTime`.
     ExtensionDate,
+    /// JP Core kana name: HumanName entries (`path[0]`, e.g. `name`) whose
+    /// `iso21090-EN-representation` extension is `SYL` (syllabic / kana).
+    /// Indexes their `text`, `family` and `given` as strings, enabling search
+    /// by Japanese phonetic (kana) name.
+    JpKanaName,
 }
 
 /// Definition of a single search parameter
@@ -231,6 +236,16 @@ fn patient_definitions() -> Vec<SearchParamDef> {
             param_type: SearchParamType::String,
             path: vec!["name".to_string(), "suffix".to_string()],
             extraction: ExtractionMode::NestedArrayScalar,
+            aliases: vec![],
+        },
+        // JP Core: search by Japanese phonetic (kana) name. Matches only the
+        // SYL (syllabic) name representations, so `name-kana=ヤマダ` finds the
+        // kana form while plain `name=...` still matches every representation.
+        SearchParamDef {
+            name: "name-kana".to_string(),
+            param_type: SearchParamType::String,
+            path: vec!["name".to_string()],
+            extraction: ExtractionMode::JpKanaName,
             aliases: vec![],
         },
         SearchParamDef {

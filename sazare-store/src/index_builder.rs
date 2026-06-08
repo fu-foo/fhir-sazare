@@ -94,6 +94,57 @@ impl IndexBuilder {
             ExtractionMode::ExtensionDate => {
                 Self::extract_extension_date(resource, &def.path, &def.name, param_type_str, indices);
             }
+            ExtractionMode::JpKanaName => {
+                Self::extract_jp_kana_name(resource, &def.path, &def.name, param_type_str, indices);
+            }
+        }
+    }
+
+    /// JpKanaName: index the `text`, `family` and `given` of HumanName entries
+    /// (`path[0]`, e.g. `name`) whose `iso21090-EN-representation` extension is
+    /// `SYL` (syllabic / kana). Enables search by Japanese phonetic name.
+    fn extract_jp_kana_name(
+        resource: &Value,
+        path: &[String],
+        name: &str,
+        param_type: &str,
+        indices: &mut Vec<(String, String, String, Option<String>)>,
+    ) {
+        const REPRESENTATION_URL: &str =
+            "http://hl7.org/fhir/StructureDefinition/iso21090-EN-representation";
+
+        let Some(array) = resource.get(path[0].as_str()).and_then(|v| v.as_array()) else {
+            return;
+        };
+        for human_name in array {
+            let is_kana = human_name
+                .get("extension")
+                .and_then(|v| v.as_array())
+                .map(|exts| {
+                    exts.iter().any(|e| {
+                        e.get("url").and_then(|u| u.as_str()) == Some(REPRESENTATION_URL)
+                            && e.get("valueCode").and_then(|c| c.as_str()) == Some("SYL")
+                    })
+                })
+                .unwrap_or(false);
+            if !is_kana {
+                continue;
+            }
+
+            let mut push = |s: &str| {
+                indices.push((name.to_string(), param_type.to_string(), s.to_lowercase(), None));
+            };
+            if let Some(text) = human_name.get("text").and_then(|v| v.as_str()) {
+                push(text);
+            }
+            if let Some(family) = human_name.get("family").and_then(|v| v.as_str()) {
+                push(family);
+            }
+            if let Some(givens) = human_name.get("given").and_then(|v| v.as_array()) {
+                for g in givens.iter().filter_map(|v| v.as_str()) {
+                    push(g);
+                }
+            }
         }
     }
 
