@@ -1,0 +1,122 @@
+{
+ "resourceType": "Observation",
+ "id": "jp-observation-labresult-example-1",
+ "meta": {
+  "profile": [
+   "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Observation_LabResult"
+  ]
+ },
+ "text": {
+  "status": "generated",
+  "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p class=\"res-header-id\"><b>Generated Narrative: Observation jp-observation-labresult-example-1</b></p><a name=\"jp-observation-labresult-example-1\"> </a><a name=\"hcjp-observation-labresult-example-1\"> </a><div style=\"display: inline-block; background-color: #d9e0e7; padding: 6px; margin: 4px; border: 1px solid #8da1b4; border-radius: 5px; line-height: 60%\"><p style=\"margin-bottom: 0px\"/><p style=\"margin-bottom: 0px\">Profile: <a href=\"StructureDefinition-jp-observation-labresult.html\">JP Core Observation LabResult Profile</a></p></div><p><b>basedOn</b>: <a href=\"#hcjp-observation-labresult-example-1/jp-servicerequest-example-1\">ServiceRequest 12345678</a></p><p><b>status</b>: Final</p><p><b>category</b>: <span title=\"Codes:{http://jpfhir.jp/fhir/core/CodeSystem/JP_SimpleObservationCategory_CS laboratory}\">Laboratory</span></p><p><b>code</b>: <span title=\"Codes:{http://abc-hospital.local/fhir/Observation/localcode 05104}, {http://medis.or.jp/CodeSystem/master-JLAC10-17digits 3C020000002327101}\">尿酸</span></p><p><b>subject</b>: <a href=\"Patient-jp-patient-example-1.html\">山田 太郎 Male, DoB: 1970-01-01 ( urn:oid:1.2.392.100495.20.3.51.11311234567#JP_local_patient_identifier_11311234567_NamingSystem#00000010)</a></p><p><b>effective</b>: 2021-10-19 02:20:00+0900</p><p><b>performer</b>: <a href=\"Practitioner-jp-practitioner-example-female-1.html\">Practitioner 東京 春子</a></p><p><b>value</b>: 8.5 mg/dL</p><p><b>interpretation</b>: <span title=\"Codes:{http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation H}\">H</span></p><p><b>specimen</b>: <a href=\"Specimen-jp-specimen-example-1.html\">Specimen: identifier = http://abc-hospital.local/identifiers/collections#JP_local_example_identifiersystem_NamingSystem#23234352356; accessionIdentifier = http://abc-hospital.local/specimens/2011#JP_local_example_identifiersystem_NamingSystem#X352356; status = available; type = Urine; receivedTime = 2021-10-11 11:03:00+0900</a></p><h3>ReferenceRanges</h3><table class=\"grid\"><tr><td style=\"display: none\">-</td><td><b>Low</b></td><td><b>High</b></td><td><b>Type</b></td></tr><tr><td style=\"display: none\">*</td><td>2.1</td><td>7</td><td><span title=\"Codes:{http://terminology.hl7.org/CodeSystem/referencerange-meaning normal}\">Normal Range</span></td></tr></table><hr/><blockquote><p class=\"res-header-id\"><b>Generated Narrative: ServiceRequest #jp-servicerequest-example-1</b></p><a name=\"jp-observation-labresult-example-1/jp-servicerequest-example-1\"> </a><a name=\"hcjp-observation-labresult-example-1/jp-servicerequest-example-1\"> </a><p><b>status</b>: Active</p><p><b>intent</b>: Original Order</p><p><b>code</b>: <span title=\"Codes:{http://abc-hospital.local/fhir/ObservationOrder/localcode 12345678}\">生化学検査</span></p><p><b>subject</b>: <a href=\"Patient-jp-patient-example-1.html\">山田 太郎 Male, DoB: 1970-01-01 ( urn:oid:1.2.392.100495.20.3.51.11311234567#JP_local_patient_identifier_11311234567_NamingSystem#00000010)</a></p><p><b>encounter</b>: <a href=\"Encounter-jp-encounter-example-1.html\">Encounter: status = finished; class = 外来 (ActCode#AMB); period = 2022-05-08 13:08:24+0900 --&gt; 2022-05-08 13:23:24+0900</a></p><p><b>occurrence</b>: 2021-10-19 01:15:00+0900</p><p><b>requester</b>: <a href=\"Practitioner-jp-practitioner-example-female-1.html\">Practitioner 東京 春子</a></p><p><b>performer</b>: <a href=\"Practitioner-jp-practitioner-example-male-2.html\">Practitioner 愛知 太郎</a></p></blockquote></div>"
+ },
+ "contained": [
+  {
+   "resourceType": "ServiceRequest",
+   "id": "jp-servicerequest-example-1",
+   "status": "active",
+   "intent": "original-order",
+   "code": {
+    "coding": [
+     {
+      "system": "http://abc-hospital.local/fhir/ObservationOrder/localcode",
+      "code": "12345678"
+     }
+    ],
+    "text": "生化学検査"
+   },
+   "subject": {
+    "reference": "Patient/jp-patient-example-1"
+   },
+   "encounter": {
+    "reference": "Encounter/jp-encounter-example-1"
+   },
+   "occurrenceDateTime": "2021-10-19T01:15:00+09:00",
+   "requester": {
+    "reference": "Practitioner/jp-practitioner-example-female-1"
+   },
+   "performer": [
+    {
+     "reference": "Practitioner/jp-practitioner-example-male-2"
+    }
+   ]
+  }
+ ],
+ "basedOn": [
+  {
+   "reference": "#jp-servicerequest-example-1"
+  }
+ ],
+ "status": "final",
+ "category": [
+  {
+   "coding": [
+    {
+     "system": "http://jpfhir.jp/fhir/core/CodeSystem/JP_SimpleObservationCategory_CS",
+     "code": "laboratory"
+    }
+   ]
+  }
+ ],
+ "code": {
+  "coding": [
+   {
+    "system": "http://abc-hospital.local/fhir/Observation/localcode",
+    "code": "05104",
+    "display": "尿酸"
+   },
+   {
+    "system": "http://medis.or.jp/CodeSystem/master-JLAC10-17digits",
+    "code": "3C020000002327101"
+   }
+  ],
+  "text": "尿酸"
+ },
+ "subject": {
+  "reference": "Patient/jp-patient-example-1"
+ },
+ "effectiveDateTime": "2021-10-19T02:20:00+09:00",
+ "performer": [
+  {
+   "reference": "Practitioner/jp-practitioner-example-female-1"
+  }
+ ],
+ "valueQuantity": {
+  "value": 8.5,
+  "unit": "mg/dL"
+ },
+ "interpretation": [
+  {
+   "coding": [
+    {
+     "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+     "code": "H",
+     "display": "High"
+    }
+   ],
+   "text": "H"
+  }
+ ],
+ "specimen": {
+  "reference": "Specimen/jp-specimen-example-1"
+ },
+ "referenceRange": [
+  {
+   "low": {
+    "value": 2.1
+   },
+   "high": {
+    "value": 7
+   },
+   "type": {
+    "coding": [
+     {
+      "system": "http://terminology.hl7.org/CodeSystem/referencerange-meaning",
+      "code": "normal",
+      "display": "Normal Range"
+     }
+    ]
+   }
+  }
+ ]
+}

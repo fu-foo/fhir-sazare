@@ -1,0 +1,78 @@
+{
+ "resourceType": "MedicationAdministration",
+ "id": "jp-medicationadministration-example-2",
+ "meta": {
+  "profile": [
+   "http://jpfhir.jp/fhir/core/StructureDefinition/JP_MedicationAdministration"
+  ]
+ },
+ "text": {
+  "status": "extensions",
+  "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p class=\"res-header-id\"><b>Generated Narrative: MedicationAdministration jp-medicationadministration-example-2</b></p><a name=\"jp-medicationadministration-example-2\"> </a><a name=\"hcjp-medicationadministration-example-2\"> </a><div style=\"display: inline-block; background-color: #d9e0e7; padding: 6px; margin: 4px; border: 1px solid #8da1b4; border-radius: 5px; line-height: 60%\"><p style=\"margin-bottom: 0px\"/><p style=\"margin-bottom: 0px\">Profile: <a href=\"StructureDefinition-jp-medicationadministration.html\">JP Core MedicationAdministration Profile</a></p></div><p><b>JP Core MedicationAdministration RequestDepartment Extension</b>: <span title=\"Codes:{http://jami.jp/SS-MIX2/CodeSystem/ClinicalDepartment 01}\">内科</span></p><p><b>JP Core MedicationAdministration Requester Extension</b>: <a href=\"Practitioner-jp-practitioner-example-male-1.html\">大阪 一郎</a></p><p><b>JP Core MedicationAdministration RequestAuthoredOn Extension</b>: 2016-08-25 00:00:00+0900</p><p><b>identifier</b>: <a href=\"NamingSystem-jp-medication-rpgroup-number-namingsystem.html\" title=\"JP Core Medication RpGroup Number NamingSystem RP番号\">JP_Medication_RpGroup_Number_NamingSystem</a>/1, <a href=\"NamingSystem-jp-medication-rpgruop-index-namingsystem.html\" title=\"JP Core Medication RpGruop Index NamingSystem RP内の順序を示す連番\">JP_Medication_RpGruop_Index_NamingSystem</a>/1, <a href=\"NamingSystem-jp-IdSystem-prescriptionDocumentID-namingsystem.html\" title=\"JP_IdSystem_PrescriptionDocumentID_NamingSystem\">JP_IdSystem_PrescriptionDocumentID_NamingSystem</a>/1234567890.1.1</p><p><b>status</b>: Stopped</p><p><b>category</b>: <span title=\"Codes:{http://terminology.hl7.org/CodeSystem/v2-0482 I}\">Inpatient Order</span></p><p><b>medication</b>: <span title=\"Codes:{http://medis.or.jp/CodeSystem/master-HOT9 110926901}\">パンスポリンＴ錠１００　１００ｍｇ</span></p><p><b>subject</b>: <a href=\"Patient-jp-patient-example-1.html\">山田 太郎 Male, DoB: 1970-01-01 ( urn:oid:1.2.392.100495.20.3.51.11311234567#JP_local_patient_identifier_11311234567_NamingSystem#00000010)</a></p><p><b>effective</b>: 2016-08-25 08:30:00+0900</p><p><b>request</b>: <a href=\"MedicationRequest-jp-medicationrequest-example-2.html\">MedicationRequest: identifier = http://jpfhir.jp/fhir/core/mhlw/IdSystem/Medication-RPGroupNumber#JP_Medication_RpGroup_Number_NamingSystem#2,http://jpfhir.jp/fhir/core/mhlw/IdSystem/MedicationAdministrationIndex#JP_Medication_RpGruop_Index_NamingSystem#2,http://jpfhir.jp/fhir/core/IdSystem/resourceInstance-identifier#JP_core_resourceInstance_identifier_NamingSystem#1234567890.1.2; status = active; intent = order; medication[x] = パンスポリンＴ錠１００　１００ｍｇ; authoredOn = 2020-04-01 12:28:17+0900</a></p></div>"
+ },
+ "extension": [
+  {
+   "url": "http://jpfhir.jp/fhir/core/Extension/StructureDefinition/JP_MedicationAdministration_RequestDepartment",
+   "valueCodeableConcept": {
+    "coding": [
+     {
+      "system": "http://jami.jp/SS-MIX2/CodeSystem/ClinicalDepartment",
+      "code": "01",
+      "display": "内科"
+     }
+    ]
+   }
+  },
+  {
+   "url": "http://jpfhir.jp/fhir/core/Extension/StructureDefinition/JP_MedicationAdministration_Requester",
+   "valueReference": {
+    "reference": "Practitioner/jp-practitioner-example-male-1",
+    "display": "大阪 一郎"
+   }
+  },
+  {
+   "url": "http://jpfhir.jp/fhir/core/Extension/StructureDefinition/JP_MedicationAdministration_RequestAuthoredOn",
+   "valueDateTime": "2016-08-25T00:00:00+09:00"
+  }
+ ],
+ "identifier": [
+  {
+   "system": "http://jpfhir.jp/fhir/core/mhlw/IdSystem/Medication-RPGroupNumber",
+   "value": "1"
+  },
+  {
+   "system": "http://jpfhir.jp/fhir/core/mhlw/IdSystem/MedicationAdministrationIndex",
+   "value": "1"
+  },
+  {
+   "system": "urn:oid:1.2.392.100495.20.3.11",
+   "value": "1234567890.1.1"
+  }
+ ],
+ "status": "stopped",
+ "category": {
+  "coding": [
+   {
+    "system": "http://terminology.hl7.org/CodeSystem/v2-0482",
+    "code": "I",
+    "display": "Inpatient Order"
+   }
+  ]
+ },
+ "medicationCodeableConcept": {
+  "coding": [
+   {
+    "system": "http://medis.or.jp/CodeSystem/master-HOT9",
+    "code": "110926901",
+    "display": "パンスポリンＴ錠１００　１００ｍｇ"
+   }
+  ]
+ },
+ "subject": {
+  "reference": "Patient/jp-patient-example-1"
+ },
+ "effectiveDateTime": "2016-08-25T08:30:00+09:00",
+ "request": {
+  "reference": "MedicationRequest/jp-medicationrequest-example-2"
+ }
+}

@@ -151,6 +151,19 @@ impl ProfileLoader {
         const JP_CORE_COVERAGE: &str = include_str!("../profiles/jp-core/jp-core-coverage.json");
         const JP_CORE_LOCATION: &str = include_str!("../profiles/jp-core/jp-core-location.json");
         const JP_CORE_OBSERVATION_BODYMEASUREMENT: &str = include_str!("../profiles/jp-core/jp-core-observation-bodymeasurement.json");
+        const JP_CORE_CONDITION_DIAGNOSIS: &str = include_str!("../profiles/jp-core/jp-core-condition-diagnosis.json");
+        const JP_CORE_DIAGNOSTICREPORT_LABRESULT: &str = include_str!("../profiles/jp-core/jp-core-diagnosticreport-labresult.json");
+        const JP_CORE_FAMILYMEMBERHISTORY: &str = include_str!("../profiles/jp-core/jp-core-familymemberhistory.json");
+        const JP_CORE_MEDICATIONADMINISTRATION: &str = include_str!("../profiles/jp-core/jp-core-medicationadministration.json");
+        const JP_CORE_MEDICATIONDISPENSE: &str = include_str!("../profiles/jp-core/jp-core-medicationdispense.json");
+        const JP_CORE_MEDICATIONSTATEMENT: &str = include_str!("../profiles/jp-core/jp-core-medicationstatement.json");
+        const JP_CORE_OBSERVATION_LABRESULT: &str = include_str!("../profiles/jp-core/jp-core-observation-labresult.json");
+        const JP_CORE_OBSERVATION_PHYSICALEXAM: &str = include_str!("../profiles/jp-core/jp-core-observation-physicalexam.json");
+        const JP_CORE_OBSERVATION_SOCIALHISTORY: &str = include_str!("../profiles/jp-core/jp-core-observation-socialhistory.json");
+        const JP_CORE_OBSERVATION_VITALSIGNS: &str = include_str!("../profiles/jp-core/jp-core-observation-vitalsigns.json");
+        const JP_CORE_PRACTITIONERROLE: &str = include_str!("../profiles/jp-core/jp-core-practitionerrole.json");
+        const JP_CORE_PROCEDURE: &str = include_str!("../profiles/jp-core/jp-core-procedure.json");
+        const JP_CORE_SPECIMEN_COMMON: &str = include_str!("../profiles/jp-core/jp-core-specimen-common.json");
 
         let embedded_jsons = vec![
             JP_CORE_PATIENT,
@@ -165,6 +178,19 @@ impl ProfileLoader {
             JP_CORE_COVERAGE,
             JP_CORE_LOCATION,
             JP_CORE_OBSERVATION_BODYMEASUREMENT,
+            JP_CORE_CONDITION_DIAGNOSIS,
+            JP_CORE_DIAGNOSTICREPORT_LABRESULT,
+            JP_CORE_FAMILYMEMBERHISTORY,
+            JP_CORE_MEDICATIONADMINISTRATION,
+            JP_CORE_MEDICATIONDISPENSE,
+            JP_CORE_MEDICATIONSTATEMENT,
+            JP_CORE_OBSERVATION_LABRESULT,
+            JP_CORE_OBSERVATION_PHYSICALEXAM,
+            JP_CORE_OBSERVATION_SOCIALHISTORY,
+            JP_CORE_OBSERVATION_VITALSIGNS,
+            JP_CORE_PRACTITIONERROLE,
+            JP_CORE_PROCEDURE,
+            JP_CORE_SPECIMEN_COMMON,
         ];
 
         let mut profiles = Vec::new();

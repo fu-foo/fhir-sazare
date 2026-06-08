@@ -1,0 +1,177 @@
+{
+ "resourceType": "MedicationDispense",
+ "id": "jp-medicationdispense-example-1",
+ "meta": {
+  "profile": [
+   "http://jpfhir.jp/fhir/core/StructureDefinition/JP_MedicationDispense"
+  ]
+ },
+ "text": {
+  "status": "generated",
+  "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p class=\"res-header-id\"><b>Generated Narrative: MedicationDispense jp-medicationdispense-example-1</b></p><a name=\"jp-medicationdispense-example-1\"> </a><a name=\"hcjp-medicationdispense-example-1\"> </a><div style=\"display: inline-block; background-color: #d9e0e7; padding: 6px; margin: 4px; border: 1px solid #8da1b4; border-radius: 5px; line-height: 60%\"><p style=\"margin-bottom: 0px\"/><p style=\"margin-bottom: 0px\">Profile: <a href=\"StructureDefinition-jp-medicationdispense.html\">JP Core MedicationDispense Profile</a></p></div><p><b>identifier</b>: <a href=\"NamingSystem-jp-medication-rpgroup-number-namingsystem.html\" title=\"JP Core Medication RpGroup Number NamingSystem RP番号\">JP_Medication_RpGroup_Number_NamingSystem</a>/1, <a href=\"NamingSystem-jp-medication-rpgruop-index-namingsystem.html\" title=\"JP Core Medication RpGruop Index NamingSystem RP内の順序を示す連番\">JP_Medication_RpGruop_Index_NamingSystem</a>/1, <a href=\"NamingSystem-jp-IdSystem-prescriptionDocumentID-namingsystem.html\" title=\"JP_IdSystem_PrescriptionDocumentID_NamingSystem\">JP_IdSystem_PrescriptionDocumentID_NamingSystem</a>/1234567890.1.1</p><p><b>status</b>: Completed</p><p><b>category</b>: <span title=\"Codes:{http://terminology.hl7.org/CodeSystem/v2-0482 I}\">Inpatient Order</span></p><p><b>medication</b>: <span title=\"Codes:{http://medis.or.jp/CodeSystem/master-HOT9 103835401}\">ムコダイン錠２５０ｍｇ</span></p><p><b>subject</b>: <a href=\"Patient-jp-patient-example-1.html\">山田 太郎 Male, DoB: 1970-01-01 ( urn:oid:1.2.392.100495.20.3.51.11311234567#JP_local_patient_identifier_11311234567_NamingSystem#00000010)</a></p><h3>Performers</h3><table class=\"grid\"><tr><td style=\"display: none\">-</td><td><b>Function</b></td><td><b>Actor</b></td></tr><tr><td style=\"display: none\">*</td><td><span title=\"Codes:{http://terminology.hl7.org/CodeSystem/medicationdispense-performer-function packager}\">Packager</span></td><td><a href=\"Practitioner-jp-practitioner-example-male-1.html\">Practitioner 大阪 一郎</a></td></tr></table><p><b>quantity</b>: 9 錠<span style=\"background: LightGoldenRodYellow\"> (Details: JP Core Medication MERIT9 Unit CodeSystem  codeTAB = '錠')</span></p><p><b>daysSupply</b>: 7 日<span style=\"background: LightGoldenRodYellow\"> (Details: UCUM  coded = 'd')</span></p><p><b>whenPrepared</b>: 2021-10-07 10:47:19+0900</p><p><b>whenHandedOver</b>: 2021-10-07 10:55:23+0900</p><p><b>destination</b>: <a href=\"Location-jp-location-example-ward.html\">Location 09A病棟 021病室 4ベッド</a></p><p><b>note</b>: </p><blockquote><div><p>後発品へ変更可能か依頼医のＡ医師に確認したところ、患者の希望により不可との回答あり。</p>\n</div></blockquote><blockquote><p><b>dosageInstruction</b></p><p><b>text</b>: 内服・経口・１日３回朝昼夕食後</p><p><b>timing</b>: Code </p><p><b>route</b>: <span title=\"Codes:{http://jpfhir.jp/fhir/core/CodeSystem/route-codes PO}\">口</span></p><p><b>method</b>: <span title=\"Codes:{http://jami.jp/CodeSystem/MedicationMethodDetailUsage 10}\">経口</span></p><h3>DoseAndRates</h3><table class=\"grid\"><tr><td style=\"display: none\">-</td><td><b>Type</b></td><td><b>Dose[x]</b></td><td><b>Rate[x]</b></td></tr><tr><td style=\"display: none\">*</td><td><span title=\"Codes:{http://jpfhir.jp/fhir/core/mhlw/CodeSystem/MedicationIngredientStrengthStrengthType 1}\">製剤量</span></td><td>1 錠<span style=\"background: LightGoldenRodYellow\"> (Details: JP Core Medication MERIT9 Unit CodeSystem  codeTAB = '錠')</span></td><td>3 錠<span style=\"background: LightGoldenRodYellow\"> (Details: JP Core Medication MERIT9 Unit CodeSystem  codeTAB = '錠')</span>/1 日<span style=\"background: LightGoldenRodYellow\"> (Details: UCUM  coded = 'd')</span></td></tr></table></blockquote><h3>Substitutions</h3><table class=\"grid\"><tr><td style=\"display: none\">-</td><td><b>WasSubstituted</b></td><td><b>Type</b></td><td><b>Reason</b></td></tr><tr><td style=\"display: none\">*</td><td>true</td><td><span title=\"Codes:{http://terminology.hl7.org/CodeSystem/v3-substanceAdminSubstitution G}\">generic composition</span></td><td><span title=\"Codes:{http://terminology.hl7.org/CodeSystem/v3-ActReason RR}\">regulatory requirement</span></td></tr></table></div>"
+ },
+ "identifier": [
+  {
+   "system": "http://jpfhir.jp/fhir/core/mhlw/IdSystem/Medication-RPGroupNumber",
+   "value": "1"
+  },
+  {
+   "system": "http://jpfhir.jp/fhir/core/mhlw/IdSystem/MedicationAdministrationIndex",
+   "value": "1"
+  },
+  {
+   "system": "urn:oid:1.2.392.100495.20.3.11",
+   "value": "1234567890.1.1"
+  }
+ ],
+ "status": "completed",
+ "category": {
+  "coding": [
+   {
+    "system": "http://terminology.hl7.org/CodeSystem/v2-0482",
+    "code": "I",
+    "display": "Inpatient Order"
+   }
+  ]
+ },
+ "medicationCodeableConcept": {
+  "coding": [
+   {
+    "system": "http://medis.or.jp/CodeSystem/master-HOT9",
+    "code": "103835401",
+    "display": "ムコダイン錠２５０ｍｇ"
+   }
+  ]
+ },
+ "subject": {
+  "reference": "Patient/jp-patient-example-1"
+ },
+ "performer": [
+  {
+   "function": {
+    "coding": [
+     {
+      "system": "http://terminology.hl7.org/CodeSystem/medicationdispense-performer-function",
+      "code": "packager",
+      "display": "Packager"
+     }
+    ]
+   },
+   "actor": {
+    "reference": "Practitioner/jp-practitioner-example-male-1"
+   }
+  }
+ ],
+ "quantity": {
+  "value": 9,
+  "unit": "錠",
+  "system": "http://jpfhir.jp/fhir/core/mhlw/CodeSystem/MedicationUnitMERIT9Code",
+  "code": "TAB"
+ },
+ "daysSupply": {
+  "value": 7,
+  "unit": "日",
+  "system": "http://unitsofmeasure.org",
+  "code": "d"
+ },
+ "whenPrepared": "2021-10-07T10:47:19+09:00",
+ "whenHandedOver": "2021-10-07T10:55:23+09:00",
+ "destination": {
+  "reference": "Location/jp-location-example-ward"
+ },
+ "note": [
+  {
+   "text": "後発品へ変更可能か依頼医のＡ医師に確認したところ、患者の希望により不可との回答あり。"
+  }
+ ],
+ "dosageInstruction": [
+  {
+   "text": "内服・経口・１日３回朝昼夕食後",
+   "timing": {
+    "code": {
+     "coding": [
+      {
+       "system": "http://jami.jp/CodeSystem/MedicationUsage",
+       "code": "1013044400000000",
+       "display": "内服 １日３回 朝昼夕食後"
+      }
+     ]
+    }
+   },
+   "route": {
+    "coding": [
+     {
+      "system": "http://jpfhir.jp/fhir/core/CodeSystem/route-codes",
+      "code": "PO",
+      "display": "口"
+     }
+    ]
+   },
+   "method": {
+    "coding": [
+     {
+      "system": "http://jami.jp/CodeSystem/MedicationMethodDetailUsage",
+      "code": "10",
+      "display": "経口"
+     }
+    ]
+   },
+   "doseAndRate": [
+    {
+     "type": {
+      "coding": [
+       {
+        "system": "http://jpfhir.jp/fhir/core/mhlw/CodeSystem/MedicationIngredientStrengthStrengthType",
+        "code": "1",
+        "display": "製剤量"
+       }
+      ]
+     },
+     "doseQuantity": {
+      "value": 1,
+      "unit": "錠",
+      "system": "http://jpfhir.jp/fhir/core/mhlw/CodeSystem/MedicationUnitMERIT9Code",
+      "code": "TAB"
+     },
+     "rateRatio": {
+      "numerator": {
+       "value": 3,
+       "unit": "錠",
+       "system": "http://jpfhir.jp/fhir/core/mhlw/CodeSystem/MedicationUnitMERIT9Code",
+       "code": "TAB"
+      },
+      "denominator": {
+       "value": 1,
+       "unit": "日",
+       "system": "http://unitsofmeasure.org",
+       "code": "d"
+      }
+     }
+    }
+   ]
+  }
+ ],
+ "substitution": {
+  "wasSubstituted": true,
+  "type": {
+   "coding": [
+    {
+     "system": "http://terminology.hl7.org/CodeSystem/v3-substanceAdminSubstitution",
+     "code": "G",
+     "display": "generic composition"
+    }
+   ]
+  },
+  "reason": [
+   {
+    "coding": [
+     {
+      "system": "http://terminology.hl7.org/CodeSystem/v3-ActReason",
+      "code": "RR",
+      "display": "regulatory requirement"
+     }
+    ]
+   }
+  ]
+ }
+}

@@ -39,5 +39,5 @@ fn official_jp_core_examples_validate() {
         );
         checked += 1;
     }
-    assert!(checked >= 12, "expected >= 12 example fixtures, checked {}", checked);
+    assert!(checked >= 25, "expected >= 25 example fixtures, checked {}", checked);
 }

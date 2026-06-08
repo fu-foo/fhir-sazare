@@ -1,0 +1,89 @@
+{
+ "resourceType": "PractitionerRole",
+ "id": "jp-practitionerrole-example-1",
+ "meta": {
+  "profile": [
+   "http://jpfhir.jp/fhir/core/StructureDefinition/JP_PractitionerRole"
+  ]
+ },
+ "text": {
+  "status": "generated",
+  "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p class=\"res-header-id\"><b>Generated Narrative: PractitionerRole jp-practitionerrole-example-1</b></p><a name=\"jp-practitionerrole-example-1\"> </a><a name=\"hcjp-practitionerrole-example-1\"> </a><div style=\"display: inline-block; background-color: #d9e0e7; padding: 6px; margin: 4px; border: 1px solid #8da1b4; border-radius: 5px; line-height: 60%\"><p style=\"margin-bottom: 0px\"/><p style=\"margin-bottom: 0px\">Profile: <a href=\"StructureDefinition-jp-practitionerrole.html\">JP Core PractitionerRole Profile</a></p></div><p><b>identifier</b>: <code>http://www.acme.org/practitioners</code>/23</p><p><b>active</b>: true</p><p><b>period</b>: 2012-01-01 --&gt; 2012-03-31</p><p><b>practitioner</b>: <a href=\"Practitioner-jp-practitioner-example-male-1.html\">大阪 一郎</a></p><p><b>organization</b>: <a href=\"Organization-jp-organization-example-hospital.html\">健康第一病院</a></p><p><b>code</b>: <span title=\"Codes:{http://jpfhir.jp/fhir/core/CodeSystem/JP_PractitionerRole_CS JPR10000}\">医師</span></p><p><b>location</b>: <a href=\"Location-jp-location-example-examinationroom.html\">外来101診察室</a></p><p><b>telecom</b>: ph: 3456(Work), <a href=\"mailto:ichiro.osaka@example.org\">ichiro.osaka@example.org</a></p><blockquote><p><b>availableTime</b></p><p><b>daysOfWeek</b>: Monday, Tuesday, Wednesday</p><p><b>availableStartTime</b>: 09:00:00</p><p><b>availableEndTime</b>: 16:30:00</p></blockquote><blockquote><p><b>availableTime</b></p><p><b>daysOfWeek</b>: Thursday, Friday</p><p><b>availableStartTime</b>: 09:00:00</p><p><b>availableEndTime</b>: 12:00:00</p></blockquote><h3>NotAvailables</h3><table class=\"grid\"><tr><td style=\"display: none\">-</td><td><b>Description</b></td><td><b>During</b></td></tr><tr><td style=\"display: none\">*</td><td>大阪 一郎は2017年5月中に長期休暇を取る予定です。</td><td>2017-05-01 --&gt; 2017-05-20</td></tr></table><p><b>availabilityExceptions</b>: 祝祭日やクリスマス・年末年始の休暇中は、大阪 一郎は休日です。</p></div>"
+ },
+ "identifier": [
+  {
+   "system": "http://www.acme.org/practitioners",
+   "value": "23"
+  }
+ ],
+ "active": true,
+ "period": {
+  "start": "2012-01-01",
+  "end": "2012-03-31"
+ },
+ "practitioner": {
+  "reference": "Practitioner/jp-practitioner-example-male-1",
+  "display": "大阪 一郎"
+ },
+ "organization": {
+  "reference": "Organization/jp-organization-example-hospital",
+  "display": "健康第一病院"
+ },
+ "code": [
+  {
+   "coding": [
+    {
+     "system": "http://jpfhir.jp/fhir/core/CodeSystem/JP_PractitionerRole_CS",
+     "code": "JPR10000"
+    }
+   ]
+  }
+ ],
+ "location": [
+  {
+   "reference": "Location/jp-location-example-examinationroom",
+   "display": "外来101診察室"
+  }
+ ],
+ "telecom": [
+  {
+   "system": "phone",
+   "value": "3456",
+   "use": "work"
+  },
+  {
+   "system": "email",
+   "value": "ichiro.osaka@example.org",
+   "use": "work"
+  }
+ ],
+ "availableTime": [
+  {
+   "daysOfWeek": [
+    "mon",
+    "tue",
+    "wed"
+   ],
+   "availableStartTime": "09:00:00",
+   "availableEndTime": "16:30:00"
+  },
+  {
+   "daysOfWeek": [
+    "thu",
+    "fri"
+   ],
+   "availableStartTime": "09:00:00",
+   "availableEndTime": "12:00:00"
+  }
+ ],
+ "notAvailable": [
+  {
+   "description": "大阪 一郎は2017年5月中に長期休暇を取る予定です。",
+   "during": {
+    "start": "2017-05-01",
+    "end": "2017-05-20"
+   }
+  }
+ ],
+ "availabilityExceptions": "祝祭日やクリスマス・年末年始の休暇中は、大阪 一郎は休日です。"
+}

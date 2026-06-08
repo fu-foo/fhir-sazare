@@ -1,0 +1,58 @@
+{
+ "resourceType": "Specimen",
+ "id": "jp-specimen-example-2",
+ "meta": {
+  "profile": [
+   "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Specimen_Common"
+  ]
+ },
+ "text": {
+  "status": "generated",
+  "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p class=\"res-header-id\"><b>Generated Narrative: Specimen jp-specimen-example-2</b></p><a name=\"jp-specimen-example-2\"> </a><a name=\"hcjp-specimen-example-2\"> </a><div style=\"display: inline-block; background-color: #d9e0e7; padding: 6px; margin: 4px; border: 1px solid #8da1b4; border-radius: 5px; line-height: 60%\"><p style=\"margin-bottom: 0px\"/><p style=\"margin-bottom: 0px\">Profile: <a href=\"StructureDefinition-jp-specimen-common.html\">JP_Specimen_Common</a></p></div><p><b>identifier</b>: <a href=\"NamingSystem-jp-example-local-identifiersystem.html\" title=\"JP_local_example_identifiersystem_NamingSystem\">JP_local_example_identifiersystem_NamingSystem</a>/23234352357</p><p><b>accessionIdentifier</b>: <a href=\"NamingSystem-jp-example-local-identifiersystem.html\" title=\"JP_local_example_identifiersystem_NamingSystem\">JP_local_example_identifiersystem_NamingSystem</a>/X352357</p><p><b>status</b>: Available</p><p><b>type</b>: <span title=\"Codes:{http://terminology.hl7.org/CodeSystem/v2-0487 BLD}\">Whole blood</span></p><p><b>subject</b>: <a href=\"Patient-jp-patient-example-1.html\">山田 太郎 Male, DoB: 1970-01-01 ( urn:oid:1.2.392.100495.20.3.51.11311234567#JP_local_patient_identifier_11311234567_NamingSystem#00000010)</a></p><p><b>receivedTime</b>: 2021-08-11 11:03:00+0900</p><h3>Containers</h3><table class=\"grid\"><tr><td style=\"display: none\">-</td><td><b>Identifier</b></td><td><b>Description</b></td><td><b>Type</b></td><td><b>Capacity</b></td><td><b>SpecimenQuantity</b></td></tr><tr><td style=\"display: none\">*</td><td>48736-15394-75467</td><td>採血菅</td><td><span title=\"Codes:\">採血菅</span></td><td>20 mL</td><td>18 mL</td></tr></table></div>"
+ },
+ "identifier": [
+  {
+   "system": "http://abc-hospital.local/identifiers/collections",
+   "value": "23234352357"
+  }
+ ],
+ "accessionIdentifier": {
+  "system": "http://abc-hospital.local/specimens/2011",
+  "value": "X352357"
+ },
+ "status": "available",
+ "type": {
+  "coding": [
+   {
+    "system": "http://terminology.hl7.org/CodeSystem/v2-0487",
+    "code": "BLD",
+    "display": "Whole blood"
+   }
+  ]
+ },
+ "subject": {
+  "reference": "Patient/jp-patient-example-1"
+ },
+ "receivedTime": "2021-08-11T11:03:00+09:00",
+ "container": [
+  {
+   "identifier": [
+    {
+     "value": "48736-15394-75467"
+    }
+   ],
+   "description": "採血菅",
+   "type": {
+    "text": "採血菅"
+   },
+   "capacity": {
+    "value": 20,
+    "unit": "mL"
+   },
+   "specimenQuantity": {
+    "value": 18,
+    "unit": "mL"
+   }
+  }
+ ]
+}

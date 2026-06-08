@@ -1,0 +1,57 @@
+{
+ "resourceType": "Procedure",
+ "id": "jp-procedure-example-1",
+ "meta": {
+  "profile": [
+   "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Procedure"
+  ]
+ },
+ "text": {
+  "status": "generated",
+  "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p class=\"res-header-id\"><b>Generated Narrative: Procedure jp-procedure-example-1</b></p><a name=\"jp-procedure-example-1\"> </a><a name=\"hcjp-procedure-example-1\"> </a><div style=\"display: inline-block; background-color: #d9e0e7; padding: 6px; margin: 4px; border: 1px solid #8da1b4; border-radius: 5px; line-height: 60%\"><p style=\"margin-bottom: 0px\"/><p style=\"margin-bottom: 0px\">Profile: <a href=\"StructureDefinition-jp-procedure.html\">JP Core Procedure Profile</a></p></div><p><b>status</b>: In Progress</p><p><b>category</b>: <span title=\"Codes:{http://jpfhir.jp/fhir/core/CodeSystem/JP_ProcedureCategory_CS JPPCC004}\">創傷処置</span></p><p><b>code</b>: <span title=\"Codes:{http://jpfhir.jp/fhir/core/CodeSystem/JP_ProcedureCodesMedical_CS 140000610}\">創傷処置（１００ｃｍ２未満）</span></p><p><b>subject</b>: <a href=\"Patient-jp-patient-example-1.html\">山田 太郎</a></p><p><b>performed</b>: 2022-08-03</p><p><b>bodySite</b>: <span title=\"Codes:\">前額部</span></p><p><b>outcome</b>: <span title=\"Codes:{http://jpfhir.jp/fhir/core/CodeSystem/JP_ProcedureOutcome_CS JPPOC001}\">成功</span></p><p><b>followUp</b>: <span title=\"Codes:\">縫合糸の除去</span></p></div>"
+ },
+ "status": "in-progress",
+ "category": {
+  "coding": [
+   {
+    "system": "http://jpfhir.jp/fhir/core/CodeSystem/JP_ProcedureCategory_CS",
+    "code": "JPPCC004",
+    "display": "外科的処置"
+   }
+  ],
+  "text": "創傷処置"
+ },
+ "code": {
+  "coding": [
+   {
+    "system": "http://jpfhir.jp/fhir/core/CodeSystem/JP_ProcedureCodesMedical_CS",
+    "code": "140000610"
+   }
+  ],
+  "text": "創傷処置（１００ｃｍ２未満）"
+ },
+ "subject": {
+  "reference": "Patient/jp-patient-example-1",
+  "display": "山田 太郎"
+ },
+ "performedDateTime": "2022-08-03",
+ "bodySite": [
+  {
+   "text": "前額部"
+  }
+ ],
+ "outcome": {
+  "coding": [
+   {
+    "system": "http://jpfhir.jp/fhir/core/CodeSystem/JP_ProcedureOutcome_CS",
+    "code": "JPPOC001",
+    "display": "成功"
+   }
+  ]
+ },
+ "followUp": [
+  {
+   "text": "縫合糸の除去"
+  }
+ ]
+}

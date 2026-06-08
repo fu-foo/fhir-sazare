@@ -1,0 +1,51 @@
+{
+ "resourceType": "FamilyMemberHistory",
+ "id": "jp-familymemberhistory-example-1",
+ "meta": {
+  "profile": [
+   "http://jpfhir.jp/fhir/core/StructureDefinition/JP_FamilyMemberHistory"
+  ]
+ },
+ "text": {
+  "status": "generated",
+  "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p class=\"res-header-id\"><b>Generated Narrative: FamilyMemberHistory jp-familymemberhistory-example-1</b></p><a name=\"jp-familymemberhistory-example-1\"> </a><a name=\"hcjp-familymemberhistory-example-1\"> </a><div style=\"display: inline-block; background-color: #d9e0e7; padding: 6px; margin: 4px; border: 1px solid #8da1b4; border-radius: 5px; line-height: 60%\"><p style=\"margin-bottom: 0px\"/><p style=\"margin-bottom: 0px\">Profile: <a href=\"StructureDefinition-jp-familymemberhistory.html\">JP Core FamilyMemberHistory Profile</a></p></div><p><b>status</b>: Partial</p><p><b>patient</b>: <a href=\"Patient-jp-patient-example-1.html\">山田 太郎</a></p><p><b>relationship</b>: <span title=\"Codes:{http://terminology.hl7.org/CodeSystem/v3-RoleCode MTH}\">mother</span></p><p><b>sex</b>: <span title=\"Codes:{http://hl7.org/fhir/administrative-gender female}\">Female</span></p><p><b>reasonCode</b>: <span title=\"Codes:\">難聴</span></p><blockquote><p><b>condition</b></p><p><b>code</b>: <span title=\"Codes:\">糖尿病</span></p></blockquote><blockquote><p><b>condition</b></p><p><b>code</b>: <span title=\"Codes:\">難聴</span></p></blockquote></div>"
+ },
+ "status": "partial",
+ "patient": {
+  "reference": "Patient/jp-patient-example-1",
+  "display": "山田 太郎"
+ },
+ "relationship": {
+  "coding": [
+   {
+    "system": "http://terminology.hl7.org/CodeSystem/v3-RoleCode",
+    "code": "MTH"
+   }
+  ]
+ },
+ "sex": {
+  "coding": [
+   {
+    "system": "http://hl7.org/fhir/administrative-gender",
+    "code": "female"
+   }
+  ]
+ },
+ "reasonCode": [
+  {
+   "text": "難聴"
+  }
+ ],
+ "condition": [
+  {
+   "code": {
+    "text": "糖尿病"
+   }
+  },
+  {
+   "code": {
+    "text": "難聴"
+   }
+  }
+ ]
+}
