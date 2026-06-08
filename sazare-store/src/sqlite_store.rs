@@ -17,45 +17,36 @@ pub struct SqliteStore {
 
 #[allow(clippy::result_large_err)]
 impl SqliteStore {
+    /// Ordered schema migrations (see `crate::migrate`). Append-only.
+    const MIGRATIONS: &'static [&'static str] = &[
+        // v1 — initial schema.
+        r#"
+        CREATE TABLE IF NOT EXISTS resources (
+            resource_type TEXT NOT NULL,
+            id TEXT NOT NULL,
+            value TEXT NOT NULL,
+            PRIMARY KEY (resource_type, id)
+        );
+        CREATE TABLE IF NOT EXISTS resource_history (
+            resource_type TEXT NOT NULL,
+            id TEXT NOT NULL,
+            version_id TEXT NOT NULL,
+            value TEXT NOT NULL,
+            PRIMARY KEY (resource_type, id, version_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_resources_type ON resources(resource_type);
+        CREATE INDEX IF NOT EXISTS idx_history_type ON resource_history(resource_type);
+        "#,
+    ];
+
     /// Open the store (create if not exists)
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
-        let conn = Connection::open(path)?;
+        let mut conn = Connection::open(path)?;
 
         // Enable WAL mode for read-write concurrency
         conn.execute_batch("PRAGMA journal_mode=WAL;")?;
 
-        // Current version table
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS resources (
-                resource_type TEXT NOT NULL,
-                id TEXT NOT NULL,
-                value TEXT NOT NULL,
-                PRIMARY KEY (resource_type, id)
-            )",
-            [],
-        )?;
-
-        // History table
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS resource_history (
-                resource_type TEXT NOT NULL,
-                id TEXT NOT NULL,
-                version_id TEXT NOT NULL,
-                value TEXT NOT NULL,
-                PRIMARY KEY (resource_type, id, version_id)
-            )",
-            [],
-        )?;
-
-        // Create indexes
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_resources_type ON resources(resource_type)",
-            [],
-        )?;
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_history_type ON resource_history(resource_type)",
-            [],
-        )?;
+        crate::migrate::run_migrations(&mut conn, Self::MIGRATIONS)?;
 
         Ok(Self {
             conn: Mutex::new(conn),

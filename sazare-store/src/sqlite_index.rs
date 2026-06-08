@@ -61,63 +61,40 @@ pub struct SearchIndex {
 
 #[allow(clippy::result_large_err)]
 impl SearchIndex {
+    /// Ordered schema migrations (see `crate::migrate`). Append-only.
+    const MIGRATIONS: &'static [&'static str] = &[
+        // v1 — initial schema.
+        r#"
+        CREATE TABLE IF NOT EXISTS search_index (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            resource_type TEXT NOT NULL,
+            resource_id TEXT NOT NULL,
+            param_name TEXT NOT NULL,
+            param_type TEXT NOT NULL,
+            value_string TEXT,
+            value_string_lower TEXT,
+            value_system TEXT,
+            value_date_start INTEGER,
+            value_date_end INTEGER,
+            UNIQUE(resource_type, resource_id, param_name, value_string, value_system)
+        );
+        CREATE INDEX IF NOT EXISTS idx_type_param_string
+            ON search_index(resource_type, param_name, value_string);
+        CREATE INDEX IF NOT EXISTS idx_type_param_token
+            ON search_index(resource_type, param_name, value_system, value_string);
+        CREATE INDEX IF NOT EXISTS idx_type_param_date
+            ON search_index(resource_type, param_name, value_date_start, value_date_end);
+        CREATE INDEX IF NOT EXISTS idx_resource
+            ON search_index(resource_type, resource_id);
+        "#,
+    ];
+
     /// Open the index (create if not exists)
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
-        let conn = Connection::open(path)?;
+        let mut conn = Connection::open(path)?;
         conn.execute_batch("PRAGMA journal_mode=WAL;")?;
-        let index = Self { conn };
-        index.initialize()?;
-        Ok(index)
-    }
-
-    /// Initialize tables
-    fn initialize(&self) -> Result<()> {
-        // Generic search index table
-        self.conn.execute(
-            r#"
-            CREATE TABLE IF NOT EXISTS search_index (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                resource_type TEXT NOT NULL,
-                resource_id TEXT NOT NULL,
-                param_name TEXT NOT NULL,
-                param_type TEXT NOT NULL,
-                value_string TEXT,
-                value_string_lower TEXT,
-                value_system TEXT,
-                value_date_start INTEGER,
-                value_date_end INTEGER,
-                UNIQUE(resource_type, resource_id, param_name, value_string, value_system)
-            )
-            "#,
-            [],
-        )?;
-
-        // Create indexes
-        self.conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_type_param_string
-             ON search_index(resource_type, param_name, value_string)",
-            [],
-        )?;
-
-        self.conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_type_param_token
-             ON search_index(resource_type, param_name, value_system, value_string)",
-            [],
-        )?;
-
-        self.conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_type_param_date
-             ON search_index(resource_type, param_name, value_date_start, value_date_end)",
-            [],
-        )?;
-
-        self.conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_resource
-             ON search_index(resource_type, resource_id)",
-            [],
-        )?;
-
-        Ok(())
+        crate::migrate::run_migrations(&mut conn, Self::MIGRATIONS)?;
+        Ok(Self { conn })
     }
 
     /// Add an index entry

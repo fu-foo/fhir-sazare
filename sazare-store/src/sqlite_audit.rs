@@ -35,52 +35,35 @@ pub struct AuditLog {
 
 #[allow(clippy::result_large_err)]
 impl AuditLog {
+    /// Ordered schema migrations (see `crate::migrate`). Append-only.
+    const MIGRATIONS: &'static [&'static str] = &[
+        // v1 — initial schema.
+        r#"
+        CREATE TABLE IF NOT EXISTS audit_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT NOT NULL DEFAULT (datetime('now')),
+            operation TEXT NOT NULL,
+            resource_type TEXT,
+            resource_id TEXT,
+            version_id TEXT,
+            query_string TEXT,
+            user_id TEXT,
+            client_ip TEXT,
+            result TEXT NOT NULL,
+            error_message TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_log(timestamp);
+        CREATE INDEX IF NOT EXISTS idx_audit_resource ON audit_log(resource_type, resource_id);
+        CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log(user_id);
+        "#,
+    ];
+
     /// Open the audit log (create if not exists)
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
-        let conn = Connection::open(path)?;
+        let mut conn = Connection::open(path)?;
         conn.execute_batch("PRAGMA journal_mode=WAL;")?;
-        let audit = Self { conn };
-        audit.initialize()?;
-        Ok(audit)
-    }
-
-    /// Initialize tables
-    fn initialize(&self) -> Result<()> {
-        self.conn.execute(
-            r#"
-            CREATE TABLE IF NOT EXISTS audit_log (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp TEXT NOT NULL DEFAULT (datetime('now')),
-                operation TEXT NOT NULL,
-                resource_type TEXT,
-                resource_id TEXT,
-                version_id TEXT,
-                query_string TEXT,
-                user_id TEXT,
-                client_ip TEXT,
-                result TEXT NOT NULL,
-                error_message TEXT
-            )
-            "#,
-            [],
-        )?;
-
-        self.conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_log(timestamp)",
-            [],
-        )?;
-
-        self.conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_audit_resource ON audit_log(resource_type, resource_id)",
-            [],
-        )?;
-
-        self.conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log(user_id)",
-            [],
-        )?;
-
-        Ok(())
+        crate::migrate::run_migrations(&mut conn, Self::MIGRATIONS)?;
+        Ok(Self { conn })
     }
 
     /// Record an audit log entry

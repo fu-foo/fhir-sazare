@@ -1,4 +1,5 @@
 pub mod error;
+mod migrate;
 pub mod sqlite_store;
 pub mod sqlite_index;
 pub mod sqlite_audit;
