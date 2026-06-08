@@ -93,6 +93,38 @@ mod tests {
         reg
     }
 
+    fn us_core_registry() -> ProfileRegistry {
+        let mut reg = ProfileRegistry::new();
+        reg.load_profiles(crate::profile_loader::ProfileLoader::get_embedded_us_core_profiles());
+        reg
+    }
+
+    #[test]
+    fn test_pattern_codeable_concept_enforced() {
+        // US Core Smoking Status fixes Observation.code to LOINC 72166-2 via
+        // patternCodeableConcept.
+        let url = "http://hl7.org/fhir/us/core/StructureDefinition/us-core-smokingstatus";
+        let obs = |code: &str| {
+            json!({
+                "resourceType": "Observation",
+                "meta": {"profile": [url]},
+                "status": "final",
+                "code": {"coding": [{"system": "http://loinc.org", "code": code}]},
+                "subject": {"reference": "Patient/x"},
+                "issued": "2025-12-01T00:00:00Z",
+                "valueCodeableConcept": {"coding": [{"system": "http://snomed.info/sct", "code": "266919005"}]}
+            })
+        };
+        // Wrong code violates the fixed pattern.
+        assert!(
+            validate_resource_all_phases(&obs("99999-9"), &us_core_registry(), &TerminologyRegistry::new()).is_err(),
+            "smoking status with the wrong code should fail"
+        );
+        // The fixed code passes.
+        let ok = validate_resource_all_phases(&obs("72166-2"), &us_core_registry(), &TerminologyRegistry::new());
+        assert!(ok.is_ok(), "smoking status with code 72166-2 should pass: {:?}", ok.err());
+    }
+
     #[test]
     fn test_jp_core_patient_valid() {
         // A JP_Patient with the mandatory identifier (and identifier.value).

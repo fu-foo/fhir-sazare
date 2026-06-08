@@ -76,6 +76,13 @@ impl Phase2Validator {
                         profile_url,
                         &mut issues,
                     );
+                    Self::validate_fixed_pattern(
+                        resource,
+                        resource_type,
+                        elements,
+                        profile_url,
+                        &mut issues,
+                    );
                 }
             }
         }
@@ -203,6 +210,154 @@ impl Phase2Validator {
                     details: None,
                     expression: Some(vec![format!("{}.{}", resource_type, base)]),
                 });
+            }
+        }
+    }
+
+    /// Validate `fixed[x]` / `pattern[x]` constraints on plain (non-slice)
+    /// elements: when the resource carries a value at the element's path, it
+    /// must match the profile's fixed/pattern value. Handles fixed scalars
+    /// (Uri/Code/String/Canonical) and `patternCodeableConcept` /
+    /// `patternCoding` (the resource coding must contain the pattern's
+    /// system+code). Constraints we don't understand are skipped, so conforming
+    /// data is never rejected (guarded by the JP example fixtures).
+    fn validate_fixed_pattern(
+        resource: &Value,
+        resource_type: &str,
+        elements: &[Value],
+        profile_url: &str,
+        issues: &mut Vec<OperationOutcomeIssue>,
+    ) {
+        let prefix = format!("{}.", resource_type);
+        for element in elements {
+            let id = element.get("id").and_then(|v| v.as_str()).unwrap_or("");
+            if id.contains(':') {
+                continue; // plain elements only; slices handled elsewhere
+            }
+            let path = match element.get("path").and_then(|v| v.as_str()) {
+                Some(p) => p,
+                None => continue,
+            };
+            let rel = match path.strip_prefix(&prefix) {
+                Some(r) if !r.is_empty() => r,
+                _ => continue,
+            };
+            let parts: Vec<&str> = rel.split('.').collect();
+            let mut values: Vec<&Value> = Vec::new();
+            Self::collect_at_path(resource, &parts, &mut values);
+            if values.is_empty() {
+                continue; // absent → cardinality (not this check) governs it
+            }
+
+            let mismatch = |issues: &mut Vec<OperationOutcomeIssue>, expected: &str| {
+                issues.push(OperationOutcomeIssue {
+                    severity: IssueSeverity::Error,
+                    code: IssueType::Value,
+                    diagnostics: Some(format!(
+                        "Profile '{}': element '{}' must match the fixed/pattern value ({})",
+                        profile_url, path, expected
+                    )),
+                    details: None,
+                    expression: Some(vec![path.to_string()]),
+                });
+            };
+
+            // Fixed scalar value: every present value must equal it exactly.
+            if let Some(expected) = ["fixedUri", "fixedCode", "fixedString", "fixedCanonical"]
+                .iter()
+                .find_map(|k| element.get(*k).and_then(|v| v.as_str()))
+            {
+                if values.iter().any(|v| v.as_str() != Some(expected)) {
+                    mismatch(issues, expected);
+                }
+                continue;
+            }
+
+            // patternCodeableConcept / patternCoding: the resource value must
+            // contain a coding matching the pattern's system+code.
+            let pattern_codings: Vec<&Value> = if let Some(cc) = element.get("patternCodeableConcept")
+            {
+                cc.get("coding")
+                    .and_then(|v| v.as_array())
+                    .map(|a| a.iter().collect())
+                    .unwrap_or_default()
+            } else if let Some(coding) = element.get("patternCoding") {
+                vec![coding]
+            } else {
+                continue;
+            };
+            if pattern_codings.is_empty() {
+                continue;
+            }
+            for value in &values {
+                let codings: Vec<&Value> = match value.get("coding").and_then(|v| v.as_array()) {
+                    Some(arr) => arr.iter().collect(),
+                    None => vec![*value], // value itself may be a Coding
+                };
+                let matches_all = pattern_codings.iter().all(|pc| {
+                    let psys = pc.get("system").and_then(|v| v.as_str());
+                    let pcode = pc.get("code").and_then(|v| v.as_str());
+                    codings.iter().any(|c| {
+                        (psys.is_none() || c.get("system").and_then(|v| v.as_str()) == psys)
+                            && (pcode.is_none() || c.get("code").and_then(|v| v.as_str()) == pcode)
+                    })
+                });
+                if !matches_all {
+                    let desc = pattern_codings
+                        .iter()
+                        .filter_map(|c| c.get("code").and_then(|v| v.as_str()))
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    mismatch(issues, &desc);
+                    break;
+                }
+            }
+        }
+    }
+
+    /// Collect every leaf value found at `parts` under `value`, descending into
+    /// arrays and handling `[x]` choice fields (mirrors `count_at_path`).
+    fn collect_at_path<'a>(value: &'a Value, parts: &[&str], out: &mut Vec<&'a Value>) {
+        if parts.is_empty() {
+            match value {
+                Value::Array(arr) => out.extend(arr.iter()),
+                Value::Null => {}
+                _ => out.push(value),
+            }
+            return;
+        }
+        let field = parts[0];
+        let remaining = &parts[1..];
+
+        if let Some(prefix) = field.strip_suffix("[x]")
+            && let Value::Object(map) = value
+        {
+            for (_, v) in map.iter().filter(|(k, _)| Self::is_choice_field(k, prefix)) {
+                Self::collect_at_path(v, remaining, out);
+            }
+            return;
+        }
+
+        match value.get(field) {
+            None => {}
+            Some(child) => {
+                if remaining.is_empty() {
+                    match child {
+                        Value::Array(arr) => out.extend(arr.iter()),
+                        Value::Null => {}
+                        _ => out.push(child),
+                    }
+                } else {
+                    match child {
+                        Value::Array(arr) => {
+                            for item in arr {
+                                Self::collect_at_path(item, remaining, out);
+                            }
+                        }
+                        Value::Object(_) => Self::collect_at_path(child, remaining, out),
+                        _ => {}
+                    }
+                }
             }
         }
     }
