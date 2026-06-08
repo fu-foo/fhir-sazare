@@ -206,6 +206,24 @@ impl TerminologyRegistry {
             &["proposed", "planned", "accepted", "active", "on-hold", "completed",
               "cancelled", "entered-in-error", "rejected"],
         ));
+        // CodeableConcept-typed status bindings.
+        registry.add_value_set(vs(
+            "http://hl7.org/fhir/ValueSet/condition-clinical",
+            &["active", "recurrence", "relapse", "inactive", "remission", "resolved"],
+        ));
+        registry.add_value_set(vs(
+            "http://hl7.org/fhir/ValueSet/condition-ver-status",
+            &["unconfirmed", "provisional", "differential", "confirmed", "refuted",
+              "entered-in-error"],
+        ));
+        registry.add_value_set(vs(
+            "http://hl7.org/fhir/ValueSet/allergyintolerance-clinical",
+            &["active", "inactive", "resolved"],
+        ));
+        registry.add_value_set(vs(
+            "http://hl7.org/fhir/ValueSet/allergyintolerance-verification",
+            &["unconfirmed", "presumed", "confirmed", "refuted", "entered-in-error"],
+        ));
 
         registry
     }

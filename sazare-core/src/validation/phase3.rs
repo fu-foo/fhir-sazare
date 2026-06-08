@@ -66,6 +66,39 @@ impl Phase3Validator {
             }
         }
 
+        // CodeableConcept-typed required status bindings: at least one coding's
+        // code must be in the bound value set (lenient: extra codings tolerated).
+        const CC_BINDINGS: &[(&str, &str, &str)] = &[
+            ("Condition", "clinicalStatus", "http://hl7.org/fhir/ValueSet/condition-clinical"),
+            ("Condition", "verificationStatus", "http://hl7.org/fhir/ValueSet/condition-ver-status"),
+            ("AllergyIntolerance", "clinicalStatus", "http://hl7.org/fhir/ValueSet/allergyintolerance-clinical"),
+            ("AllergyIntolerance", "verificationStatus", "http://hl7.org/fhir/ValueSet/allergyintolerance-verification"),
+        ];
+        for (rt, field, value_set) in CC_BINDINGS {
+            if *rt != resource_type {
+                continue;
+            }
+            if let Some(codings) = resource
+                .get(*field)
+                .and_then(|cc| cc.get("coding"))
+                .and_then(|v| v.as_array())
+                .filter(|arr| !arr.is_empty())
+            {
+                let any_valid = codings.iter().any(|c| {
+                    c.get("code")
+                        .and_then(|v| v.as_str())
+                        .is_some_and(|code| registry.validate_code(value_set, code))
+                });
+                if !any_valid {
+                    return Err(OperationOutcome::validation_error(format!(
+                        "Invalid {}.{}: no coding is in the required value set",
+                        resource_type, field
+                    ))
+                    .with_expression(vec![format!("{}.{}", resource_type, field)]));
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -180,6 +213,18 @@ mod tests {
         // Goal.lifecycleStatus
         assert!(check(json!({"resourceType": "Goal", "lifecycleStatus": "active"})).is_ok());
         assert!(check(json!({"resourceType": "Goal", "lifecycleStatus": "done"})).is_err());
+        // Condition.clinicalStatus (CodeableConcept)
+        let cond = |code: &str| json!({
+            "resourceType": "Condition",
+            "clinicalStatus": {"coding": [{"system": "http://terminology.hl7.org/CodeSystem/condition-clinical", "code": code}]}
+        });
+        assert!(check(cond("active")).is_ok());
+        assert!(check(cond("bogus")).is_err());
+        // AllergyIntolerance.verificationStatus (CodeableConcept)
+        assert!(check(json!({"resourceType": "AllergyIntolerance",
+            "verificationStatus": {"coding": [{"code": "confirmed"}]}})).is_ok());
+        assert!(check(json!({"resourceType": "AllergyIntolerance",
+            "verificationStatus": {"coding": [{"code": "maybe"}]}})).is_err());
     }
 
     #[test]
