@@ -5,14 +5,26 @@
 //!   - resource_history: Version history (resource_type, id, version_id)
 
 use crate::error::Result;
-use rusqlite::{params, Connection, Transaction};
+use rusqlite::{params, Connection, OpenFlags, Transaction};
 use std::ops::Deref;
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Mutex, MutexGuard};
 
-/// SQLite-based resource store
+/// Number of read-only connections to open for a file-backed store. With WAL,
+/// these read concurrently with each other and with the single writer.
+const READ_POOL_SIZE: usize = 4;
+
+/// SQLite-based resource store.
+///
+/// All writes go through a single connection (`conn`); SQLite allows only one
+/// writer anyway. Reads use a small pool of read-only connections so that
+/// concurrent GET/search requests aren't serialized behind each other or behind
+/// a write (WAL gives readers a consistent snapshot of the last commit).
 pub struct SqliteStore {
     conn: Mutex<Connection>,
+    read_pool: Vec<Mutex<Connection>>,
+    next_reader: AtomicUsize,
 }
 
 #[allow(clippy::result_large_err)]
@@ -41,6 +53,7 @@ impl SqliteStore {
 
     /// Open the store (create if not exists)
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
+        let path = path.as_ref();
         let mut conn = Connection::open(path)?;
 
         // Enable WAL mode for read-write concurrency
@@ -48,12 +61,36 @@ impl SqliteStore {
 
         crate::migrate::run_migrations(&mut conn, Self::MIGRATIONS)?;
 
+        // A read pool only makes sense for a real file: separate connections to
+        // ":memory:" would each get their own empty database. In-memory stores
+        // (tests) fall back to the single connection for reads.
+        let is_memory = path
+            .to_str()
+            .map(|p| p.is_empty() || p.contains(":memory:"))
+            .unwrap_or(false);
+        let read_pool = if is_memory {
+            Vec::new()
+        } else {
+            let mut pool = Vec::with_capacity(READ_POOL_SIZE);
+            for _ in 0..READ_POOL_SIZE {
+                let rc = Connection::open_with_flags(
+                    path,
+                    OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+                )?;
+                rc.busy_timeout(std::time::Duration::from_secs(5))?;
+                pool.push(Mutex::new(rc));
+            }
+            pool
+        };
+
         Ok(Self {
             conn: Mutex::new(conn),
+            read_pool,
+            next_reader: AtomicUsize::new(0),
         })
     }
 
-    /// Lock the connection, recovering from a poisoned mutex.
+    /// Lock the write connection, recovering from a poisoned mutex.
     ///
     /// A poisoned mutex means a previous operation panicked while holding the
     /// lock. The `Connection` itself stays usable (rusqlite calls are discrete
@@ -66,9 +103,21 @@ impl SqliteStore {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
+    /// Pick a connection for a read query: round-robin over the read pool, or
+    /// the write connection when there is no pool (in-memory store).
+    fn reader(&self) -> MutexGuard<'_, Connection> {
+        if self.read_pool.is_empty() {
+            return self.conn();
+        }
+        let i = self.next_reader.fetch_add(1, Ordering::Relaxed) % self.read_pool.len();
+        self.read_pool[i]
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     /// Get a resource
     pub fn get(&self, resource_type: &str, id: &str) -> Result<Option<Vec<u8>>> {
-        let conn = self.conn();
+        let conn = self.reader();
 
         let mut stmt = conn.prepare(
             "SELECT value FROM resources WHERE resource_type = ? AND id = ?"
@@ -131,7 +180,7 @@ impl SqliteStore {
         id: &str,
         version_id: &str,
     ) -> Result<Option<Vec<u8>>> {
-        let conn = self.conn();
+        let conn = self.reader();
 
         let mut stmt = conn.prepare(
             "SELECT value FROM resource_history WHERE resource_type = ? AND id = ? AND version_id = ?"
@@ -158,7 +207,7 @@ impl SqliteStore {
 
     /// List version history (list of version_ids)
     pub fn list_versions(&self, resource_type: &str, id: &str) -> Result<Vec<String>> {
-        let conn = self.conn();
+        let conn = self.reader();
 
         let mut stmt = conn.prepare(
             "SELECT version_id FROM resource_history WHERE resource_type = ? AND id = ? ORDER BY version_id"
@@ -175,7 +224,7 @@ impl SqliteStore {
 
     /// Get resource counts by type
     pub fn count_by_type(&self) -> Result<Vec<(String, i64)>> {
-        let conn = self.conn();
+        let conn = self.reader();
         let mut stmt = conn.prepare(
             "SELECT resource_type, COUNT(*) FROM resources GROUP BY resource_type ORDER BY resource_type",
         )?;
@@ -191,7 +240,7 @@ impl SqliteStore {
 
     /// List all resources (optionally filtered by resource type)
     pub fn list_all(&self, resource_type: Option<&str>) -> Result<Vec<(String, String, Vec<u8>)>> {
-        let conn = self.conn();
+        let conn = self.reader();
 
         let mut results = Vec::new();
 
@@ -236,7 +285,7 @@ impl SqliteStore {
     /// resource body into memory just to extract IDs (the caller fetches only
     /// the page it needs afterwards).
     pub fn list_ids(&self, resource_type: &str) -> Result<Vec<String>> {
-        let conn = self.conn();
+        let conn = self.reader();
         let mut stmt = conn
             .prepare("SELECT id FROM resources WHERE resource_type = ? ORDER BY id")?;
         let rows = stmt.query_map(params![resource_type], |row| row.get::<_, String>(0))?;
@@ -256,7 +305,7 @@ impl SqliteStore {
         count: usize,
         offset: usize,
     ) -> Result<(Vec<(String, Vec<u8>)>, usize)> {
-        let conn = self.conn();
+        let conn = self.reader();
 
         // Total count
         let total: usize = conn.query_row(
@@ -481,5 +530,34 @@ mod tests {
             .put("Patient", "p2", br#"{"resourceType":"Patient","id":"p2"}"#)
             .unwrap();
         assert!(store.get("Patient", "p2").unwrap().is_some());
+    }
+
+    #[test]
+    fn test_read_pool_sees_writes() {
+        // A file-backed store gets a read pool; every pooled read connection
+        // must observe committed writes (WAL snapshot at read start).
+        let path = std::env::temp_dir().join(format!("sazare-rp-{}.sqlite", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+
+        let store = SqliteStore::open(&path).unwrap();
+        assert_eq!(
+            store.read_pool.len(),
+            READ_POOL_SIZE,
+            "file-backed store should have a read pool"
+        );
+
+        store
+            .put("Patient", "p1", br#"{"resourceType":"Patient","id":"p1"}"#)
+            .unwrap();
+        // Read more times than the pool size so the round-robin visits every
+        // read connection.
+        for _ in 0..(READ_POOL_SIZE * 2 + 1) {
+            assert!(store.get("Patient", "p1").unwrap().is_some());
+        }
+
+        drop(store);
+        for ext in ["sqlite", "sqlite-wal", "sqlite-shm"] {
+            let _ = std::fs::remove_file(path.with_extension(ext));
+        }
     }
 }
