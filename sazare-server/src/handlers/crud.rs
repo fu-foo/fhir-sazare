@@ -141,6 +141,20 @@ pub async fn create(
         )
     })?;
 
+    // Update the search index *before* persisting the resource. The store and
+    // index are separate SQLite databases, so the two writes can't share a
+    // transaction. Indexing first means a crash between them leaves at most a
+    // stale index entry for a resource that isn't stored — harmless, since
+    // search results are fetched from the store and a missing resource is
+    // dropped. The reverse order risks a committed resource being invisible to
+    // search until the next reindex (a false negative). reindex cleans up any
+    // stale entries.
+    let resource_value = serde_json::to_value(&resource).unwrap_or_default();
+    {
+        let index = state.index.lock().await;
+        update_search_index(&index, &state.search_param_registry, &resource_type, &id, &resource_value);
+    }
+
     state
         .store
         .put_with_version(&resource_type, &id, &version_id, &json_bytes)
@@ -150,13 +164,6 @@ pub async fn create(
                 Json(json!(OperationOutcome::storage_error(e.to_string()))),
             )
         })?;
-
-    // Update search index
-    let resource_value = serde_json::to_value(&resource).unwrap_or_default();
-    {
-        let index = state.index.lock().await;
-        update_search_index(&index, &state.search_param_registry, &resource_type, &id, &resource_value);
-    }
 
     // Audit log
     audit::log_operation_success(&audit_ctx, "CREATE", &resource_type, &id, &state.audit);
@@ -307,6 +314,14 @@ pub async fn update(
         )
     })?;
 
+    // Reindex before persisting (see the create handler: indexing first keeps a
+    // committed resource from ever being invisible to search after a crash).
+    let resource_value = serde_json::to_value(&resource).unwrap_or_default();
+    {
+        let index = state.index.lock().await;
+        update_search_index(&index, &state.search_param_registry, &resource_type, &id, &resource_value);
+    }
+
     state
         .store
         .put_with_version(&resource_type, &id, &new_version, &json_bytes)
@@ -316,13 +331,6 @@ pub async fn update(
                 Json(json!(OperationOutcome::storage_error(e.to_string()))),
             )
         })?;
-
-    // Update search index
-    let resource_value = serde_json::to_value(&resource).unwrap_or_default();
-    {
-        let index = state.index.lock().await;
-        update_search_index(&index, &state.search_param_registry, &resource_type, &id, &resource_value);
-    }
 
     audit::log_operation_success(&audit_ctx, "UPDATE", &resource_type, &id, &state.audit);
 
