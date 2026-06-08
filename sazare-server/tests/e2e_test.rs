@@ -689,7 +689,7 @@ async fn test_bundle_batch() {
 }
 
 #[tokio::test]
-async fn test_jp_kana_name_search() {
+async fn test_jp_name_representation_search() {
     let (base_url, _dir) = start_test_server().await;
     let client = reqwest::Client::new();
 
@@ -727,4 +727,9 @@ async fn test_jp_kana_name_search() {
     assert_eq!(total(&client, &base_url, "name-kana", "ヤマダ").await, 1, "name-kana matches kana");
     assert_eq!(total(&client, &base_url, "name-kana", "タロウ").await, 1, "name-kana matches kana given");
     assert_eq!(total(&client, &base_url, "name-kana", "山田").await, 0, "name-kana must NOT match kanji");
+
+    // `name-kanji` matches only the IDE (kanji) representation — the mirror.
+    assert_eq!(total(&client, &base_url, "name-kanji", "山田").await, 1, "name-kanji matches kanji");
+    assert_eq!(total(&client, &base_url, "name-kanji", "太郎").await, 1, "name-kanji matches kanji given");
+    assert_eq!(total(&client, &base_url, "name-kanji", "ヤマダ").await, 0, "name-kanji must NOT match kana");
 }

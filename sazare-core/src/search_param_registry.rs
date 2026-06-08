@@ -52,11 +52,12 @@ pub enum ExtractionMode {
     /// `path[0]` is the extension container ("extension"), `path[1]` the
     /// extension URL; yields the extension's `valueDateTime`.
     ExtensionDate,
-    /// JP Core kana name: HumanName entries (`path[0]`, e.g. `name`) whose
-    /// `iso21090-EN-representation` extension is `SYL` (syllabic / kana).
-    /// Indexes their `text`, `family` and `given` as strings, enabling search
-    /// by Japanese phonetic (kana) name.
-    JpKanaName,
+    /// JP Core name by representation: HumanName entries (`path[0]`, e.g.
+    /// `name`) whose `iso21090-EN-representation` extension equals the code in
+    /// `path[1]` (e.g. `SYL` for kana, `IDE` for kanji). Indexes their `text`,
+    /// `family` and `given` as strings, enabling search by Japanese phonetic
+    /// (kana) or ideographic (kanji) name.
+    JpNameRepresentation,
 }
 
 /// Definition of a single search parameter
@@ -238,14 +239,22 @@ fn patient_definitions() -> Vec<SearchParamDef> {
             extraction: ExtractionMode::NestedArrayScalar,
             aliases: vec![],
         },
-        // JP Core: search by Japanese phonetic (kana) name. Matches only the
-        // SYL (syllabic) name representations, so `name-kana=ヤマダ` finds the
-        // kana form while plain `name=...` still matches every representation.
+        // JP Core: search by Japanese name representation. `name-kana` matches
+        // only the SYL (syllabic/kana) names and `name-kanji` only the IDE
+        // (ideographic/kanji) names, while plain `name=...` still matches every
+        // representation. The representation code is carried in `path[1]`.
         SearchParamDef {
             name: "name-kana".to_string(),
             param_type: SearchParamType::String,
-            path: vec!["name".to_string()],
-            extraction: ExtractionMode::JpKanaName,
+            path: vec!["name".to_string(), "SYL".to_string()],
+            extraction: ExtractionMode::JpNameRepresentation,
+            aliases: vec![],
+        },
+        SearchParamDef {
+            name: "name-kanji".to_string(),
+            param_type: SearchParamType::String,
+            path: vec!["name".to_string(), "IDE".to_string()],
+            extraction: ExtractionMode::JpNameRepresentation,
             aliases: vec![],
         },
         SearchParamDef {

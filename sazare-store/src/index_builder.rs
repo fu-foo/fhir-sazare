@@ -94,16 +94,17 @@ impl IndexBuilder {
             ExtractionMode::ExtensionDate => {
                 Self::extract_extension_date(resource, &def.path, &def.name, param_type_str, indices);
             }
-            ExtractionMode::JpKanaName => {
-                Self::extract_jp_kana_name(resource, &def.path, &def.name, param_type_str, indices);
+            ExtractionMode::JpNameRepresentation => {
+                Self::extract_jp_name_by_representation(resource, &def.path, &def.name, param_type_str, indices);
             }
         }
     }
 
-    /// JpKanaName: index the `text`, `family` and `given` of HumanName entries
-    /// (`path[0]`, e.g. `name`) whose `iso21090-EN-representation` extension is
-    /// `SYL` (syllabic / kana). Enables search by Japanese phonetic name.
-    fn extract_jp_kana_name(
+    /// JpNameRepresentation: index the `text`, `family` and `given` of HumanName
+    /// entries (`path[0]`, e.g. `name`) whose `iso21090-EN-representation`
+    /// extension equals the code in `path[1]` (`SYL` for kana, `IDE` for kanji).
+    /// Enables search by Japanese phonetic or ideographic name.
+    fn extract_jp_name_by_representation(
         resource: &Value,
         path: &[String],
         name: &str,
@@ -113,21 +114,25 @@ impl IndexBuilder {
         const REPRESENTATION_URL: &str =
             "http://hl7.org/fhir/StructureDefinition/iso21090-EN-representation";
 
+        let representation = match path.get(1) {
+            Some(code) => code.as_str(),
+            None => return,
+        };
         let Some(array) = resource.get(path[0].as_str()).and_then(|v| v.as_array()) else {
             return;
         };
         for human_name in array {
-            let is_kana = human_name
+            let matches_representation = human_name
                 .get("extension")
                 .and_then(|v| v.as_array())
                 .map(|exts| {
                     exts.iter().any(|e| {
                         e.get("url").and_then(|u| u.as_str()) == Some(REPRESENTATION_URL)
-                            && e.get("valueCode").and_then(|c| c.as_str()) == Some("SYL")
+                            && e.get("valueCode").and_then(|c| c.as_str()) == Some(representation)
                     })
                 })
                 .unwrap_or(false);
-            if !is_kana {
+            if !matches_representation {
                 continue;
             }
 
