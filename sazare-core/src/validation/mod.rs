@@ -4,6 +4,7 @@
 //! Phase 2: Extension validation (JP-Core)
 //! Phase 3: Terminology binding (ValueSet/CodeSystem)
 
+pub mod bindings;
 pub mod jp_extensions;
 pub mod phase1;
 pub mod phase2;
@@ -41,6 +42,9 @@ pub fn validate_resource_all_phases(
 
     // Phase 3: Terminology binding
     phase3::Phase3Validator::validate(resource, terminology_registry)?;
+
+    // Profile-driven required bindings (validated against embedded value sets).
+    bindings::validate(resource, profile_registry, terminology_registry)?;
 
     Ok(ValidationResult {
         warnings: phase2_warnings,

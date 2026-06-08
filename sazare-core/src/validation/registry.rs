@@ -225,7 +225,64 @@ impl TerminologyRegistry {
             &["unconfirmed", "presumed", "confirmed", "refuted", "entered-in-error"],
         ));
 
+        // Enumerated ValueSet resources embedded as data.
+        registry.load_value_set_resource(include_str!("../../valuesets/jp-dicom-modality.json"));
+
         registry
+    }
+
+    /// True if a ValueSet with this URL is known (enumerated) in the registry.
+    pub fn has_value_set(&self, url: &str) -> bool {
+        self.value_sets.contains_key(url)
+    }
+
+    /// Load enumerated codes from a FHIR `ValueSet` resource (JSON), taking the
+    /// codes from `compose.include[].concept[]` and `expansion.contains[]`.
+    /// ValueSets that only reference whole code systems (no enumerated codes)
+    /// are ignored — they need a terminology service, not embedding.
+    pub fn load_value_set_resource(&mut self, json: &str) {
+        let vs: Value = match serde_json::from_str(json) {
+            Ok(v) => v,
+            Err(_) => return,
+        };
+        let Some(url) = vs.get("url").and_then(|v| v.as_str()) else {
+            return;
+        };
+        let mut codes: Vec<String> = Vec::new();
+        if let Some(includes) = vs
+            .get("compose")
+            .and_then(|c| c.get("include"))
+            .and_then(|v| v.as_array())
+        {
+            for inc in includes {
+                if let Some(concepts) = inc.get("concept").and_then(|v| v.as_array()) {
+                    codes.extend(
+                        concepts
+                            .iter()
+                            .filter_map(|c| c.get("code").and_then(|v| v.as_str()))
+                            .map(|s| s.to_string()),
+                    );
+                }
+            }
+        }
+        if let Some(contains) = vs
+            .get("expansion")
+            .and_then(|e| e.get("contains"))
+            .and_then(|v| v.as_array())
+        {
+            codes.extend(
+                contains
+                    .iter()
+                    .filter_map(|c| c.get("code").and_then(|v| v.as_str()))
+                    .map(|s| s.to_string()),
+            );
+        }
+        if !codes.is_empty() {
+            self.add_value_set(ValueSet {
+                url: url.to_string(),
+                codes,
+            });
+        }
     }
 
     pub fn add_value_set(&mut self, value_set: ValueSet) {
