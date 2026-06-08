@@ -19,6 +19,7 @@
 - **Conditional operations** — Conditional create (`If-None-Exist`), update, and delete
 - **Resource filtering** — `_summary` (5 modes) and `_elements` support
 - **Validation** — Multi-phase validation with US Core and JP Core profile support
+- **US Core conformance** — Passes the Inferno US Core v7 & v8 FHIR API test suites (`examples/us-core-seed.json` for v7, `examples/us-core-v8-seed.json` for v8; the TLS test requires an HTTPS deployment)
 - **JP Core** — 44 HL7 FHIR JP Core v1.2.0 profiles, plus Japanese name search by kana (`name-kana`) / kanji (`name-kanji`) and JP insurance / medication search params
 - **Bulk data** — NDJSON `$export` and `$import`
 - **Plugin system** — Serve domain-specific SPAs at top-level paths (e.g. `/sample-patient-register/`)
@@ -420,6 +421,7 @@ Licensed under the [Apache License, Version 2.0](LICENSE).
 - Subscription（rest-hook 通知）
 - `_summary` / `_elements` によるリソースフィルタリング
 - US Core / JP Core プロファイルによるバリデーション
+- US Core 適合 — Inferno US Core v7 & v8 の FHIR API テストスイートをパス（v7: `examples/us-core-seed.json` / v8: `examples/us-core-v8-seed.json`。TLS テストは HTTPS デプロイが前提）
 - JP Core（HL7 FHIR JP Core v1.2.0）対応 — 氏名のかな検索（`name-kana`）・漢字検索（`name-kanji`）
 - NDJSON 形式での一括エクスポート / インポート
 - プラグインシステム（SPA をトップレベル URL で配信、例: `/sample-patient-register/`）
