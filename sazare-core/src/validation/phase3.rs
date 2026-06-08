@@ -17,11 +17,47 @@ impl Phase3Validator {
             .unwrap_or("");
 
         match resource_type {
-            "Patient" => Self::validate_patient(resource, registry),
-            "Observation" => Self::validate_observation(resource, registry),
-            "Task" => Self::validate_task(resource, registry),
-            _ => Ok(()),
+            "Patient" => Self::validate_patient(resource, registry)?,
+            "Observation" => Self::validate_observation(resource, registry)?,
+            "Task" => Self::validate_task(resource, registry)?,
+            _ => {}
         }
+
+        Self::validate_simple_bindings(resource, resource_type, registry)
+    }
+
+    /// Required bindings for simple `code`-typed fields, validated for every
+    /// resource of the given type (small, stable FHIR R4 value sets).
+    fn validate_simple_bindings(
+        resource: &Value,
+        resource_type: &str,
+        registry: &TerminologyRegistry,
+    ) -> Result<(), OperationOutcome> {
+        const BINDINGS: &[(&str, &str, &str)] = &[
+            ("Encounter", "status", "http://hl7.org/fhir/ValueSet/encounter-status"),
+            ("MedicationRequest", "status", "http://hl7.org/fhir/ValueSet/medicationrequest-status"),
+            ("MedicationRequest", "intent", "http://hl7.org/fhir/ValueSet/medicationrequest-intent"),
+            ("Procedure", "status", "http://hl7.org/fhir/ValueSet/event-status"),
+            ("Immunization", "status", "http://hl7.org/fhir/ValueSet/immunization-status"),
+            ("AllergyIntolerance", "criticality", "http://hl7.org/fhir/ValueSet/allergy-intolerance-criticality"),
+        ];
+
+        for (rt, field, value_set) in BINDINGS {
+            if *rt != resource_type {
+                continue;
+            }
+            if let Some(code) = resource.get(*field).and_then(|v| v.as_str())
+                && !registry.validate_code(value_set, code)
+            {
+                return Err(OperationOutcome::validation_error(format!(
+                    "Invalid {}.{} code: '{}'",
+                    resource_type, field, code
+                ))
+                .with_expression(vec![format!("{}.{}", resource_type, field)]));
+            }
+        }
+
+        Ok(())
     }
 
     fn validate_patient(
@@ -107,6 +143,25 @@ mod tests {
 
         let registry = TerminologyRegistry::new();
         assert!(Phase3Validator::validate(&patient, &registry).is_err());
+    }
+
+    #[test]
+    fn test_simple_required_bindings() {
+        let registry = TerminologyRegistry::new();
+        let check = |r: Value| Phase3Validator::validate(&r, &registry);
+
+        // Encounter.status
+        assert!(check(json!({"resourceType": "Encounter", "status": "finished"})).is_ok());
+        assert!(check(json!({"resourceType": "Encounter", "status": "bogus"})).is_err());
+        // MedicationRequest.status / intent
+        assert!(check(json!({"resourceType": "MedicationRequest", "status": "active", "intent": "order"})).is_ok());
+        assert!(check(json!({"resourceType": "MedicationRequest", "status": "active", "intent": "bogus"})).is_err());
+        // AllergyIntolerance.criticality
+        assert!(check(json!({"resourceType": "AllergyIntolerance", "criticality": "high"})).is_ok());
+        assert!(check(json!({"resourceType": "AllergyIntolerance", "criticality": "severe"})).is_err());
+        // Immunization.status
+        assert!(check(json!({"resourceType": "Immunization", "status": "completed"})).is_ok());
+        assert!(check(json!({"resourceType": "Immunization", "status": "final"})).is_err());
     }
 
     #[test]

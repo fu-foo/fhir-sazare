@@ -136,6 +136,40 @@ impl TerminologyRegistry {
             ],
         });
 
+        // Common required code bindings (small, stable FHIR R4 value sets).
+        let vs = |url: &str, codes: &[&str]| ValueSet {
+            url: url.to_string(),
+            codes: codes.iter().map(|c| c.to_string()).collect(),
+        };
+        registry.add_value_set(vs(
+            "http://hl7.org/fhir/ValueSet/encounter-status",
+            &["planned", "arrived", "triaged", "in-progress", "onleave", "finished",
+              "cancelled", "entered-in-error", "unknown"],
+        ));
+        registry.add_value_set(vs(
+            "http://hl7.org/fhir/ValueSet/medicationrequest-status",
+            &["active", "on-hold", "cancelled", "completed", "entered-in-error",
+              "stopped", "draft", "unknown"],
+        ));
+        registry.add_value_set(vs(
+            "http://hl7.org/fhir/ValueSet/medicationrequest-intent",
+            &["proposal", "plan", "order", "original-order", "reflex-order",
+              "filler-order", "instance-order", "option"],
+        ));
+        registry.add_value_set(vs(
+            "http://hl7.org/fhir/ValueSet/event-status",
+            &["preparation", "in-progress", "not-done", "on-hold", "stopped",
+              "completed", "entered-in-error", "unknown"],
+        ));
+        registry.add_value_set(vs(
+            "http://hl7.org/fhir/ValueSet/immunization-status",
+            &["completed", "entered-in-error", "not-done"],
+        ));
+        registry.add_value_set(vs(
+            "http://hl7.org/fhir/ValueSet/allergy-intolerance-criticality",
+            &["low", "high", "unable-to-assess"],
+        ));
+
         registry
     }
 
