@@ -201,6 +201,41 @@ async fn test_bulk_data_async_export() {
 }
 
 #[tokio::test]
+async fn test_metadata_advertises_bulk_export_operations() {
+    let (base_url, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let body: Value = client
+        .get(format!("{}/metadata", base_url))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+
+    let resources = body["rest"][0]["resource"].as_array().unwrap();
+    let op_def = |rtype: &str| -> Option<String> {
+        resources
+            .iter()
+            .find(|r| r["type"] == rtype)?
+            .get("operation")?
+            .as_array()?
+            .iter()
+            .find(|o| o["name"] == "export")
+            .and_then(|o| o["definition"].as_str())
+            .map(String::from)
+    };
+    assert_eq!(
+        op_def("Patient").as_deref(),
+        Some("http://hl7.org/fhir/uv/bulkdata/OperationDefinition/patient-export")
+    );
+    assert_eq!(
+        op_def("Group").as_deref(),
+        Some("http://hl7.org/fhir/uv/bulkdata/OperationDefinition/group-export")
+    );
+}
+
+#[tokio::test]
 async fn test_bulk_patient_and_group_export() {
     let (base_url, _dir) = start_test_server().await;
     let client = reqwest::Client::new();

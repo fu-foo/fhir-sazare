@@ -37,7 +37,19 @@ pub const SUPPORTED_RESOURCE_TYPES: &[&str] = &[
     "ServiceRequest",
     "Specimen",
     "QuestionnaireResponse",
+    "Group",
 ];
+
+/// Bulk Data `$export` operations declared on a resource type's CapabilityStatement
+/// entry, so Inferno's Bulk Data tests see patient/group-level export support.
+fn bulk_export_operations_for(resource_type: &str) -> Vec<Value> {
+    let def = match resource_type {
+        "Patient" => "http://hl7.org/fhir/uv/bulkdata/OperationDefinition/patient-export",
+        "Group" => "http://hl7.org/fhir/uv/bulkdata/OperationDefinition/group-export",
+        _ => return vec![],
+    };
+    vec![json!({"name": "export", "definition": def})]
+}
 
 /// US Core v7 & v8 profiles supported per resource type. Declared in
 /// `CapabilityStatement.rest.resource[].supportedProfile` so that Inferno's
@@ -213,6 +225,10 @@ pub async fn capability_statement(State(state): State<Arc<AppState>>) -> Json<Va
             profiles.extend(jp_core_profiles_for(rt));
             if !profiles.is_empty() {
                 entry["supportedProfile"] = json!(profiles);
+            }
+            let ops = bulk_export_operations_for(rt);
+            if !ops.is_empty() {
+                entry["operation"] = json!(ops);
             }
             entry
         })
