@@ -1,0 +1,156 @@
+{
+  "resourceType": "Bundle",
+  "type": "transaction",
+  "entry": [
+    {
+      "fullUrl": "urn:uuid:org-jp",
+      "resource": {
+        "resourceType": "Organization",
+        "meta": {
+          "profile": ["http://jpfhir.jp/fhir/core/StructureDefinition/JP_Organization"]
+        },
+        "identifier": [
+          {
+            "system": "http://jpfhir.jp/fhir/Insurer/StructureDefinition/JP_Organization_InsuranceMedicalInstitution",
+            "value": "1312345678"
+          }
+        ],
+        "active": true,
+        "name": "さざれ総合病院"
+      },
+      "request": {"method": "POST", "url": "Organization"}
+    },
+    {
+      "fullUrl": "urn:uuid:prac-jp",
+      "resource": {
+        "resourceType": "Practitioner",
+        "meta": {
+          "profile": ["http://jpfhir.jp/fhir/core/StructureDefinition/JP_Practitioner"]
+        },
+        "name": [
+          {
+            "extension": [{"url": "http://hl7.org/fhir/StructureDefinition/iso21090-EN-representation", "valueCode": "IDE"}],
+            "use": "usual", "text": "佐藤 花子", "family": "佐藤", "given": ["花子"]
+          },
+          {
+            "extension": [{"url": "http://hl7.org/fhir/StructureDefinition/iso21090-EN-representation", "valueCode": "SYL"}],
+            "use": "usual", "text": "サトウ ハナコ", "family": "サトウ", "given": ["ハナコ"]
+          }
+        ]
+      },
+      "request": {"method": "POST", "url": "Practitioner"}
+    },
+    {
+      "fullUrl": "urn:uuid:pat-jp",
+      "resource": {
+        "resourceType": "Patient",
+        "meta": {
+          "profile": ["http://jpfhir.jp/fhir/core/StructureDefinition/JP_Patient"]
+        },
+        "identifier": [
+          {
+            "system": "urn:oid:1.2.392.100495.20.3.51.1",
+            "value": "00000010"
+          }
+        ],
+        "name": [
+          {
+            "extension": [{"url": "http://hl7.org/fhir/StructureDefinition/iso21090-EN-representation", "valueCode": "IDE"}],
+            "use": "usual", "text": "山田 太郎", "family": "山田", "given": ["太郎"]
+          },
+          {
+            "extension": [{"url": "http://hl7.org/fhir/StructureDefinition/iso21090-EN-representation", "valueCode": "SYL"}],
+            "use": "usual", "text": "ヤマダ タロウ", "family": "ヤマダ", "given": ["タロウ"]
+          }
+        ],
+        "gender": "male",
+        "birthDate": "1970-01-01",
+        "address": [{"text": "東京都新宿区西新宿2-8-1"}],
+        "managingOrganization": {"reference": "urn:uuid:org-jp"}
+      },
+      "request": {"method": "POST", "url": "Patient"}
+    },
+    {
+      "fullUrl": "urn:uuid:enc-jp",
+      "resource": {
+        "resourceType": "Encounter",
+        "meta": {
+          "profile": ["http://jpfhir.jp/fhir/core/StructureDefinition/JP_Encounter"]
+        },
+        "status": "finished",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "AMB",
+          "display": "ambulatory"
+        },
+        "subject": {"reference": "urn:uuid:pat-jp"},
+        "participant": [{"individual": {"reference": "urn:uuid:prac-jp"}}],
+        "serviceProvider": {"reference": "urn:uuid:org-jp"}
+      },
+      "request": {"method": "POST", "url": "Encounter"}
+    },
+    {
+      "fullUrl": "urn:uuid:obs-jp",
+      "resource": {
+        "resourceType": "Observation",
+        "meta": {
+          "profile": ["http://jpfhir.jp/fhir/core/StructureDefinition/JP_Observation_BodyMeasurement"]
+        },
+        "status": "final",
+        "category": [
+          {
+            "coding": [{"system": "http://terminology.hl7.org/CodeSystem/observation-category", "code": "vital-signs", "display": "Vital Signs"}]
+          }
+        ],
+        "code": {
+          "coding": [{"system": "http://loinc.org", "code": "8302-2", "display": "Body height"}]
+        },
+        "subject": {"reference": "urn:uuid:pat-jp"},
+        "effectiveDateTime": "2025-12-01T09:00:00+09:00",
+        "valueQuantity": {"value": 172, "unit": "cm", "system": "http://unitsofmeasure.org", "code": "cm"}
+      },
+      "request": {"method": "POST", "url": "Observation"}
+    },
+    {
+      "fullUrl": "urn:uuid:cov-jp",
+      "resource": {
+        "resourceType": "Coverage",
+        "meta": {
+          "profile": ["http://jpfhir.jp/fhir/core/StructureDefinition/JP_Coverage"]
+        },
+        "status": "active",
+        "beneficiary": {"reference": "urn:uuid:pat-jp"},
+        "payor": [{"reference": "urn:uuid:org-jp"}]
+      },
+      "request": {"method": "POST", "url": "Coverage"}
+    },
+    {
+      "fullUrl": "urn:uuid:medreq-jp",
+      "resource": {
+        "resourceType": "MedicationRequest",
+        "meta": {
+          "profile": ["http://jpfhir.jp/fhir/core/StructureDefinition/JP_MedicationRequest"]
+        },
+        "identifier": [
+          {
+            "system": "http://jpfhir.jp/fhir/core/Common/IdSystem/resourceInstance-identifier",
+            "value": "rp-1"
+          },
+          {
+            "system": "http://jpfhir.jp/fhir/core/Common/IdSystem/JP_MedicationRequest_RP",
+            "value": "1"
+          }
+        ],
+        "status": "active",
+        "intent": "order",
+        "medicationCodeableConcept": {
+          "coding": [{"system": "urn:oid:1.2.392.200119.4.403.1", "code": "620000043", "display": "アムロジピン錠5mg"}]
+        },
+        "subject": {"reference": "urn:uuid:pat-jp"},
+        "authoredOn": "2025-12-01",
+        "requester": {"reference": "urn:uuid:prac-jp"}
+      },
+      "request": {"method": "POST", "url": "MedicationRequest"}
+    }
+  ]
+}
