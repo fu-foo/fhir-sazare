@@ -85,6 +85,44 @@ fn us_core_profiles_for(resource_type: &str) -> Vec<&'static str> {
     }
 }
 
+/// JP Core (HL7 FHIR JP Core v1.2.0) profiles supported per resource type,
+/// declared in `CapabilityStatement.rest.resource[].supportedProfile`. Mirrors
+/// the embedded set in `ProfileLoader::get_embedded_jp_core_profiles`.
+fn jp_core_profiles_for(resource_type: &str) -> Vec<&'static str> {
+    match resource_type {
+        "Patient" => vec!["http://jpfhir.jp/fhir/core/StructureDefinition/JP_Patient"],
+        "Organization" => vec!["http://jpfhir.jp/fhir/core/StructureDefinition/JP_Organization"],
+        "Practitioner" => vec!["http://jpfhir.jp/fhir/core/StructureDefinition/JP_Practitioner"],
+        "PractitionerRole" => vec!["http://jpfhir.jp/fhir/core/StructureDefinition/JP_PractitionerRole"],
+        "Encounter" => vec!["http://jpfhir.jp/fhir/core/StructureDefinition/JP_Encounter"],
+        "Condition" => vec![
+            "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Condition",
+            "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Condition_Diagnosis",
+        ],
+        "AllergyIntolerance" => vec!["http://jpfhir.jp/fhir/core/StructureDefinition/JP_AllergyIntolerance"],
+        "Immunization" => vec!["http://jpfhir.jp/fhir/core/StructureDefinition/JP_Immunization"],
+        "Medication" => vec!["http://jpfhir.jp/fhir/core/StructureDefinition/JP_Medication"],
+        "MedicationRequest" => vec!["http://jpfhir.jp/fhir/core/StructureDefinition/JP_MedicationRequest"],
+        "MedicationDispense" => vec!["http://jpfhir.jp/fhir/core/StructureDefinition/JP_MedicationDispense"],
+        "MedicationAdministration" => vec!["http://jpfhir.jp/fhir/core/StructureDefinition/JP_MedicationAdministration"],
+        "MedicationStatement" => vec!["http://jpfhir.jp/fhir/core/StructureDefinition/JP_MedicationStatement"],
+        "Coverage" => vec!["http://jpfhir.jp/fhir/core/StructureDefinition/JP_Coverage"],
+        "Location" => vec!["http://jpfhir.jp/fhir/core/StructureDefinition/JP_Location"],
+        "Observation" => vec![
+            "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Observation_BodyMeasurement",
+            "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Observation_LabResult",
+            "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Observation_PhysicalExam",
+            "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Observation_SocialHistory",
+            "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Observation_VitalSigns",
+        ],
+        "DiagnosticReport" => vec!["http://jpfhir.jp/fhir/core/StructureDefinition/JP_DiagnosticReport_LabResult"],
+        "FamilyMemberHistory" => vec!["http://jpfhir.jp/fhir/core/StructureDefinition/JP_FamilyMemberHistory"],
+        "Procedure" => vec!["http://jpfhir.jp/fhir/core/StructureDefinition/JP_Procedure"],
+        "Specimen" => vec!["http://jpfhir.jp/fhir/core/StructureDefinition/JP_Specimen_Common"],
+        _ => vec![],
+    }
+}
+
 /// Health check (GET /health)
 pub async fn health_check() -> impl IntoResponse {
     Json(json!({
@@ -118,7 +156,8 @@ pub async fn capability_statement(State(state): State<Arc<AppState>>) -> Json<Va
                 "interaction": interactions,
                 "searchParam": get_search_params_from_registry(&state.search_param_registry, rt),
             });
-            let profiles = us_core_profiles_for(rt);
+            let mut profiles = us_core_profiles_for(rt);
+            profiles.extend(jp_core_profiles_for(rt));
             if !profiles.is_empty() {
                 entry["supportedProfile"] = json!(profiles);
             }
