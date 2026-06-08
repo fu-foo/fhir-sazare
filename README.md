@@ -18,7 +18,8 @@
 - **Search** — Parameter-based search, chain search (`subject:Patient.name=...`), `_include`, `_revinclude`
 - **Conditional operations** — Conditional create (`If-None-Exist`), update, and delete
 - **Resource filtering** — `_summary` (5 modes) and `_elements` support
-- **Validation** — Multi-phase validation with US-Core profile support
+- **Validation** — Multi-phase validation with US Core and JP Core profile support
+- **JP Core** — HL7 FHIR JP Core v1.2.0 profiles, plus Japanese name search by kana (`name-kana`) and kanji (`name-kanji`)
 - **Bulk data** — NDJSON `$export` and `$import`
 - **Plugin system** — Serve domain-specific SPAs at top-level paths (e.g. `/sample-patient-register/`)
 - **Web dashboard** — Browser-based server monitoring at `/`
@@ -171,6 +172,10 @@ curl "http://localhost:8080/Patient?_count=10&_offset=0"
 # Summary and elements
 curl "http://localhost:8080/Patient?_summary=true"
 curl "http://localhost:8080/Patient?_elements=name,gender"
+
+# JP Core: search Japanese names by kana (reading) or kanji
+curl "http://localhost:8080/Patient?name-kana=ヤマダ"
+curl "http://localhost:8080/Patient?name-kanji=山田"
 ```
 
 ### Chain Search
@@ -371,7 +376,7 @@ cargo run -- --config path/to/config.yaml
 
 ## Roadmap
 
-- [ ] JP-Core profile validation
+- [x] JP Core profile validation
 - [ ] Multi-level chain search
 - [ ] Subscription via WebSocket
 
@@ -414,7 +419,8 @@ Licensed under the [Apache License, Version 2.0](LICENSE).
 - Patient `$everything` オペレーション
 - Subscription（rest-hook 通知）
 - `_summary` / `_elements` によるリソースフィルタリング
-- US-Core プロファイルによるバリデーション
+- US Core / JP Core プロファイルによるバリデーション
+- JP Core（HL7 FHIR JP Core v1.2.0）対応 — 氏名のかな検索（`name-kana`）・漢字検索（`name-kanji`）
 - NDJSON 形式での一括エクスポート / インポート
 - プラグインシステム（SPA をトップレベル URL で配信、例: `/sample-patient-register/`）
 - ブラウザで確認できる Web ダッシュボード
