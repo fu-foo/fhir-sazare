@@ -519,6 +519,7 @@ mod tests {
             plugin_names: Vec::new(),
             ws_registry: Arc::new(crate::websocket::WsRegistry::new()),
             webhook: Arc::new(crate::webhook::WebhookManager::new(Default::default())),
+            export_jobs: Arc::new(crate::bulk_export::ExportJobs::new()),
         })
     }
 

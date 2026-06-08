@@ -1,7 +1,8 @@
-//! Bulk data import/export
+//! Bulk data import
 //!
-//! GET  /$export — export resources as NDJSON
 //! POST /$import — import resources from NDJSON body
+//!
+//! (Bulk Data IG `$export` lives in [`crate::bulk_export`].)
 
 use crate::audit::{self, AuditContext};
 use crate::auth::AuthUser;
@@ -9,106 +10,15 @@ use crate::handlers::merge_version_meta;
 use crate::AppState;
 
 use axum::{
-    extract::{ConnectInfo, Query, State},
-    http::{header, StatusCode},
+    extract::{ConnectInfo, State},
+    http::StatusCode,
     response::IntoResponse,
 };
 use sazare_core::validation::validate_resource_all_phases;
 use sazare_store::IndexBuilder;
-use serde::Deserialize;
 use serde_json::{json, Value};
 use std::net::SocketAddr;
 use std::sync::Arc;
-
-/// Query parameters for $export
-#[derive(Deserialize, Default)]
-pub struct ExportParams {
-    /// Comma-separated resource types to export (e.g. "Patient,Observation")
-    _type: Option<String>,
-}
-
-/// GET /$export — export all resources as NDJSON
-pub async fn export(
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    State(state): State<Arc<AppState>>,
-    auth_user: Option<axum::extract::Extension<AuthUser>>,
-    Query(params): Query<ExportParams>,
-) -> impl IntoResponse {
-    let user_id = auth_user.map(|u| u.user_id.clone());
-    let audit_ctx = AuditContext::new(user_id, addr.ip().to_string());
-
-    // Parse _type filter
-    let type_filter: Option<Vec<String>> = params._type.as_ref().map(|t| {
-        t.split(',')
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect()
-    });
-
-    let mut ndjson = String::new();
-    let mut count: usize = 0;
-
-    if let Some(ref types) = type_filter {
-        // Export specific resource types
-        for rt in types {
-            match state.store.list_all(Some(rt)) {
-                Ok(resources) => {
-                    for (_rt, _id, data) in resources {
-                        if let Ok(line) = std::str::from_utf8(&data) {
-                            ndjson.push_str(line);
-                            ndjson.push('\n');
-                            count += 1;
-                        }
-                    }
-                }
-                Err(e) => {
-                    let outcome = json!({
-                        "resourceType": "OperationOutcome",
-                        "issue": [{"severity": "error", "code": "exception",
-                            "diagnostics": format!("Export failed: {}", e)}]
-                    });
-                    return (StatusCode::INTERNAL_SERVER_ERROR, axum::Json(outcome)).into_response();
-                }
-            }
-        }
-    } else {
-        // Export all resources
-        match state.store.list_all(None) {
-            Ok(resources) => {
-                for (_rt, _id, data) in resources {
-                    if let Ok(line) = std::str::from_utf8(&data) {
-                        ndjson.push_str(line);
-                        ndjson.push('\n');
-                        count += 1;
-                    }
-                }
-            }
-            Err(e) => {
-                let outcome = json!({
-                    "resourceType": "OperationOutcome",
-                    "issue": [{"severity": "error", "code": "exception",
-                        "diagnostics": format!("Export failed: {}", e)}]
-                });
-                return (StatusCode::INTERNAL_SERVER_ERROR, axum::Json(outcome)).into_response();
-            }
-        }
-    }
-
-    audit::log_operation_success(
-        &audit_ctx,
-        "EXPORT",
-        "Bundle",
-        &format!("{} resources", count),
-        &state.audit,
-    );
-
-    (
-        StatusCode::OK,
-        [(header::CONTENT_TYPE, "application/ndjson")],
-        ndjson,
-    )
-        .into_response()
-}
 
 /// POST /$import — import resources from NDJSON body
 pub async fn import(

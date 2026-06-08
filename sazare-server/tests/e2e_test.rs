@@ -34,6 +34,7 @@ async fn start_test_server() -> (String, TempDir) {
         plugin_names: Vec::new(),
         ws_registry: Arc::new(sazare_server::websocket::WsRegistry::new()),
         webhook: Arc::new(sazare_server::webhook::WebhookManager::new(Default::default())),
+        export_jobs: Arc::new(sazare_server::bulk_export::ExportJobs::new()),
     });
 
     let app = build_router(state);
@@ -102,6 +103,7 @@ async fn test_webhook_task_completed_fires() {
         plugin_names: Vec::new(),
         ws_registry: Arc::new(sazare_server::websocket::WsRegistry::new()),
         webhook,
+        export_jobs: Arc::new(sazare_server::bulk_export::ExportJobs::new()),
     });
     let app = build_router(state);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -131,6 +133,95 @@ async fn test_webhook_task_completed_fires() {
         .unwrap();
     assert_eq!(received["resourceType"], "Task");
     assert_eq!(received["status"], "completed");
+}
+
+#[tokio::test]
+async fn test_bulk_data_async_export() {
+    let (base_url, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+
+    create(&client, &base_url, "Patient", &json!({"resourceType": "Patient"})).await;
+    create(
+        &client,
+        &base_url,
+        "Observation",
+        &json!({"resourceType": "Observation", "status": "final", "code": {"text": "x"}}),
+    )
+    .await;
+
+    // Kick-off with Prefer: respond-async -> 202 + Content-Location.
+    let resp = client
+        .get(format!("{}/$export", base_url))
+        .header("Prefer", "respond-async")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 202);
+    let status_url = resp
+        .headers()
+        .get("content-location")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
+
+    // Poll until the manifest is ready.
+    let manifest = loop {
+        let resp = client.get(&status_url).send().await.unwrap();
+        if resp.status() == 200 {
+            break resp.json::<Value>().await.unwrap();
+        }
+        assert_eq!(resp.status(), 202, "in-progress status should be 202");
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    };
+    assert!(manifest["transactionTime"].is_string());
+    assert_eq!(manifest["request"], format!("{}/$export", base_url));
+    let output = manifest["output"].as_array().unwrap();
+    let types: Vec<&str> = output.iter().map(|o| o["type"].as_str().unwrap()).collect();
+    assert!(types.contains(&"Patient") && types.contains(&"Observation"));
+
+    // Download one NDJSON file.
+    let patient_url = output
+        .iter()
+        .find(|o| o["type"] == "Patient")
+        .unwrap()["url"]
+        .as_str()
+        .unwrap();
+    let resp = client.get(patient_url).send().await.unwrap();
+    assert_eq!(resp.status(), 200);
+    let body = resp.text().await.unwrap();
+    assert!(body.lines().next().unwrap().contains("\"resourceType\":\"Patient\""));
+
+    // DELETE the job.
+    let resp = client.delete(&status_url).send().await.unwrap();
+    assert_eq!(resp.status(), 202);
+    // After deletion the status URL is gone.
+    let resp = client.get(&status_url).send().await.unwrap();
+    assert_eq!(resp.status(), 404);
+}
+
+#[tokio::test]
+async fn test_bulk_export_sync_fallback_and_bad_format() {
+    let (base_url, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    create(&client, &base_url, "Patient", &json!({"resourceType": "Patient"})).await;
+
+    // No Prefer header -> synchronous NDJSON.
+    let resp = client.get(format!("{}/$export", base_url)).send().await.unwrap();
+    assert_eq!(resp.status(), 200);
+    assert_eq!(
+        resp.headers()["content-type"],
+        "application/fhir+ndjson"
+    );
+
+    // Unsupported _outputFormat is rejected.
+    let resp = client
+        .get(format!("{}/$export?_outputFormat=csv", base_url))
+        .header("Prefer", "respond-async")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 400);
 }
 
 #[tokio::test]

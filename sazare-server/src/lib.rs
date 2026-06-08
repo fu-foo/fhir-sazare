@@ -5,6 +5,7 @@
 pub mod audit;
 pub mod auth;
 pub mod bulk;
+pub mod bulk_export;
 pub mod bundle;
 pub mod compartment_check;
 pub mod config;
@@ -53,6 +54,8 @@ pub struct AppState {
     pub ws_registry: Arc<websocket::WsRegistry>,
     /// Lifecycle webhook dispatcher (BundleCreated / TaskCompleted)
     pub webhook: Arc<webhook::WebhookManager>,
+    /// In-flight async Bulk Data export jobs
+    pub export_jobs: Arc<bulk_export::ExportJobs>,
 }
 
 /// Conditional create result
@@ -129,8 +132,13 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/$browse/{resource_type}/{id}", get(dashboard::browse_read))
         // Plugin listing
         .route("/$plugins", get(plugins::list_plugins))
-        // Bulk operations
-        .route("/$export", get(bulk::export))
+        // Bulk operations — async Bulk Data IG export (with sync fallback) + import
+        .route("/$export", get(bulk_export::export))
+        .route(
+            "/$export-status/{job_id}",
+            get(bulk_export::export_status).delete(bulk_export::export_delete),
+        )
+        .route("/$export-file/{job_id}/{resource_type}", get(bulk_export::export_file))
         .route("/$import", post(bulk::import))
         // Admin: rebuild search index
         .route("/$reindex", post(handlers::reindex::reindex))

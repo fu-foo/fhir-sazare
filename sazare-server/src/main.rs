@@ -122,6 +122,7 @@ async fn main() {
         webhook: Arc::new(sazare_server::webhook::WebhookManager::new(
             config.webhook.clone(),
         )),
+        export_jobs: Arc::new(sazare_server::bulk_export::ExportJobs::new()),
     });
 
     tracing::info!(

@@ -21,7 +21,7 @@
 - **Validation** — Multi-phase validation with US Core and JP Core profile support
 - **US Core conformance** — Passes the Inferno US Core v7 & v8 FHIR API test suites (`examples/us-core-seed.json` for v7, `examples/us-core-v8-seed.json` for v8; the TLS test requires an HTTPS deployment)
 - **JP Core** — 44 HL7 FHIR JP Core v1.2.0 profiles, plus Japanese name search by kana (`name-kana`) / kanji (`name-kanji`) and JP insurance / medication search params
-- **Bulk data** — NDJSON `$export` and `$import`
+- **Bulk data** — NDJSON `$import`, and `$export` both synchronous and async (FHIR Bulk Data Access IG: `Prefer: respond-async` kick-off, status poll, manifest, `_type`/`_since`/`_outputFormat`)
 - **Plugin system** — Serve domain-specific SPAs at top-level paths (e.g. `/sample-patient-register/`)
 - **Web dashboard** — Browser-based server monitoring at `/`
 - **Audit logging** — All operations recorded to dedicated SQLite database
@@ -140,7 +140,9 @@ If no `config.yaml` is found, the server runs with sensible defaults (port 8080,
 | Method | Path | Description |
 |--------|------|-------------|
 | `POST` | `/` | Bundle (transaction / batch) |
-| `GET` | `/$export` | Bulk export (NDJSON) |
+| `GET` | `/$export` | Bulk export — sync NDJSON, or async with `Prefer: respond-async` |
+| `GET`/`DELETE` | `/$export-status/{job}` | Async export job status / cancel |
+| `GET` | `/$export-file/{job}/{type}` | Download an async export NDJSON file |
 | `POST` | `/$import` | Bulk import (NDJSON) |
 
 ### Dashboard
@@ -271,6 +273,8 @@ curl -X POST http://localhost:8080/ \
 
 ### Export
 
+Synchronous (returns NDJSON directly):
+
 ```bash
 # Export all resources
 curl http://localhost:8080/\$export
@@ -278,6 +282,26 @@ curl http://localhost:8080/\$export
 # Export specific types
 curl "http://localhost:8080/\$export?_type=Patient,Observation"
 ```
+
+Asynchronous (FHIR Bulk Data Access IG — kick-off / poll / download):
+
+```bash
+# 1. Kick-off: returns 202 with a Content-Location status URL
+curl -i "http://localhost:8080/\$export?_since=2024-01-01T00:00:00Z" \
+  -H "Prefer: respond-async"
+
+# 2. Poll the status URL: 202 while running, 200 with a manifest when done
+curl http://localhost:8080/\$export-status/<job-id>
+#    -> { "transactionTime": ..., "output": [{ "type": "Patient", "url": ... }], ... }
+
+# 3. Download each NDJSON file from the manifest's output URLs
+curl http://localhost:8080/\$export-file/<job-id>/Patient
+
+# Cancel a job
+curl -X DELETE http://localhost:8080/\$export-status/<job-id>
+```
+
+Supports `_type`, `_since`, and `_outputFormat` (NDJSON).
 
 ### Import
 
