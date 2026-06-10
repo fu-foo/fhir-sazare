@@ -53,6 +53,17 @@ cargo build --release
 
 The server starts at `http://localhost:8080` with default settings (no authentication).
 
+**Just want to look around?** Run with sample data and open the dashboard automatically:
+
+```bash
+./target/release/sazare-server --demo --open
+```
+
+`--demo` pre-loads a few patients with vitals, a condition, an encounter, and a
+prescription; `--open` launches the built-in dashboard in your browser. A single
+binary — no Docker, no JVM, no setup. (The dashboard also has a one-click "Load
+sample data" button and a search builder, and speaks English or Japanese.)
+
 ### Verify
 
 ```bash
