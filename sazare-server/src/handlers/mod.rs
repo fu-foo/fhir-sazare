@@ -24,17 +24,45 @@ pub fn extract_version(resource: &Value) -> Option<String> {
         .map(|s| s.to_string())
 }
 
-/// Build response with ETag header
+/// Build response with ETag + Last-Modified headers.
 pub fn response_with_etag(status: StatusCode, resource: Value) -> impl IntoResponse {
-    let etag = extract_version(&resource)
-        .map(|v| format!("W/\"{}\"", v))
-        .unwrap_or_default();
+    response_with_headers(status, resource, None)
+}
 
+/// Convert an RFC3339 `meta.lastUpdated` into an HTTP-date for `Last-Modified`.
+fn http_date(resource: &Value) -> Option<String> {
+    let raw = resource
+        .get("meta")
+        .and_then(|m| m.get("lastUpdated"))
+        .and_then(|v| v.as_str())?;
+    let dt = chrono::DateTime::parse_from_rfc3339(raw).ok()?;
+    Some(dt.with_timezone(&chrono::Utc).format("%a, %d %b %Y %H:%M:%S GMT").to_string())
+}
+
+/// Build a response carrying `ETag`, `Last-Modified`, FHIR content type, and an
+/// optional `Location` header (used on create/update so clients learn the
+/// server-assigned id and version URL).
+pub fn response_with_headers(
+    status: StatusCode,
+    resource: Value,
+    location: Option<String>,
+) -> impl IntoResponse {
     let mut headers = HeaderMap::new();
-    if !etag.is_empty()
+
+    if let Some(etag) = extract_version(&resource).map(|v| format!("W/\"{}\"", v))
         && let Ok(val) = etag.parse()
     {
         headers.insert(header::ETAG, val);
+    }
+    if let Some(lm) = http_date(&resource)
+        && let Ok(val) = lm.parse()
+    {
+        headers.insert(header::LAST_MODIFIED, val);
+    }
+    if let Some(loc) = location
+        && let Ok(val) = loc.parse()
+    {
+        headers.insert(header::LOCATION, val);
     }
     headers.insert(
         header::CONTENT_TYPE,
@@ -42,6 +70,27 @@ pub fn response_with_etag(status: StatusCode, resource: Value) -> impl IntoRespo
     );
 
     (status, headers, Json(resource))
+}
+
+/// Build the `Location`/`Content-Location` URL for a versioned resource.
+pub fn version_location(base_url: &str, resource_type: &str, id: &str, version_id: &str) -> String {
+    format!("{base_url}/{resource_type}/{id}/_history/{version_id}")
+}
+
+/// Reconstruct the externally-visible base URL (scheme + authority) from request
+/// headers, honoring `X-Forwarded-Proto`/`X-Forwarded-Host`.
+pub fn base_url_from_headers(headers: &HeaderMap) -> String {
+    let scheme = headers
+        .get("x-forwarded-proto")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.split(',').next().unwrap_or(s).trim().to_string())
+        .unwrap_or_else(|| "http".to_string());
+    let host = headers
+        .get("x-forwarded-host")
+        .or_else(|| headers.get(header::HOST))
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("localhost");
+    format!("{scheme}://{host}")
 }
 
 /// Merge versionId + lastUpdated into a resource's `meta` object, preserving

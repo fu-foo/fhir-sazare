@@ -130,7 +130,20 @@ pub(super) async fn process_transaction(
                 new_id
             }
             "PUT" | "DELETE" => match &entry.id {
-                Some(id) => id.clone(),
+                Some(id) => {
+                    // A PUT entry may be referenced by sibling entries via its
+                    // urn:uuid fullUrl — register it so those references resolve
+                    // (previously only POST entries were added to the map).
+                    if entry.method == "PUT"
+                        && let Some(ref full_url) = entry.full_url
+                    {
+                        ref_map.insert(
+                            full_url.clone(),
+                            format!("{}/{}", entry.resource_type, id),
+                        );
+                    }
+                    id.clone()
+                }
                 None => {
                     let outcome = OperationOutcome::error(
                         IssueType::Required,
@@ -156,6 +169,7 @@ pub(super) async fn process_transaction(
 
     // Phase 4: Execute all operations in a single SQLite transaction
     let mut resources_for_index: Vec<(String, String, Value)> = Vec::new();
+    let mut deleted_for_index: Vec<(String, String)> = Vec::new();
     let mut response_entries: Vec<Value> = Vec::with_capacity(entries.len());
 
     #[allow(clippy::result_large_err)]
@@ -252,6 +266,7 @@ pub(super) async fn process_transaction(
                 }
                 "DELETE" => {
                     let _existed = ops.delete(resource_type, id)?;
+                    deleted_for_index.push((resource_type.clone(), id.clone()));
                     response_entries.push(json!({
                         "response": { "status": "204 No Content" }
                     }));
@@ -274,6 +289,11 @@ pub(super) async fn process_transaction(
     // Phase 5: Update indices (outside SQLite transaction — separate DB)
     {
         let index = state.index.lock().await;
+        // Drop index entries for deleted resources — otherwise searches keep
+        // matching them and Bundle.total / _summary=count are inflated.
+        for (resource_type, id) in &deleted_for_index {
+            let _ = index.remove_index(resource_type, id);
+        }
         for (resource_type, id, resource) in &resources_for_index {
             let _ = index.remove_index(resource_type, id);
             let indices = IndexBuilder::extract_indices_with_registry(&state.search_param_registry, resource_type, resource);

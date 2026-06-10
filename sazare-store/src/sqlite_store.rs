@@ -158,19 +158,78 @@ impl SqliteStore {
 
         let conn = self.conn();
 
-        // Save current version
-        conn.execute(
+        // Write the current-version row and the history row atomically — a crash
+        // (or error) between them must never leave a current resource whose
+        // version has no history entry (which would 404 on a vread of the live
+        // version). The single writer mutex makes the unchecked transaction safe.
+        let tx = conn.unchecked_transaction()?;
+        tx.execute(
             "INSERT OR REPLACE INTO resources (resource_type, id, value) VALUES (?, ?, ?)",
             params![resource_type, id, value],
         )?;
-
-        // Save to history
-        conn.execute(
+        tx.execute(
             "INSERT OR REPLACE INTO resource_history (resource_type, id, version_id, value) VALUES (?, ?, ?, ?)",
             params![resource_type, id, version_id, value],
         )?;
+        tx.commit()?;
 
         Ok(())
+    }
+
+    /// Compare-and-swap write: persist `data` as `new_version` only if the
+    /// resource's current stored version still matches `expected_current`
+    /// (`Some(v)` for an update of a resource last seen at version `v`, `None`
+    /// for a create that requires the resource to be absent). Returns `false`
+    /// without writing when the precondition fails — the caller maps that to a
+    /// 409/412. The read-compare-write happens under the single writer lock, so
+    /// two concurrent updates can no longer both bump to the same version and
+    /// clobber each other's history (a lost update).
+    pub fn put_with_version_cas(
+        &self,
+        resource_type: &str,
+        id: &str,
+        expected_current: Option<&str>,
+        new_version: &str,
+        data: &[u8],
+    ) -> Result<bool> {
+        let value = std::str::from_utf8(data)
+            .map_err(|e| crate::error::StoreError::Other(format!("Invalid UTF-8: {}", e)))?;
+
+        let conn = self.conn();
+        let tx = conn.unchecked_transaction()?;
+
+        let current: Option<String> = tx
+            .query_row(
+                "SELECT json_extract(value, '$.meta.versionId') FROM resources \
+                 WHERE resource_type = ? AND id = ?",
+                params![resource_type, id],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .or_else(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => Ok(None),
+                other => Err(other),
+            })?;
+
+        let ok = match (expected_current, current.as_deref()) {
+            (None, None) => true,                       // create, still absent
+            (None, Some(_)) => false,                   // create, but now exists
+            (Some(exp), Some(cur)) => exp == cur,       // update, version unchanged
+            (Some(_), None) => false,                   // update, but vanished
+        };
+        if !ok {
+            return Ok(false);
+        }
+
+        tx.execute(
+            "INSERT OR REPLACE INTO resources (resource_type, id, value) VALUES (?, ?, ?)",
+            params![resource_type, id, value],
+        )?;
+        tx.execute(
+            "INSERT OR REPLACE INTO resource_history (resource_type, id, version_id, value) VALUES (?, ?, ?, ?)",
+            params![resource_type, id, new_version, value],
+        )?;
+        tx.commit()?;
+        Ok(true)
     }
 
     /// Get a specific version
@@ -209,8 +268,12 @@ impl SqliteStore {
     pub fn list_versions(&self, resource_type: &str, id: &str) -> Result<Vec<String>> {
         let conn = self.reader();
 
+        // Order numerically: version_id is TEXT, so a lexical sort would put
+        // "10" before "2". CAST to integer for the common monotonic-integer
+        // versioning scheme (descending = newest first).
         let mut stmt = conn.prepare(
-            "SELECT version_id FROM resource_history WHERE resource_type = ? AND id = ? ORDER BY version_id"
+            "SELECT version_id FROM resource_history WHERE resource_type = ? AND id = ? \
+             ORDER BY CAST(version_id AS INTEGER) DESC"
         )?;
         let rows = stmt.query_map(params![resource_type, id], |row| row.get::<_, String>(0))?;
 
@@ -414,6 +477,36 @@ mod tests {
 
         let retrieved = store.get("Patient", "123").unwrap();
         assert_eq!(retrieved, Some(data.to_vec()));
+    }
+
+    #[test]
+    fn test_cas_prevents_lost_update() {
+        let store = SqliteStore::open(":memory:").unwrap();
+        let v1 = br#"{"resourceType":"Patient","id":"1","meta":{"versionId":"1"}}"#;
+        store.put_with_version("Patient", "1", "1", v1).unwrap();
+
+        // Two writers both read version "1" and try to write "2".
+        let a = br#"{"resourceType":"Patient","id":"1","meta":{"versionId":"2"},"x":"A"}"#;
+        let b = br#"{"resourceType":"Patient","id":"1","meta":{"versionId":"2"},"x":"B"}"#;
+
+        // First CAS against expected current "1" succeeds.
+        assert!(store.put_with_version_cas("Patient", "1", Some("1"), "2", a).unwrap());
+        // Second CAS still expecting "1" must fail — current is now "2".
+        assert!(!store.put_with_version_cas("Patient", "1", Some("1"), "2", b).unwrap());
+
+        // The winner's content survived.
+        let cur = store.get("Patient", "1").unwrap().unwrap();
+        assert!(String::from_utf8(cur).unwrap().contains("\"A\""));
+    }
+
+    #[test]
+    fn test_cas_create_requires_absent() {
+        let store = SqliteStore::open(":memory:").unwrap();
+        let v1 = br#"{"resourceType":"Patient","id":"1","meta":{"versionId":"1"}}"#;
+        // create (expected absent) on empty store → ok
+        assert!(store.put_with_version_cas("Patient", "1", None, "1", v1).unwrap());
+        // create again with expected-absent → refused (already exists)
+        assert!(!store.put_with_version_cas("Patient", "1", None, "1", v1).unwrap());
     }
 
     #[test]

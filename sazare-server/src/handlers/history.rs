@@ -1,6 +1,6 @@
 use axum::{
     extract::{Path, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Json, Response},
 };
 use sazare_core::{operation_outcome::IssueType, OperationOutcome};
@@ -8,12 +8,13 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 
 use crate::AppState;
-use super::response_with_etag;
+use super::{base_url_from_headers, response_with_etag};
 
 /// Get history (GET /{resource_type}/{id}/_history)
 pub async fn history(
     State(state): State<Arc<AppState>>,
     Path((resource_type, id)): Path<(String, String)>,
+    headers: HeaderMap,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     let versions = state
         .store
@@ -25,16 +26,31 @@ pub async fn history(
             )
         })?;
 
+    let base = base_url_from_headers(&headers);
     let mut entries = Vec::new();
     for ver in versions {
         if let Ok(Some(data)) = state.store.get_version(&resource_type, &id, &ver)
             && let Ok(resource) = serde_json::from_slice::<Value>(&data)
         {
+            let last_updated = resource
+                .get("meta")
+                .and_then(|m| m.get("lastUpdated"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            // Version "1" was the create (POST); later versions are updates (PUT).
+            // entry.response is mandatory in a history bundle (invariant bdl-4).
+            let method = if ver == "1" { "POST" } else { "PUT" };
             entries.push(json!({
+                "fullUrl": format!("{base}/{resource_type}/{id}"),
                 "resource": resource,
                 "request": {
-                    "method": "GET",
-                    "url": format!("{}/{}", resource_type, id)
+                    "method": method,
+                    "url": format!("{resource_type}/{id}")
+                },
+                "response": {
+                    "status": "200",
+                    "etag": format!("W/\"{ver}\""),
+                    "lastModified": last_updated
                 }
             }));
         }
@@ -44,6 +60,10 @@ pub async fn history(
         "resourceType": "Bundle",
         "type": "history",
         "total": entries.len(),
+        "link": [{
+            "relation": "self",
+            "url": format!("{base}/{resource_type}/{id}/_history")
+        }],
         "entry": entries
     })))
 }

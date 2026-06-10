@@ -17,7 +17,10 @@ use crate::auth::AuthUser;
 use crate::compartment_check::check_compartment_access;
 use crate::subscription::{self, SubscriptionManager};
 use crate::{AppState, ConditionalResult};
-use super::{response_with_etag, extract_version, update_search_index};
+use super::{
+    base_url_from_headers, extract_version, response_with_etag, response_with_headers,
+    update_search_index, version_location,
+};
 
 /// Extract headers and JSON body from a Request
 async fn extract_body(request: Request) -> Result<(axum::http::HeaderMap, Value), (StatusCode, Json<Value>)> {
@@ -118,11 +121,38 @@ pub async fn create(
         ));
     }
 
-    // Generate ID
-    let id = resource
-        .id
+    // Assign the resource id. A client-supplied id is honoured (the server also
+    // ingests pre-identified resources via bundles/import), but it must NOT
+    // silently overwrite an existing resource — that destroys the current
+    // version and its history. If the id already exists, reject with 409 and
+    // direct the client to PUT (update) instead.
+    let client_supplied_id = resource.id.clone();
+    let id = client_supplied_id
         .clone()
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    if client_supplied_id.is_some() {
+        match state.store.get(&resource_type, &id) {
+            Ok(Some(_)) => {
+                return Err((
+                    StatusCode::CONFLICT,
+                    Json(json!(OperationOutcome::error(
+                        IssueType::Conflict,
+                        format!(
+                            "{}/{} already exists; use PUT to update it",
+                            resource_type, id
+                        )
+                    ))),
+                ));
+            }
+            Ok(None) => {}
+            Err(e) => {
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!(OperationOutcome::storage_error(e.to_string()))),
+                ))
+            }
+        }
+    }
     resource.id = Some(id.clone());
 
     // Set metadata — preserve caller-provided fields (profile, source, tag, ...)
@@ -182,7 +212,8 @@ pub async fn create(
     // Lifecycle webhook: fire if this is a completed Task.
     state.webhook.maybe_task_completed(&resource_value);
 
-    Ok(response_with_etag(StatusCode::CREATED, resource_value).into_response())
+    let location = version_location(&base_url_from_headers(&headers), &resource_type, &id, &version_id);
+    Ok(response_with_headers(StatusCode::CREATED, resource_value, Some(location)).into_response())
 }
 
 /// Read resource (GET /{resource_type}/{id})
@@ -262,8 +293,10 @@ pub async fn update(
         .and_then(|v| v.to_str().ok())
         .map(|s| s.trim_matches('"').trim_start_matches("W/\"").trim_end_matches('"').to_string());
 
-    // Get existing resource and compute new version
-    let new_version = match state.store.get(&resource_type, &id) {
+    // If-Match without a matching resource → 412. Get existing resource and
+    // compute the new version, tracking whether this PUT creates a new resource
+    // (update-as-create) so we can return the correct 201 vs 200 status.
+    let (new_version, is_create, expected_current) = match state.store.get(&resource_type, &id) {
         Ok(Some(data)) => {
             let existing: Value = serde_json::from_slice(&data).unwrap_or_default();
 
@@ -274,14 +307,15 @@ pub async fn update(
                 .get("meta")
                 .and_then(|m| m.get("versionId"))
                 .and_then(|v| v.as_str())
-                .unwrap_or("0");
+                .unwrap_or("0")
+                .to_string();
 
-            // If-Match check
+            // If-Match check (precondition) → 412 Precondition Failed on mismatch.
             if let Some(ref expected) = if_match
-                && expected != current_ver_str
+                && expected != &current_ver_str
             {
                 return Err((
-                    StatusCode::CONFLICT,
+                    StatusCode::PRECONDITION_FAILED,
                     Json(json!(OperationOutcome::error(
                         IssueType::Conflict,
                         format!(
@@ -293,9 +327,21 @@ pub async fn update(
             }
 
             let current_ver: i32 = current_ver_str.parse().unwrap_or(0);
-            (current_ver + 1).to_string()
+            ((current_ver + 1).to_string(), false, Some(current_ver_str))
         }
-        Ok(None) => "1".to_string(),
+        Ok(None) => {
+            // If-Match supplied but nothing to match → precondition failed.
+            if if_match.is_some() {
+                return Err((
+                    StatusCode::PRECONDITION_FAILED,
+                    Json(json!(OperationOutcome::error(
+                        IssueType::Conflict,
+                        "If-Match supplied but resource does not exist"
+                    ))),
+                ));
+            }
+            ("1".to_string(), true, None)
+        }
         Err(e) => {
             return Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -325,15 +371,35 @@ pub async fn update(
         update_search_index(&index, &state.search_param_registry, &resource_type, &id, &resource_value);
     }
 
-    state
+    // Compare-and-swap on the version we read: if a concurrent writer changed
+    // the resource since, the write is refused (no lost update). On refusal,
+    // restore the index to reflect the actually-stored resource before returning.
+    let written = state
         .store
-        .put_with_version(&resource_type, &id, &new_version, &json_bytes)
+        .put_with_version_cas(&resource_type, &id, expected_current.as_deref(), &new_version, &json_bytes)
         .map_err(|e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!(OperationOutcome::storage_error(e.to_string()))),
             )
         })?;
+    if !written {
+        let index = state.index.lock().await;
+        if let Ok(Some(cur)) = state.store.get(&resource_type, &id) {
+            if let Ok(cur_val) = serde_json::from_slice::<Value>(&cur) {
+                update_search_index(&index, &state.search_param_registry, &resource_type, &id, &cur_val);
+            }
+        } else {
+            let _ = index.remove_index(&resource_type, &id);
+        }
+        return Err((
+            StatusCode::CONFLICT,
+            Json(json!(OperationOutcome::error(
+                IssueType::Conflict,
+                "Resource was modified concurrently; retry the update"
+            ))),
+        ));
+    }
 
     audit::log_operation_success(&audit_ctx, "UPDATE", &resource_type, &id, &state.audit);
 
@@ -351,7 +417,9 @@ pub async fn update(
     // Lifecycle webhook: fire if this is a completed Task.
     state.webhook.maybe_task_completed(&resource_value);
 
-    Ok(response_with_etag(StatusCode::OK, resource_value).into_response())
+    let status = if is_create { StatusCode::CREATED } else { StatusCode::OK };
+    let location = version_location(&base_url_from_headers(&headers), &resource_type, &id, &new_version);
+    Ok(response_with_headers(status, resource_value, Some(location)).into_response())
 }
 
 /// JSON PATCH (PATCH /{resource_type}/{id})
@@ -403,7 +471,7 @@ pub async fn patch_resource(
         && expected != &current_ver_str
     {
         return Err((
-            StatusCode::CONFLICT,
+            StatusCode::PRECONDITION_FAILED,
             Json(json!(OperationOutcome::error(
                 IssueType::Conflict,
                 format!("Version conflict: expected {}, current is {}", expected, current_ver_str)
@@ -461,6 +529,14 @@ pub async fn patch_resource(
         )
     })?;
 
+    // Reindex before persisting, consistent with create/update: a crash between
+    // the two writes then leaves only a harmless stale index entry rather than a
+    // committed resource that's invisible to search.
+    {
+        let index = state.index.lock().await;
+        update_search_index(&index, &state.search_param_registry, &resource_type, &id, &resource);
+    }
+
     state
         .store
         .put_with_version(&resource_type, &id, &new_version, &json_bytes)
@@ -470,12 +546,6 @@ pub async fn patch_resource(
                 Json(json!(OperationOutcome::storage_error(e.to_string()))),
             )
         })?;
-
-    // Update search index
-    {
-        let index = state.index.lock().await;
-        update_search_index(&index, &state.search_param_registry, &resource_type, &id, &resource);
-    }
 
     audit::log_operation_success(&audit_ctx, "PATCH", &resource_type, &id, &state.audit);
 
