@@ -11,29 +11,105 @@ pub struct CompartmentDef {
 
 impl CompartmentDef {
     /// Create the standard FHIR R4 Patient compartment definition.
+    ///
+    /// Covers the resource types in the R4 `patient` CompartmentDefinition that
+    /// link to a Patient through a simple top-level reference (or array of
+    /// references). Types whose only patient linkage is through deeply nested or
+    /// polymorphic paths (e.g. `Appointment.participant.actor`,
+    /// `Group.member.entity`, `AuditEvent.agent.who`) are intentionally omitted —
+    /// listing them with the wrong field would over-deny legitimate access; they
+    /// fall through as "not in compartment". The security-relevant goal is that a
+    /// patient-scoped token cannot read another patient's clinical resources, so
+    /// every common PHI-bearing type that *can* be matched is listed here.
     pub fn patient_compartment() -> Self {
         let mut membership = HashMap::new();
 
         // Patient itself is checked by id match, not reference field
         membership.insert("Patient".to_string(), vec![]);
 
-        membership.insert("Observation".to_string(), vec!["subject".to_string()]);
-        membership.insert("Encounter".to_string(), vec!["subject".to_string()]);
-        membership.insert("Condition".to_string(), vec!["subject".to_string()]);
-        membership.insert("MedicationRequest".to_string(), vec!["subject".to_string()]);
-        membership.insert("Procedure".to_string(), vec!["subject".to_string()]);
+        // subject-linked clinical resources
+        for rt in [
+            "Account",
+            "AdverseEvent",
+            "CarePlan",
+            "CareTeam",
+            "ChargeItem",
+            "ClinicalImpression",
+            "Communication",
+            "CommunicationRequest",
+            "Composition",
+            "Condition",
+            "DeviceRequest",
+            "DeviceUseStatement",
+            "DiagnosticReport",
+            "DocumentManifest",
+            "DocumentReference",
+            "Encounter",
+            "EpisodeOfCare",
+            "Flag",
+            "Goal",
+            "ImagingStudy",
+            "Invoice",
+            "List",
+            "MeasureReport",
+            "Media",
+            "MedicationAdministration",
+            "MedicationDispense",
+            "MedicationRequest",
+            "MedicationStatement",
+            "NutritionOrder",
+            "Observation",
+            "Procedure",
+            "QuestionnaireResponse",
+            "RequestGroup",
+            "RiskAssessment",
+            "ServiceRequest",
+            "Specimen",
+            "SupplyRequest",
+        ] {
+            membership.insert(rt.to_string(), vec!["subject".to_string()]);
+        }
+
+        // patient-linked resources (use the `patient` element)
+        for rt in [
+            "AllergyIntolerance",
+            "BodyStructure",
+            "Claim",
+            "CoverageEligibilityRequest",
+            "CoverageEligibilityResponse",
+            "DetectedIssue",
+            "ExplanationOfBenefit",
+            "FamilyMemberHistory",
+            "Immunization",
+            "ImmunizationEvaluation",
+            "ImmunizationRecommendation",
+            "MolecularSequence",
+            "Person",
+            "RelatedPerson",
+            "SupplyDelivery",
+            "VisionPrescription",
+        ] {
+            membership.insert(rt.to_string(), vec!["patient".to_string()]);
+        }
+
+        // Resources whose patient link is a differently-named (or multiple) field.
+        membership.insert("Basic".to_string(), vec!["patient".to_string(), "subject".to_string()]);
+        membership.insert("Consent".to_string(), vec!["patient".to_string()]);
         membership.insert(
-            "AllergyIntolerance".to_string(),
-            vec!["patient".to_string()],
+            "Coverage".to_string(),
+            vec!["beneficiary".to_string(), "subscriber".to_string()],
         );
-        membership.insert("DiagnosticReport".to_string(), vec!["subject".to_string()]);
-        membership.insert("Immunization".to_string(), vec!["patient".to_string()]);
+        membership.insert("EnrollmentRequest".to_string(), vec!["candidate".to_string(), "subject".to_string()]);
+        membership.insert("ResearchSubject".to_string(), vec!["individual".to_string()]);
+        // `target` is an array of references.
+        membership.insert("Provenance".to_string(), vec!["target".to_string()]);
         membership.insert(
             "Task".to_string(),
             vec!["for".to_string(), "owner".to_string()],
         );
 
-        // Practitioner, Organization, Bundle are outside the Patient compartment
+        // Practitioner, Organization, Medication, Location, Bundle, etc. are
+        // outside the Patient compartment (not patient-specific data).
 
         Self { membership }
     }
@@ -73,14 +149,17 @@ impl CompartmentDef {
                 .is_some_and(|id| id == patient_id);
         }
 
-        // Other resources: check reference fields
+        // Other resources: check reference fields. A field may hold a single
+        // Reference object or an array of them (e.g. Provenance.target).
         let expected_ref = format!("Patient/{}", patient_id);
+        let matches_ref = |v: &Value| -> bool {
+            v.get("reference").and_then(|r| r.as_str()) == Some(expected_ref.as_str())
+        };
         for field in fields {
-            if let Some(ref_obj) = resource.get(field.as_str())
-                && let Some(reference) = ref_obj.get("reference").and_then(|v| v.as_str())
-                && reference == expected_ref
-            {
-                return true;
+            match resource.get(field.as_str()) {
+                Some(Value::Array(arr)) if arr.iter().any(matches_ref) => return true,
+                Some(obj) if matches_ref(obj) => return true,
+                _ => {}
             }
         }
 
@@ -157,6 +236,42 @@ mod tests {
             "owner": {"reference": "Patient/p789"}
         });
         assert!(comp.resource_belongs_to_patient("Task", &task2, "p789"));
+    }
+
+    #[test]
+    fn test_expanded_compartment_types_are_filtered() {
+        // Regression: these clinical types used to fall through as
+        // "not in compartment", leaking other patients' data to scoped tokens.
+        let comp = CompartmentDef::patient_compartment();
+        for rt in ["CarePlan", "DocumentReference", "ServiceRequest", "MedicationDispense", "Goal"] {
+            assert!(comp.is_in_compartment(rt), "{rt} must be in the patient compartment");
+            let mine = json!({"resourceType": rt, "subject": {"reference": "Patient/p1"}});
+            let theirs = json!({"resourceType": rt, "subject": {"reference": "Patient/p2"}});
+            assert!(comp.resource_belongs_to_patient(rt, &mine, "p1"));
+            assert!(!comp.resource_belongs_to_patient(rt, &theirs, "p1"));
+        }
+    }
+
+    #[test]
+    fn test_coverage_uses_beneficiary() {
+        let comp = CompartmentDef::patient_compartment();
+        let cov = json!({"resourceType": "Coverage", "beneficiary": {"reference": "Patient/p1"}});
+        assert!(comp.resource_belongs_to_patient("Coverage", &cov, "p1"));
+        assert!(!comp.resource_belongs_to_patient("Coverage", &cov, "p2"));
+    }
+
+    #[test]
+    fn test_provenance_target_array() {
+        let comp = CompartmentDef::patient_compartment();
+        let prov = json!({
+            "resourceType": "Provenance",
+            "target": [
+                {"reference": "Observation/o1"},
+                {"reference": "Patient/p1"}
+            ]
+        });
+        assert!(comp.resource_belongs_to_patient("Provenance", &prov, "p1"));
+        assert!(!comp.resource_belongs_to_patient("Provenance", &prov, "p2"));
     }
 
     #[test]

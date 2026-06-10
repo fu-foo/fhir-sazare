@@ -35,6 +35,7 @@ async fn start_test_server() -> (String, TempDir) {
         ws_registry: Arc::new(sazare_server::websocket::WsRegistry::new()),
         webhook: Arc::new(sazare_server::webhook::WebhookManager::new(Default::default())),
         export_jobs: Arc::new(sazare_server::bulk_export::ExportJobs::new()),
+        seen_jti: std::sync::Mutex::new(std::collections::HashMap::new()),
     });
 
     let app = build_router(state);
@@ -104,6 +105,7 @@ async fn test_webhook_task_completed_fires() {
         ws_registry: Arc::new(sazare_server::websocket::WsRegistry::new()),
         webhook,
         export_jobs: Arc::new(sazare_server::bulk_export::ExportJobs::new()),
+        seen_jti: std::sync::Mutex::new(std::collections::HashMap::new()),
     });
     let app = build_router(state);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -413,6 +415,7 @@ async fn test_smart_backend_services_token_flow() {
         ws_registry: Arc::new(sazare_server::websocket::WsRegistry::new()),
         webhook: Arc::new(sazare_server::webhook::WebhookManager::new(Default::default())),
         export_jobs: Arc::new(sazare_server::bulk_export::ExportJobs::new()),
+        seen_jti: std::sync::Mutex::new(std::collections::HashMap::new()),
     });
     let app = build_router(state);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Extension, Path, Query, State},
     http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
@@ -23,7 +23,46 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use tokio::sync::Mutex;
 
+use crate::auth::{check_scope, AuthType, AuthUser};
 use crate::AppState;
+
+/// Authorize a Bulk Data operation against the caller's SMART scopes.
+///
+/// Bulk export/import touch the *entire* dataset (or all patients), so they must
+/// not be reachable by a patient-scoped token, and a JWT caller needs a
+/// system-level `*.{action}` scope. Auth-disabled deployments (no `AuthUser`)
+/// and coarse server credentials (API key / Basic, which carry no scopes in this
+/// server's model) are allowed through, matching how CRUD scope checks behave.
+pub(crate) fn authorize_bulk(
+    auth: &Option<Extension<AuthUser>>,
+    action: &str,
+) -> Result<(), Response> {
+    let Some(Extension(user)) = auth.as_ref() else {
+        return Ok(());
+    };
+    if user.auth_type != AuthType::Jwt {
+        return Ok(());
+    }
+    if user.is_patient_scoped() {
+        return Err(bulk_forbidden(
+            "Patient-scoped tokens may not perform Bulk Data operations",
+        ));
+    }
+    if !check_scope(&user.scopes, "*", action) {
+        return Err(bulk_forbidden(&format!(
+            "Bulk Data {action} requires a system-level *.{action} scope"
+        )));
+    }
+    Ok(())
+}
+
+fn bulk_forbidden(msg: &str) -> Response {
+    (
+        StatusCode::FORBIDDEN,
+        Json(op_outcome("forbidden", msg.to_string())),
+    )
+        .into_response()
+}
 
 /// Query parameters accepted by `$export`. Field names mirror the FHIR
 /// parameter names (`_type`, `_since`, `_outputFormat`) for serde matching.
@@ -306,18 +345,26 @@ async fn run_export(
 /// `GET /$export` — system-level export.
 pub async fn export(
     State(state): State<Arc<AppState>>,
+    auth: Option<Extension<AuthUser>>,
     headers: HeaderMap,
     Query(params): Query<ExportParams>,
 ) -> Response {
+    if let Err(resp) = authorize_bulk(&auth, "read") {
+        return resp;
+    }
     run_export(state, headers, ExportScope::System, "/$export", params).await
 }
 
 /// `GET /Patient/$export` — every Patient compartment.
 pub async fn patient_export(
     State(state): State<Arc<AppState>>,
+    auth: Option<Extension<AuthUser>>,
     headers: HeaderMap,
     Query(params): Query<ExportParams>,
 ) -> Response {
+    if let Err(resp) = authorize_bulk(&auth, "read") {
+        return resp;
+    }
     run_export(
         state,
         headers,
@@ -331,10 +378,14 @@ pub async fn patient_export(
 /// `GET /Group/{id}/$export` — the compartments of the Group's member patients.
 pub async fn group_export(
     State(state): State<Arc<AppState>>,
+    auth: Option<Extension<AuthUser>>,
     Path(group_id): Path<String>,
     headers: HeaderMap,
     Query(params): Query<ExportParams>,
 ) -> Response {
+    if let Err(resp) = authorize_bulk(&auth, "read") {
+        return resp;
+    }
     // Load the Group and collect its member Patient ids.
     let group = match state.store.get("Group", &group_id) {
         Ok(Some(data)) => match serde_json::from_slice::<Value>(&data) {
@@ -380,9 +431,13 @@ pub async fn group_export(
 /// `GET /$export-status/{job_id}` — poll job status / return the manifest.
 pub async fn export_status(
     State(state): State<Arc<AppState>>,
+    auth: Option<Extension<AuthUser>>,
     headers: HeaderMap,
     Path(job_id): Path<String>,
 ) -> Response {
+    if let Err(resp) = authorize_bulk(&auth, "read") {
+        return resp;
+    }
     let jobs = state.export_jobs.jobs.lock().await;
     let Some(job) = jobs.get(&job_id) else {
         return (
@@ -432,8 +487,12 @@ pub async fn export_status(
 /// `DELETE /$export-status/{job_id}` — cancel/forget a job.
 pub async fn export_delete(
     State(state): State<Arc<AppState>>,
+    auth: Option<Extension<AuthUser>>,
     Path(job_id): Path<String>,
 ) -> Response {
+    if let Err(resp) = authorize_bulk(&auth, "read") {
+        return resp;
+    }
     if state.export_jobs.remove(&job_id).await {
         StatusCode::ACCEPTED.into_response()
     } else {
@@ -448,8 +507,12 @@ pub async fn export_delete(
 /// `GET /$export-file/{job_id}/{resource_type}` — download one NDJSON file.
 pub async fn export_file(
     State(state): State<Arc<AppState>>,
+    auth: Option<Extension<AuthUser>>,
     Path((job_id, rtype)): Path<(String, String)>,
 ) -> Response {
+    if let Err(resp) = authorize_bulk(&auth, "read") {
+        return resp;
+    }
     let jobs = state.export_jobs.jobs.lock().await;
     let ndjson = jobs
         .get(&job_id)

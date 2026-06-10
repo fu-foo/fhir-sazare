@@ -25,6 +25,39 @@ use crate::AppState;
 
 const JWT_BEARER: &str = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer";
 
+/// Maximum accepted lifetime of a client assertion. SMART Backend Services
+/// recommends assertions live no longer than ~5 minutes; a far-future `exp`
+/// would widen the replay window, so we reject it.
+const ASSERTION_MAX_LIFETIME_SECS: u64 = 300;
+
+/// Signature algorithms acceptable for a given JWK, derived from the *key type*
+/// — never from the attacker-controlled JWT header. This is the defense against
+/// algorithm-confusion: an asymmetric key can only ever verify with its own
+/// asymmetric algorithm family, so a forged `alg=HS256` assertion (HMAC'd with
+/// the public key bytes) is rejected because HS* is never in this set.
+fn allowed_algorithms(jwk: &jsonwebtoken::jwk::Jwk) -> Vec<Algorithm> {
+    use jsonwebtoken::jwk::{AlgorithmParameters, EllipticCurve};
+    match &jwk.algorithm {
+        AlgorithmParameters::RSA(_) => vec![
+            Algorithm::RS256,
+            Algorithm::RS384,
+            Algorithm::RS512,
+            Algorithm::PS256,
+            Algorithm::PS384,
+            Algorithm::PS512,
+        ],
+        AlgorithmParameters::EllipticCurve(ec) => match ec.curve {
+            EllipticCurve::P256 => vec![Algorithm::ES256],
+            EllipticCurve::P384 => vec![Algorithm::ES384],
+            _ => vec![],
+        },
+        AlgorithmParameters::OctetKeyPair(_) => vec![Algorithm::EdDSA],
+        // Symmetric keys must not appear in a published client JWKS used to
+        // verify assertions — refuse rather than enable an HMAC bypass.
+        AlgorithmParameters::OctetKey(_) => vec![],
+    }
+}
+
 #[derive(Deserialize)]
 pub struct TokenRequest {
     grant_type: String,
@@ -162,11 +195,14 @@ pub async fn token(State(state): State<Arc<AppState>>, Form(req): Form<TokenRequ
             return oauth_error(StatusCode::BAD_REQUEST, "invalid_client", "Bad assertion header")
         }
     };
-    let jwk = header
-        .kid
-        .as_ref()
-        .and_then(|kid| jwks.keys.iter().find(|k| k.common.key_id.as_deref() == Some(kid)))
-        .or_else(|| jwks.keys.first());
+    // When the header names a `kid`, require an exact match — never silently
+    // fall back to an arbitrary key. Only when no `kid` is given do we accept a
+    // sole key from the set.
+    let jwk = match header.kid.as_ref() {
+        Some(kid) => jwks.keys.iter().find(|k| k.common.key_id.as_deref() == Some(kid)),
+        None if jwks.keys.len() == 1 => jwks.keys.first(),
+        None => None,
+    };
     let Some(jwk) = jwk else {
         return oauth_error(StatusCode::BAD_REQUEST, "invalid_client", "No matching key in JWKS");
     };
@@ -178,7 +214,25 @@ pub async fn token(State(state): State<Arc<AppState>>, Form(req): Form<TokenRequ
     };
 
     // Verify the assertion: signature, audience (= token endpoint), and expiry.
-    let mut validation = Validation::new(header.alg);
+    // The accepted algorithm is pinned to the JWK's key type — NOT taken from the
+    // attacker-supplied `header.alg` — to prevent algorithm-confusion bypass.
+    let algs = allowed_algorithms(jwk);
+    if algs.is_empty() {
+        return oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_client",
+            "Unsupported client key type for assertion verification",
+        );
+    }
+    if !algs.contains(&header.alg) {
+        return oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_client",
+            "Assertion algorithm does not match the registered client key",
+        );
+    }
+    let mut validation = Validation::new(algs[0]);
+    validation.algorithms = algs;
     let token_endpoint = smart
         .token_endpoint
         .clone()
@@ -189,12 +243,59 @@ pub async fn token(State(state): State<Arc<AppState>>, Form(req): Form<TokenRequ
         validation.validate_aud = false;
     }
     validation.set_required_spec_claims(&["exp"]);
-    if let Err(e) = jsonwebtoken::decode::<Value>(assertion, &decoding_key, &validation) {
+    let assertion_claims = match jsonwebtoken::decode::<Value>(assertion, &decoding_key, &validation) {
+        Ok(data) => data.claims,
+        Err(e) => {
+            return oauth_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_client",
+                &format!("Assertion verification failed: {e}"),
+            )
+        }
+    };
+
+    // SMART Backend Services: `sub` and `iss` must both equal the client_id.
+    if assertion_claims.get("sub").and_then(|v| v.as_str()) != Some(client_id) {
         return oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_client",
-            &format!("Assertion verification failed: {e}"),
+            "Assertion 'sub' must equal the client_id",
         );
+    }
+
+    // Bound the assertion lifetime to limit the replay window.
+    let now = now_secs(&state);
+    let exp = assertion_claims.get("exp").and_then(|v| v.as_u64()).unwrap_or(0);
+    if exp > now + ASSERTION_MAX_LIFETIME_SECS {
+        return oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_client",
+            "Assertion expiry is too far in the future",
+        );
+    }
+
+    // One-time use: reject a replayed `jti` and record this one until it expires.
+    let Some(jti) = assertion_claims.get("jti").and_then(|v| v.as_str()) else {
+        return oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_client",
+            "Assertion is missing the required 'jti' claim",
+        );
+    };
+    {
+        let mut seen = match state.seen_jti.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        seen.retain(|_, &mut e| e > now);
+        if seen.contains_key(jti) {
+            return oauth_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_client",
+                "Assertion 'jti' has already been used (replay)",
+            );
+        }
+        seen.insert(jti.to_string(), exp.max(now + ASSERTION_MAX_LIFETIME_SECS));
     }
 
     // Issue the access token.
@@ -240,4 +341,51 @@ pub async fn token(State(state): State<Arc<AppState>>, Form(req): Form<TokenRequ
         "scope": granted,
     }))
     .into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use jsonwebtoken::jwk::Jwk;
+
+    fn jwk_from(json: serde_json::Value) -> Jwk {
+        serde_json::from_value(json).expect("valid jwk")
+    }
+
+    #[test]
+    fn ec_p256_key_never_allows_hmac() {
+        // An EC public key must only ever verify with ES256 — never an HMAC
+        // algorithm, which is the algorithm-confusion bypass we defend against.
+        let jwk = jwk_from(json!({
+            "kty": "EC", "crv": "P-256", "alg": "ES256", "use": "sig", "kid": "k1",
+            "x": "f83OJ3D2xF1Bg8vub9tLe1gHMzV76e8Tus9uPHvRVEU",
+            "y": "x_FEzRu9m36HLN_tue659LNpXW6pCyStikYjKIWI5a0"
+        }));
+        let algs = allowed_algorithms(&jwk);
+        assert_eq!(algs, vec![Algorithm::ES256]);
+        assert!(!algs.contains(&Algorithm::HS256));
+    }
+
+    #[test]
+    fn rsa_key_allows_only_rsa_family() {
+        let jwk = jwk_from(json!({
+            "kty": "RSA", "alg": "RS256", "use": "sig", "kid": "r1",
+            "n": "0vx7agoebGcQSuuPiLJXZptN9nndrQmbXEps2aiAFbWhM78LhWx4cbbfAAtVT86zwu1RK7aPFFxuhDR1L6tSoc_BJECPebWKRXjBZCiFV4n3oknjhMstn64tZ_2W-5JsGY4Hc5n9yBXArwl93lqt7_RN5w6Cf0h4QyQ5v-65YGjQR0_FDW2QvzqY368QQMicAtaSqzs8KJZgnYb9c7d0zgdAZHzu6qMQvRL5hajrn1n91CbOpbISD08qNLyrdkt-bFTWhAI4vMQFh6WeZu0fM4lFd2NcRwr3XPksINHaQ-G_xBniIqbw0Ls1jF44-csFCur-kEgU8awapJzKnqDKgw",
+            "e": "AQAB"
+        }));
+        let algs = allowed_algorithms(&jwk);
+        assert!(algs.contains(&Algorithm::RS256));
+        assert!(!algs.contains(&Algorithm::HS256));
+        assert!(!algs.contains(&Algorithm::ES256));
+    }
+
+    #[test]
+    fn symmetric_key_is_rejected() {
+        // A symmetric key in a published client JWKS must never be usable.
+        let jwk = jwk_from(json!({
+            "kty": "oct", "alg": "HS256", "use": "sig", "kid": "s1",
+            "k": "GawgguFyGrWKav7AX4VKUg"
+        }));
+        assert!(allowed_algorithms(&jwk).is_empty());
+    }
 }

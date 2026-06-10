@@ -249,7 +249,7 @@ async fn authenticate_bearer(state: &Arc<AppState>, auth_header: &str) -> Result
 
     // Try API key match first
     for api_key in &state.config.auth.api_keys {
-        if api_key.key == token {
+        if ct_eq(&api_key.key, token) {
             return Ok(AuthUser::new(api_key.name.clone(), AuthType::ApiKey));
         }
     }
@@ -399,7 +399,7 @@ fn authenticate_basic(config: &ServerConfig, auth_header: &str) -> Result<AuthUs
 
     // Validate credentials
     for user in &config.auth.basic_auth {
-        if user.username == username && user.password == password {
+        if user.username == username && ct_eq(&user.password, password) {
             return Ok(AuthUser::new(username.to_string(), AuthType::BasicAuth));
         }
     }
@@ -447,6 +447,21 @@ fn extract_resource_action(method: &Method, path: &str) -> Option<(String, Strin
     };
 
     Some((resource_type, action))
+}
+
+/// Constant-time byte comparison for secrets, to avoid leaking how many leading
+/// bytes of an API key / password matched via response timing. (Length is not
+/// hidden, which is acceptable for these credentials.)
+fn ct_eq(a: &str, b: &str) -> bool {
+    let (a, b) = (a.as_bytes(), b.as_bytes());
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (x, y) in a.iter().zip(b.iter()) {
+        diff |= x ^ y;
+    }
+    diff == 0
 }
 
 /// Check if the given scopes allow access to the specified resource_type and action.
@@ -537,6 +552,7 @@ mod tests {
             ws_registry: Arc::new(crate::websocket::WsRegistry::new()),
             webhook: Arc::new(crate::webhook::WebhookManager::new(Default::default())),
             export_jobs: Arc::new(crate::bulk_export::ExportJobs::new()),
+            seen_jti: std::sync::Mutex::new(std::collections::HashMap::new()),
         })
     }
 

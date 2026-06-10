@@ -26,7 +26,11 @@ pub async fn import(
     State(state): State<Arc<AppState>>,
     auth_user: Option<axum::extract::Extension<AuthUser>>,
     body: String,
-) -> impl IntoResponse {
+) -> axum::response::Response {
+    // $import writes the whole dataset — require system-level write scope.
+    if let Err(resp) = crate::bulk_export::authorize_bulk(&auth_user, "write") {
+        return resp;
+    }
     let user_id = auth_user.map(|u| u.user_id.clone());
     let audit_ctx = AuditContext::new(user_id, addr.ip().to_string());
 
@@ -163,21 +167,32 @@ pub async fn import(
         &state.audit,
     );
 
+    // Build a spec-valid OperationOutcome: a summary issue followed by one
+    // issue per failed line (the previous root-level `details` element is not a
+    // valid OperationOutcome field).
+    let mut issues: Vec<Value> = vec![json!({
+        "severity": if errors.is_empty() { "information" } else { "warning" },
+        "code": "informational",
+        "diagnostics": format!("{} resources imported, {} errors", created, errors.len())
+    })];
+    for err in &errors {
+        let diag = serde_json::to_string(err).unwrap_or_else(|_| "import error".to_string());
+        issues.push(json!({
+            "severity": "error",
+            "code": "processing",
+            "diagnostics": diag,
+        }));
+    }
     let response = json!({
         "resourceType": "OperationOutcome",
-        "issue": [{
-            "severity": if errors.is_empty() { "information" } else { "warning" },
-            "code": "informational",
-            "diagnostics": format!("{} resources imported, {} errors", created, errors.len())
-        }],
+        "issue": issues,
         "extension": [{
             "url": "http://sazare.dev/StructureDefinition/import-result",
             "extension": [
                 {"url": "created", "valueInteger": created},
                 {"url": "errors", "valueInteger": errors.len()}
             ]
-        }],
-        "details": if errors.is_empty() { Value::Null } else { json!(errors) }
+        }]
     });
 
     let status = if !errors.is_empty() && created == 0 {

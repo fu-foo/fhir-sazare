@@ -57,6 +57,9 @@ pub struct AppState {
     pub webhook: Arc<webhook::WebhookManager>,
     /// In-flight async Bulk Data export jobs
     pub export_jobs: Arc<bulk_export::ExportJobs>,
+    /// Seen SMART Backend Services assertion `jti` values (→ assertion `exp`),
+    /// for one-time-use replay protection. Pruned lazily on insert.
+    pub seen_jti: std::sync::Mutex<std::collections::HashMap<String, u64>>,
 }
 
 /// Conditional create result

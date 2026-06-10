@@ -123,6 +123,7 @@ async fn main() {
             config.webhook.clone(),
         )),
         export_jobs: Arc::new(sazare_server::bulk_export::ExportJobs::new()),
+        seen_jti: std::sync::Mutex::new(std::collections::HashMap::new()),
     });
 
     tracing::info!(
