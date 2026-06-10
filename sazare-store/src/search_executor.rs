@@ -1,3 +1,4 @@
+use crate::sqlite_index::StringMatch;
 use crate::{SearchIndex, SqliteStore};
 use sazare_core::{ChainParameter, SearchParameter, SearchParamType, SearchQuery};
 use serde_json::Value;
@@ -162,6 +163,38 @@ impl<'a> SearchExecutor<'a> {
         resource_type: &str,
         param: &SearchParameter,
     ) -> Result<Vec<String>, String> {
+        // `:missing` — presence/absence of the parameter, independent of value.
+        if param.modifier.as_deref() == Some("missing") {
+            let want_missing = match param.value.trim() {
+                "true" => true,
+                "false" => false,
+                other => return Err(format!(":missing expects true|false, got '{other}'")),
+            };
+            let present = self
+                .index
+                .ids_with_param(resource_type, &param.name)
+                .map_err(|e| e.to_string())?;
+            if !want_missing {
+                return Ok(present);
+            }
+            let present: std::collections::HashSet<String> = present.into_iter().collect();
+            let all = self.store.list_ids(resource_type).map_err(|e| e.to_string())?;
+            return Ok(all.into_iter().filter(|id| !present.contains(id)).collect());
+        }
+
+        // `:not` — every resource of the type EXCEPT those matching the value(s).
+        // FHIR: a resource with no value for the param is included in `:not`.
+        if param.modifier.as_deref() == Some("not") {
+            let mut inner = param.clone();
+            inner.modifier = None;
+            let matched: std::collections::HashSet<String> = self
+                .search_parameter(resource_type, &inner)?
+                .into_iter()
+                .collect();
+            let all = self.store.list_ids(resource_type).map_err(|e| e.to_string())?;
+            return Ok(all.into_iter().filter(|id| !matched.contains(id)).collect());
+        }
+
         let values: Vec<&str> = param.value.split(',').collect();
         if values.len() == 1 {
             return self.search_parameter_single(resource_type, param, &param.value);
@@ -189,19 +222,34 @@ impl<'a> SearchExecutor<'a> {
     ) -> Result<Vec<String>, String> {
         match param.param_type {
             SearchParamType::Token => {
-                // For token search, parse system|code format
-                let (system, code) = if let Some(idx) = value.find('|') {
-                    let (sys, cod) = value.split_at(idx);
-                    (Some(sys), &cod[1..])
-                } else {
-                    (None, value)
-                };
-                self.index.search_token(resource_type, &param.name, system, code)
-                    .map_err(|e| e.to_string())
+                // FHIR token forms: `system|code`, `code` (any system),
+                // `|code` (no system), `system|` (any code in the system).
+                match value.split_once('|') {
+                    Some((system, "")) => self
+                        .index
+                        .search_token_system_only(resource_type, &param.name, system)
+                        .map_err(|e| e.to_string()),
+                    Some(("", code)) => self
+                        .index
+                        .search_token_no_system(resource_type, &param.name, code)
+                        .map_err(|e| e.to_string()),
+                    Some((system, code)) => self
+                        .index
+                        .search_token(resource_type, &param.name, Some(system), code)
+                        .map_err(|e| e.to_string()),
+                    None => self
+                        .index
+                        .search_token(resource_type, &param.name, None, value)
+                        .map_err(|e| e.to_string()),
+                }
             }
             SearchParamType::String => {
-                let exact = param.modifier.as_deref() == Some("exact");
-                self.index.search_string(resource_type, &param.name, value, exact)
+                let mode = match param.modifier.as_deref() {
+                    Some("exact") => StringMatch::Exact,
+                    Some("contains") => StringMatch::Contains,
+                    _ => StringMatch::Prefix,
+                };
+                self.index.search_string(resource_type, &param.name, value, mode)
                     .map_err(|e| e.to_string())
             }
             SearchParamType::Date => {
@@ -517,5 +565,59 @@ mod tests {
     fn test_extract_references_missing() {
         let resource = serde_json::json!({ "status": "active" });
         assert!(extract_references(&resource, "subject").is_empty());
+    }
+
+    // --- Integration tests over an in-memory store + index ---
+
+    fn put(store: &SqliteStore, rt: &str, id: &str, body: serde_json::Value) {
+        let data = serde_json::to_vec(&body).unwrap();
+        store.put_with_version(rt, id, "1", &data).unwrap();
+    }
+
+    fn sorted(mut v: Vec<String>) -> Vec<String> {
+        v.sort();
+        v
+    }
+
+    #[test]
+    fn test_repeated_param_is_anded() {
+        let store = SqliteStore::open(":memory:").unwrap();
+        let index = SearchIndex::open(":memory:").unwrap();
+        // o1 in [2024-06-15], o2 in [2023-01-01]
+        put(&store, "Observation", "o1", serde_json::json!({"resourceType":"Observation","id":"o1"}));
+        put(&store, "Observation", "o2", serde_json::json!({"resourceType":"Observation","id":"o2"}));
+        index.add_index("Observation", "o1", "date", "date", Some("2024-06-15"), None).unwrap();
+        index.add_index("Observation", "o2", "date", "date", Some("2023-01-01"), None).unwrap();
+
+        let exec = SearchExecutor::new(&store, &index);
+        // date=ge2024-01-01 AND date=le2024-12-31 → only o1
+        let q = SearchQuery::parse_for_resource("date=ge2024-01-01&date=le2024-12-31", Some("Observation")).unwrap();
+        assert_eq!(exec.search("Observation", &q).unwrap(), vec!["o1"]);
+    }
+
+    #[test]
+    fn test_missing_and_not_modifiers() {
+        let store = SqliteStore::open(":memory:").unwrap();
+        let index = SearchIndex::open(":memory:").unwrap();
+        put(&store, "Patient", "p1", serde_json::json!({"resourceType":"Patient","id":"p1"}));
+        put(&store, "Patient", "p2", serde_json::json!({"resourceType":"Patient","id":"p2"}));
+        put(&store, "Patient", "p3", serde_json::json!({"resourceType":"Patient","id":"p3"}));
+        // Only p1, p2 have a gender indexed.
+        index.add_index("Patient", "p1", "gender", "token", Some("male"), None).unwrap();
+        index.add_index("Patient", "p2", "gender", "token", Some("female"), None).unwrap();
+
+        let exec = SearchExecutor::new(&store, &index);
+
+        // gender:missing=true → p3
+        let q = SearchQuery::parse_for_resource("gender:missing=true", Some("Patient")).unwrap();
+        assert_eq!(exec.search("Patient", &q).unwrap(), vec!["p3"]);
+
+        // gender:missing=false → p1, p2
+        let q = SearchQuery::parse_for_resource("gender:missing=false", Some("Patient")).unwrap();
+        assert_eq!(sorted(exec.search("Patient", &q).unwrap()), vec!["p1", "p2"]);
+
+        // gender:not=male → everything except p1 (p2 matches female, p3 has none)
+        let q = SearchQuery::parse_for_resource("gender:not=male", Some("Patient")).unwrap();
+        assert_eq!(sorted(exec.search("Patient", &q).unwrap()), vec!["p2", "p3"]);
     }
 }

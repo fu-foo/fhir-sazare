@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Path, Query, Request, State},
+    extract::{Path, Request, State},
     http::StatusCode,
     response::{IntoResponse, Json, Response},
 };
@@ -9,7 +9,6 @@ use sazare_core::{
     OperationOutcome, SearchQuery,
 };
 use sazare_store::SearchExecutor;
-use serde::Deserialize;
 use serde_json::{json, Value};
 use std::sync::Arc;
 
@@ -47,24 +46,22 @@ fn external_base_url(request: &Request) -> String {
     format!("{}://{}", scheme, host)
 }
 
-/// Search query parameters
-#[derive(Deserialize, Default)]
-pub struct SearchParams {
-    #[serde(flatten)]
-    pub params: std::collections::HashMap<String, String>,
-}
-
 /// Search (GET /{resource_type}?...)
 pub async fn search(
     State(state): State<Arc<AppState>>,
     Path(resource_type): Path<String>,
-    Query(params): Query<SearchParams>,
     request: Request,
 ) -> Result<Response, (StatusCode, Json<Value>)> {
     let audit_ctx = AuditContext::from_request(&request);
     let auth_user = request.extensions().get::<AuthUser>().cloned();
     let base_url = external_base_url(&request);
-    do_search(state, resource_type, params, auth_user, audit_ctx, base_url).await
+    // Use the raw (still percent-encoded) query string so that repeated
+    // parameters (AND semantics, e.g. `date=ge..&date=le..`) are preserved and
+    // values are decoded exactly once by the parser. Going through a
+    // HashMap<String,String> would collapse duplicates (last-wins) and a
+    // pre-decoded map would be decoded a second time.
+    let raw_query = request.uri().query().unwrap_or("").to_string();
+    do_search(state, resource_type, raw_query, auth_user, audit_ctx, base_url).await
 }
 
 /// Search via POST (POST /{resource_type}/_search) — FHIR alternative to GET search.
@@ -88,44 +85,82 @@ pub async fn search_post(
             ))),
         )
     })?;
-    let params_map: std::collections::HashMap<String, String> =
-        serde_urlencoded::from_bytes(&bytes).map_err(|e| {
-            (
-                StatusCode::BAD_REQUEST,
-                Json(json!(OperationOutcome::error(
-                    IssueType::Invalid,
-                    format!("Failed to parse form-encoded body: {e}")
-                ))),
-            )
-        })?;
-    let params = SearchParams { params: params_map };
+    // The form-encoded body has the same grammar as a query string; pass it
+    // through verbatim to preserve repeated parameters and single-decode values.
+    let raw_query = String::from_utf8(bytes.to_vec()).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!(OperationOutcome::error(
+                IssueType::Invalid,
+                format!("Body is not valid UTF-8: {e}")
+            ))),
+        )
+    })?;
 
-    do_search(state, resource_type, params, auth_user, audit_ctx, base_url).await
+    do_search(state, resource_type, raw_query, auth_user, audit_ctx, base_url).await
+}
+
+/// Reconstruct the query string without `_count`/`_offset`, preserving the
+/// original percent-encoding and the order/multiplicity of every other
+/// parameter (so pagination links round-trip exactly).
+fn base_params_without_paging(raw_query: &str) -> String {
+    raw_query
+        .split('&')
+        .filter(|pair| !pair.is_empty())
+        .filter(|pair| {
+            // `_count`/`_offset` are never percent-encoded by clients, so a raw
+            // key comparison is sufficient and avoids a decode dependency.
+            let key = pair.split('=').next().unwrap_or("");
+            key != "_count" && key != "_offset"
+        })
+        .collect::<Vec<_>>()
+        .join("&")
 }
 
 /// Shared search execution path used by both GET and POST search handlers.
 async fn do_search(
     state: Arc<AppState>,
     resource_type: String,
-    params: SearchParams,
+    raw_query: String,
     auth_user: Option<AuthUser>,
     audit_ctx: AuditContext,
     base_url: String,
 ) -> Result<Response, (StatusCode, Json<Value>)> {
-    // Reconstruct query string
-    let query_string: String = params
-        .params
-        .iter()
-        .map(|(k, v)| format!("{}={}", k, v))
-        .collect::<Vec<_>>()
-        .join("&");
-
-    let query = SearchQuery::parse_for_resource(&query_string, Some(&resource_type)).map_err(|e| {
+    let query = SearchQuery::parse_for_resource(&raw_query, Some(&resource_type)).map_err(|e| {
         (
             StatusCode::BAD_REQUEST,
             Json(json!(OperationOutcome::error(IssueType::Invalid, e))),
         )
     })?;
+
+    // Reject unknown search parameters (FHIR strict handling) rather than
+    // silently returning an empty set — but only for resource types we have an
+    // explicit parameter registry for, so unmodelled types stay lenient.
+    // Underscore result params (`_id`, `_lastUpdated`, …) are already validated
+    // by the parser and pass through here.
+    if state.search_param_registry.has_resource_type(&resource_type) {
+        for p in &query.parameters {
+            if p.name.starts_with('_') {
+                continue;
+            }
+            if state
+                .search_param_registry
+                .lookup_param_type(&resource_type, &p.name)
+                .is_none()
+            {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    Json(json!(OperationOutcome::error(
+                        IssueType::NotSupported,
+                        format!(
+                            "Unknown search parameter '{}' for resource type '{}'",
+                            p.name, resource_type
+                        )
+                    ))),
+                ));
+            }
+        }
+    }
 
     // If _summary=count, return only the count
     if query.summary == Some(sazare_core::SummaryMode::Count) {
@@ -267,14 +302,8 @@ async fn do_search(
     let offset = query.offset.unwrap_or(0);
     let mut links: Vec<Value> = Vec::new();
 
-    // Build base query without _count and _offset
-    let base_params: String = params
-        .params
-        .iter()
-        .filter(|(k, _)| k.as_str() != "_count" && k.as_str() != "_offset")
-        .map(|(k, v)| format!("{}={}", k, v))
-        .collect::<Vec<_>>()
-        .join("&");
+    // Build base query without _count and _offset (encoding preserved).
+    let base_params = base_params_without_paging(&raw_query);
 
     let base = if base_params.is_empty() {
         format!("{}/{}?_count={}", base_url, resource_type, count)

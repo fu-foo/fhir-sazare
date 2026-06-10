@@ -17,17 +17,25 @@ pub(crate) fn fhir_date_range(value: &str) -> Option<(i64, i64)> {
     let v = value.trim();
     if v.contains('T') {
         // dateTime — require a timezone per FHIR; try RFC3339, then assume UTC.
-        let dt = DateTime::parse_from_rfc3339(v)
-            .map(|d| d.with_timezone(&Utc))
-            .or_else(|_| {
-                chrono::NaiveDateTime::parse_from_str(v, "%Y-%m-%dT%H:%M:%S")
-                    .map(|n| Utc.from_utc_datetime(&n))
-            })
-            .ok()?;
-        let start = dt.timestamp_micros();
-        // Fractional seconds → treat as an exact instant; otherwise a 1s window.
-        let span = if v.contains('.') { 1 } else { 1_000_000 };
-        return Some((start, start + span));
+        // Minute precision (`YYYY-MM-DDThh:mm`, no seconds) is a valid FHIR
+        // dateTime and spans one minute.
+        if let Ok(dt) = DateTime::parse_from_rfc3339(v) {
+            let start = dt.with_timezone(&Utc).timestamp_micros();
+            let span = if v.contains('.') { 1 } else { 1_000_000 };
+            return Some((start, start + span));
+        }
+        if let Ok(n) = chrono::NaiveDateTime::parse_from_str(v, "%Y-%m-%dT%H:%M:%S") {
+            let start = Utc.from_utc_datetime(&n).timestamp_micros();
+            return Some((start, start + 1_000_000));
+        }
+        // Minute precision, with or without a trailing `Z` (offset forms at
+        // minute precision are uncommon and left unparsed).
+        let naive = v.trim_end_matches('Z');
+        if let Ok(n) = chrono::NaiveDateTime::parse_from_str(naive, "%Y-%m-%dT%H:%M") {
+            let start = Utc.from_utc_datetime(&n).timestamp_micros();
+            return Some((start, start + 60_000_000));
+        }
+        return None;
     }
     match v.len() {
         4 => {
@@ -52,6 +60,30 @@ pub(crate) fn fhir_date_range(value: &str) -> Option<(i64, i64)> {
         }
         _ => None,
     }
+}
+
+/// String search matching mode.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum StringMatch {
+    /// Default FHIR string search: case-insensitive prefix match.
+    Prefix,
+    /// `:exact` — exact (case-insensitive on the stored lowercased value) match.
+    Exact,
+    /// `:contains` — case-insensitive substring match.
+    Contains,
+}
+
+/// Escape SQL LIKE metacharacters (`%`, `_`, and the `\` escape char itself) in
+/// a user-supplied value so they are matched literally under `ESCAPE '\'`.
+fn escape_like(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        if matches!(c, '\\' | '%' | '_') {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
 }
 
 /// SQLite-backed search index
@@ -231,46 +263,97 @@ impl SearchIndex {
         Ok(ids)
     }
 
-    /// String search (name, etc., prefix match)
+    /// String search (name, etc.) honoring the `:exact` / `:contains` modifiers.
     pub fn search_string(
         &self,
         resource_type: &str,
         param_name: &str,
         value: &str,
-        exact: bool,
+        mode: StringMatch,
     ) -> Result<Vec<String>> {
-        let query = if exact {
-            r#"
-            SELECT DISTINCT resource_id FROM search_index
-            WHERE resource_type = ?1
-              AND param_name = ?2
-              AND value_string_lower = ?3
-            "#
-        } else {
-            r#"
-            SELECT DISTINCT resource_id FROM search_index
-            WHERE resource_type = ?1
-              AND param_name = ?2
-              AND value_string_lower LIKE ?3
-            "#
+        let lower = value.to_lowercase();
+        let (sql, bound): (&str, String) = match mode {
+            StringMatch::Exact => (
+                "SELECT DISTINCT resource_id FROM search_index \
+                 WHERE resource_type = ?1 AND param_name = ?2 AND value_string_lower = ?3",
+                lower,
+            ),
+            StringMatch::Prefix => (
+                "SELECT DISTINCT resource_id FROM search_index \
+                 WHERE resource_type = ?1 AND param_name = ?2 \
+                   AND value_string_lower LIKE ?3 ESCAPE '\\'",
+                format!("{}%", escape_like(&lower)),
+            ),
+            StringMatch::Contains => (
+                "SELECT DISTINCT resource_id FROM search_index \
+                 WHERE resource_type = ?1 AND param_name = ?2 \
+                   AND value_string_lower LIKE ?3 ESCAPE '\\'",
+                format!("%{}%", escape_like(&lower)),
+            ),
         };
 
-        let search_value = if exact {
-            value.to_lowercase()
-        } else {
-            format!("{}%", value.to_lowercase())
-        };
-
-        let mut stmt = self.conn.prepare(query)?;
-        let rows = stmt.query_map(params![resource_type, param_name, search_value], |row| {
-            row.get(0)
-        })?;
+        let mut stmt = self.conn.prepare(sql)?;
+        let rows = stmt.query_map(params![resource_type, param_name, bound], |row| row.get(0))?;
 
         let mut ids = Vec::new();
         for row in rows {
             ids.push(row?);
         }
+        Ok(ids)
+    }
 
+    /// Token search with NO system (`|code`): the resource's value must carry
+    /// the code and have been indexed without a system.
+    pub fn search_token_no_system(
+        &self,
+        resource_type: &str,
+        param_name: &str,
+        code: &str,
+    ) -> Result<Vec<String>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT DISTINCT resource_id FROM search_index \
+             WHERE resource_type = ?1 AND param_name = ?2 \
+               AND value_string = ?3 AND value_system IS NULL",
+        )?;
+        let rows = stmt.query_map(params![resource_type, param_name, code], |row| row.get(0))?;
+        let mut ids = Vec::new();
+        for row in rows {
+            ids.push(row?);
+        }
+        Ok(ids)
+    }
+
+    /// Token search by system only (`system|`): any code within the system.
+    pub fn search_token_system_only(
+        &self,
+        resource_type: &str,
+        param_name: &str,
+        system: &str,
+    ) -> Result<Vec<String>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT DISTINCT resource_id FROM search_index \
+             WHERE resource_type = ?1 AND param_name = ?2 AND value_system = ?3",
+        )?;
+        let rows = stmt.query_map(params![resource_type, param_name, system], |row| row.get(0))?;
+        let mut ids = Vec::new();
+        for row in rows {
+            ids.push(row?);
+        }
+        Ok(ids)
+    }
+
+    /// Distinct resource ids that have at least one index entry for `param_name`
+    /// (used to implement the `:missing` and `:not` modifiers).
+    pub fn ids_with_param(&self, resource_type: &str, param_name: &str) -> Result<Vec<String>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT DISTINCT resource_id FROM search_index \
+             WHERE resource_type = ?1 AND param_name = ?2",
+        )?;
+        let rows = stmt.query_map(params![resource_type, param_name], |row| row.get(0))?;
+        let mut ids = Vec::new();
+        for row in rows {
+            ids.push(row?);
+        }
         Ok(ids)
     }
 
@@ -329,6 +412,13 @@ impl SearchIndex {
             "ge" => "value_date_end > ?3 AND ?4 = ?4",
             "lt" => "value_date_start < ?3 AND ?4 = ?4",
             "le" => "value_date_start < ?4 AND ?3 = ?3",
+            // `sa` (starts after): the resource range begins at/after the query
+            // range end. `eb` (ends before): the resource range ends at/before
+            // the query range start.
+            "sa" => "value_date_start >= ?4",
+            "eb" => "value_date_end <= ?3 AND ?4 = ?4",
+            // `ap` (approximately): any overlap with the query range.
+            "ap" => "value_date_start < ?4 AND value_date_end > ?3",
             _ => "value_date_start >= ?3 AND value_date_end <= ?4",
         };
         let query = format!(
@@ -395,7 +485,7 @@ mod tests {
 
         // Prefix match search
         let results = index
-            .search_string("Patient", "family", "do", false)
+            .search_string("Patient", "family", "do", StringMatch::Prefix)
             .unwrap();
 
         assert_eq!(results.len(), 2);
@@ -469,6 +559,59 @@ mod tests {
                 .search_date_with_prefix("Observation", "date", prefix, val)
                 .unwrap();
             assert!(ids.contains(&"period".to_string()), "{prefix} should match the Period");
+        }
+    }
+
+    #[test]
+    fn test_token_system_edge_forms() {
+        let index = SearchIndex::open(":memory:").unwrap();
+        index.add_index("Obs", "withsys", "code", "token", Some("1234-5"), Some("http://loinc.org")).unwrap();
+        index.add_index("Obs", "nosys", "code", "token", Some("1234-5"), None).unwrap();
+
+        // `|code` → only the entry indexed without a system.
+        assert_eq!(index.search_token_no_system("Obs", "code", "1234-5").unwrap(), vec!["nosys"]);
+        // `system|` → any code within the system.
+        assert_eq!(index.search_token_system_only("Obs", "code", "http://loinc.org").unwrap(), vec!["withsys"]);
+        // bare code → both (any system).
+        assert_eq!(index.search_token("Obs", "code", None, "1234-5").unwrap().len(), 2);
+    }
+
+    #[test]
+    fn test_string_contains_and_like_escaping() {
+        let index = SearchIndex::open(":memory:").unwrap();
+        index.add_index("Patient", "p1", "name", "string", Some("Yamada"), None).unwrap();
+        index.add_index("Patient", "p2", "name", "string", Some("50%off"), None).unwrap();
+
+        // :contains substring
+        assert_eq!(index.search_string("Patient", "name", "mad", StringMatch::Contains).unwrap(), vec!["p1"]);
+        // A literal % must not act as a wildcard.
+        let r = index.search_string("Patient", "name", "50%", StringMatch::Prefix).unwrap();
+        assert_eq!(r, vec!["p2"]);
+        // and a non-matching literal % search returns nothing (no wildcard blowup)
+        assert!(index.search_string("Patient", "name", "z%", StringMatch::Prefix).unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_date_sa_eb_prefixes() {
+        let index = SearchIndex::open(":memory:").unwrap();
+        index.add_index("Obs", "early", "date", "date", Some("2020-01-01"), None).unwrap();
+        index.add_index("Obs", "late", "date", "date", Some("2025-01-01"), None).unwrap();
+
+        // sa (starts after) the whole of 2022
+        assert_eq!(index.search_date_with_prefix("Obs", "date", "sa", "2022").unwrap(), vec!["late"]);
+        // eb (ends before) the whole of 2022
+        assert_eq!(index.search_date_with_prefix("Obs", "date", "eb", "2022").unwrap(), vec!["early"]);
+    }
+
+    #[test]
+    fn test_minute_precision_datetime_parses() {
+        // `YYYY-MM-DDThh:mm` is a valid FHIR dateTime (one-minute window),
+        // with or without a trailing Z.
+        for v in ["2024-03-04T09:30Z", "2024-03-04T09:30"] {
+            let r = fhir_date_range(v);
+            assert!(r.is_some(), "minute-precision dateTime {v} must parse");
+            let (s, e) = r.unwrap();
+            assert_eq!(e - s, 60_000_000, "{v} should span one minute");
         }
     }
 

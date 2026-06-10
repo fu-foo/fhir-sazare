@@ -260,11 +260,17 @@ fn parse_chain(reference_param: &str, modifier: &str, value: &str) -> Option<Cha
     }
 }
 
-/// Parse date prefix from value (ge2020-01-01 -> (Some("ge"), "2020-01-01"))
+/// Parse date prefix from value (ge2020-01-01 -> (Some("ge"), "2020-01-01")).
+/// Recognizes all FHIR comparator prefixes: eq, ne, gt, lt, ge, le, sa, eb, ap.
 fn parse_date_prefix(value: &str) -> (Option<String>, String) {
-    let prefixes = ["ge", "le", "gt", "lt", "eq"];
-    for prefix in &prefixes {
-        if let Some(rest) = value.strip_prefix(prefix) {
+    const PREFIXES: [&str; 9] = ["eq", "ne", "gt", "lt", "ge", "le", "sa", "eb", "ap"];
+    // A prefix only counts if what follows looks like a date (starts with a
+    // digit), so a literal value that happens to start with these letters isn't
+    // misparsed.
+    for prefix in PREFIXES {
+        if let Some(rest) = value.strip_prefix(prefix)
+            && rest.chars().next().is_some_and(|c| c.is_ascii_digit())
+        {
             return (Some(prefix.to_string()), rest.to_string());
         }
     }
@@ -471,6 +477,25 @@ mod tests {
     fn test_parse_unknown_underscore_param_skipped() {
         let query = SearchQuery::parse("_sort=name").unwrap();
         assert_eq!(query.parameters.len(), 0);
+    }
+
+    #[test]
+    fn test_parse_all_date_prefixes() {
+        for (p, raw) in [
+            ("ne", "ne2024-01-01"),
+            ("sa", "sa2024-01-01"),
+            ("eb", "eb2024-01-01"),
+            ("ap", "ap2024-01-01"),
+            ("gt", "gt2024-01-01"),
+        ] {
+            let (prefix, val) = parse_date_prefix(raw);
+            assert_eq!(prefix.as_deref(), Some(p));
+            assert_eq!(val, "2024-01-01");
+        }
+        // No prefix → defaults to eq, value untouched.
+        let (prefix, val) = parse_date_prefix("2024-01-01");
+        assert_eq!(prefix.as_deref(), Some("eq"));
+        assert_eq!(val, "2024-01-01");
     }
 
     #[test]

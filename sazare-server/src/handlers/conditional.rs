@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Path, Query, Request, State},
+    extract::{Path, Request, State},
     http::StatusCode,
     response::{IntoResponse, Json, Response},
 };
@@ -7,7 +7,7 @@ use http_body_util::BodyExt;
 use sazare_core::{
     operation_outcome::IssueType,
     validation::validate_resource_all_phases,
-    Meta, OperationOutcome, Resource, SearchQuery,
+    OperationOutcome, Resource, SearchQuery,
 };
 use sazare_store::SearchExecutor;
 use serde_json::{json, Value};
@@ -17,7 +17,6 @@ use super::{response_with_etag, update_search_index};
 use crate::audit::{self, AuditContext};
 use crate::auth::AuthUser;
 use crate::compartment_check::check_compartment_access;
-use crate::handlers::search::SearchParams;
 use crate::AppState;
 
 /// Conditional update (PUT /{resource_type}?params)
@@ -28,13 +27,15 @@ use crate::AppState;
 pub async fn conditional_update(
     State(state): State<Arc<AppState>>,
     Path(resource_type): Path<String>,
-    Query(params): Query<SearchParams>,
     request: Request,
 ) -> Result<Response, (StatusCode, Json<Value>)> {
     let audit_ctx = AuditContext::from_request(&request);
     let auth_user = request.extensions().get::<AuthUser>().cloned();
 
-    let (_parts, body) = request.into_parts();
+    let (parts, body) = request.into_parts();
+    // Use the raw query string so repeated parameters (AND) survive and values
+    // are decoded exactly once.
+    let query_string = parts.uri.query().unwrap_or("").to_string();
     let bytes = body
         .collect()
         .await
@@ -53,14 +54,6 @@ pub async fn conditional_update(
         )
     })?;
 
-    // Build search query from params
-    let query_string: String = params
-        .params
-        .iter()
-        .map(|(k, v)| format!("{}={}", k, v))
-        .collect::<Vec<_>>()
-        .join("&");
-
     if query_string.is_empty() {
         return Err((
             StatusCode::BAD_REQUEST,
@@ -71,7 +64,7 @@ pub async fn conditional_update(
         ));
     }
 
-    let query = SearchQuery::parse(&query_string).map_err(|e| {
+    let query = SearchQuery::parse_for_resource(&query_string, Some(&resource_type)).map_err(|e| {
         (
             StatusCode::BAD_REQUEST,
             Json(json!(OperationOutcome::error(IssueType::Invalid, e))),
@@ -142,11 +135,12 @@ pub async fn conditional_update(
         resource.id = Some(id.clone());
 
         let version_id = "1".to_string();
-        resource.meta = Some(Meta {
-            version_id: Some(version_id.clone()),
-            last_updated: Some(chrono::Utc::now().to_rfc3339()),
-            ..Default::default()
-        });
+        // Preserve caller-provided meta (profile, source, …); only stamp the
+        // server-managed versionId/lastUpdated.
+        let mut meta = resource.meta.take().unwrap_or_default();
+        meta.version_id = Some(version_id.clone());
+        meta.last_updated = Some(chrono::Utc::now().to_rfc3339());
+        resource.meta = Some(meta);
 
         let json_bytes = serde_json::to_vec(&resource).map_err(|e| {
             (
@@ -192,11 +186,10 @@ pub async fn conditional_update(
         };
 
         resource.id = Some(id.clone());
-        resource.meta = Some(Meta {
-            version_id: Some(new_version.clone()),
-            last_updated: Some(chrono::Utc::now().to_rfc3339()),
-            ..Default::default()
-        });
+        let mut meta = resource.meta.take().unwrap_or_default();
+        meta.version_id = Some(new_version.clone());
+        meta.last_updated = Some(chrono::Utc::now().to_rfc3339());
+        resource.meta = Some(meta);
 
         let json_bytes = serde_json::to_vec(&resource).map_err(|e| {
             (
@@ -234,18 +227,12 @@ pub async fn conditional_update(
 pub async fn conditional_delete(
     State(state): State<Arc<AppState>>,
     Path(resource_type): Path<String>,
-    Query(params): Query<SearchParams>,
     request: Request,
 ) -> Result<StatusCode, (StatusCode, Json<Value>)> {
     let audit_ctx = AuditContext::from_request(&request);
     let auth_user = request.extensions().get::<AuthUser>().cloned();
 
-    let query_string: String = params
-        .params
-        .iter()
-        .map(|(k, v)| format!("{}={}", k, v))
-        .collect::<Vec<_>>()
-        .join("&");
+    let query_string = request.uri().query().unwrap_or("").to_string();
 
     if query_string.is_empty() {
         return Err((
@@ -257,7 +244,7 @@ pub async fn conditional_delete(
         ));
     }
 
-    let query = SearchQuery::parse(&query_string).map_err(|e| {
+    let query = SearchQuery::parse_for_resource(&query_string, Some(&resource_type)).map_err(|e| {
         (
             StatusCode::BAD_REQUEST,
             Json(json!(OperationOutcome::error(IssueType::Invalid, e))),
