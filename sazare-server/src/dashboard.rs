@@ -261,7 +261,7 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
     <div class="search-row">
       <input id="search-type" list="search-types" data-i18n-ph="search.type" placeholder="Resource type">
       <datalist id="search-types"></datalist>
-      <input id="search-query" data-i18n-ph="search.query" placeholder="name=Yamada"
+      <input id="search-query" data-i18n-ph="search.query" placeholder="name=Brown"
              onkeydown="if(event.key==='Enter')runSearch()">
       <button class="search-btn" data-i18n="search.btn" onclick="runSearch()">Search</button>
     </div>
@@ -340,9 +340,9 @@ const I18N = {
     "welcome.body": "This server is empty. Load a small sample dataset to start exploring patients, vitals, and prescriptions right away.",
     "welcome.btn": "Load sample data", "welcome.loading": "Loading…",
     "resources.title": "Resources", "resources.total": "Total",
-    "search.title": "Search", "search.type": "Resource type", "search.query": "name=Yamada",
+    "search.title": "Search", "search.type": "Resource type", "search.query": "name=Brown",
     "search.btn": "Search",
-    "search.hint": "Tip: pick a resource type and a parameter, e.g. Patient with name=Yamada. The FHIR URL is shown so you can learn it.",
+    "search.hint": "Tip: pick a resource type and a parameter, e.g. Patient with name=Brown. The FHIR URL is shown so you can learn it.",
     "search.results": "results", "search.none": "No matches", "search.error": "Search error",
     "activity.title": "Recent Activity", "activity.time": "Time", "activity.op": "Operation",
     "activity.resource": "Resource", "activity.result": "Result",
@@ -363,9 +363,9 @@ const I18N = {
     "welcome.body": "サーバは空の状態です。サンプルデータを入れると、患者・検査値・処方などをすぐに眺められます。",
     "welcome.btn": "サンプルデータを入れる", "welcome.loading": "読み込み中…",
     "resources.title": "リソース", "resources.total": "合計",
-    "search.title": "検索", "search.type": "リソース型", "search.query": "name=山田",
+    "search.title": "検索", "search.type": "リソース型", "search.query": "name=Brown",
     "search.btn": "検索",
-    "search.hint": "ヒント：リソース型とパラメータを入力（例：Patient に name=山田）。生成された FHIR の URL を見ながら覚えられます。",
+    "search.hint": "ヒント：リソース型とパラメータを入力（例：Patient に name=Brown）。生成された FHIR の URL を見ながら覚えられます。",
     "search.results": "件", "search.none": "該当なし", "search.error": "検索エラー",
     "activity.title": "最近の操作", "activity.time": "時刻", "activity.op": "操作",
     "activity.resource": "リソース", "activity.result": "結果",

@@ -20,36 +20,36 @@ use crate::AppState;
 const DEMO_RESOURCES: &str = r##"[
   {
     "resourceType": "Patient",
-    "id": "demo-yamada",
-    "name": [{"family": "山田", "given": ["太郎"], "text": "山田 太郎"}],
-    "gender": "male",
-    "birthDate": "1980-05-12",
-    "telecom": [{"system": "phone", "value": "03-1234-5678", "use": "home"}]
+    "id": "demo-patient-amy",
+    "name": [{"family": "Shaw", "given": ["Amy"], "text": "Amy Shaw"}],
+    "gender": "female",
+    "birthDate": "1987-02-20",
+    "telecom": [{"system": "phone", "value": "555-0142", "use": "home"}]
   },
   {
     "resourceType": "Patient",
-    "id": "demo-suzuki",
-    "name": [{"family": "鈴木", "given": ["花子"], "text": "鈴木 花子"}],
-    "gender": "female",
-    "birthDate": "1992-11-03"
+    "id": "demo-patient-john",
+    "name": [{"family": "Brown", "given": ["John"], "text": "John Brown"}],
+    "gender": "male",
+    "birthDate": "1965-08-09"
   },
   {
     "resourceType": "Observation",
     "id": "demo-bodyweight",
     "status": "final",
     "category": [{"coding": [{"system": "http://terminology.hl7.org/CodeSystem/observation-category", "code": "vital-signs"}]}],
-    "code": {"coding": [{"system": "http://loinc.org", "code": "29463-7", "display": "Body weight"}], "text": "体重"},
-    "subject": {"reference": "Patient/demo-yamada"},
+    "code": {"coding": [{"system": "http://loinc.org", "code": "29463-7", "display": "Body weight"}], "text": "Body weight"},
+    "subject": {"reference": "Patient/demo-patient-john"},
     "effectiveDateTime": "2026-01-15",
-    "valueQuantity": {"value": 68.5, "unit": "kg", "system": "http://unitsofmeasure.org", "code": "kg"}
+    "valueQuantity": {"value": 80.5, "unit": "kg", "system": "http://unitsofmeasure.org", "code": "kg"}
   },
   {
     "resourceType": "Observation",
     "id": "demo-heartrate",
     "status": "final",
     "category": [{"coding": [{"system": "http://terminology.hl7.org/CodeSystem/observation-category", "code": "vital-signs"}]}],
-    "code": {"coding": [{"system": "http://loinc.org", "code": "8867-4", "display": "Heart rate"}], "text": "心拍数"},
-    "subject": {"reference": "Patient/demo-yamada"},
+    "code": {"coding": [{"system": "http://loinc.org", "code": "8867-4", "display": "Heart rate"}], "text": "Heart rate"},
+    "subject": {"reference": "Patient/demo-patient-john"},
     "effectiveDateTime": "2026-01-15",
     "valueQuantity": {"value": 72, "unit": "beats/minute", "system": "http://unitsofmeasure.org", "code": "/min"}
   },
@@ -58,24 +58,24 @@ const DEMO_RESOURCES: &str = r##"[
     "id": "demo-condition",
     "clinicalStatus": {"coding": [{"system": "http://terminology.hl7.org/CodeSystem/condition-clinical", "code": "active"}]},
     "verificationStatus": {"coding": [{"system": "http://terminology.hl7.org/CodeSystem/condition-ver-status", "code": "confirmed"}]},
-    "code": {"coding": [{"system": "http://snomed.info/sct", "code": "38341003", "display": "Hypertension"}], "text": "高血圧"},
-    "subject": {"reference": "Patient/demo-yamada"}
+    "code": {"coding": [{"system": "http://snomed.info/sct", "code": "38341003", "display": "Hypertension"}], "text": "Hypertension"},
+    "subject": {"reference": "Patient/demo-patient-john"}
   },
   {
     "resourceType": "Encounter",
     "id": "demo-encounter",
     "status": "finished",
     "class": {"system": "http://terminology.hl7.org/CodeSystem/v3-ActCode", "code": "AMB", "display": "ambulatory"},
-    "subject": {"reference": "Patient/demo-yamada"},
-    "period": {"start": "2026-01-15T09:00:00+09:00", "end": "2026-01-15T09:30:00+09:00"}
+    "subject": {"reference": "Patient/demo-patient-john"},
+    "period": {"start": "2026-01-15T09:00:00Z", "end": "2026-01-15T09:30:00Z"}
   },
   {
     "resourceType": "MedicationRequest",
     "id": "demo-medication",
     "status": "active",
     "intent": "order",
-    "medicationCodeableConcept": {"coding": [{"system": "http://www.nlm.nih.gov/research/umls/rxnorm", "code": "197361", "display": "Amlodipine 5 MG Oral Tablet"}], "text": "アムロジピン 5mg 錠"},
-    "subject": {"reference": "Patient/demo-yamada"}
+    "medicationCodeableConcept": {"coding": [{"system": "http://www.nlm.nih.gov/research/umls/rxnorm", "code": "197361", "display": "Amlodipine 5 MG Oral Tablet"}], "text": "Amlodipine 5 mg tablet"},
+    "subject": {"reference": "Patient/demo-patient-john"}
   }
 ]"##;
 
