@@ -23,7 +23,7 @@
 - **JP Core** — 44 HL7 FHIR JP Core v1.2.0 profiles, plus Japanese name search by kana (`name-kana`) / kanji (`name-kanji`) and JP insurance / medication search params
 - **Bulk data** — NDJSON `$import`, and `$export` both synchronous and async (FHIR Bulk Data Access IG: `Prefer: respond-async` kick-off, status poll, manifest, `_type`/`_since`/`_outputFormat`)
 - **Plugin system** — Serve domain-specific SPAs at top-level paths (e.g. `/sample-patient-register/`)
-- **Web dashboard** — Browser-based server monitoring at `/`
+- **Web dashboard** — Built-in console at `/`: browse resources, a search builder that shows the generated FHIR URL, one-click sample data, English/Japanese — no build step, served from the binary
 - **Audit logging** — All operations recorded to dedicated SQLite database
 - **PATCH** — JSON Patch (RFC 6902)
 - **$everything** — Patient compartment operation
@@ -36,55 +36,68 @@
 
 ---
 
-## Quick Start
+## Quick Start — run a FHIR server in 30 seconds
 
-### Prerequisites
+Download one file, run it, and you're looking at live FHIR data. No Docker, no
+JVM, no database, no config.
 
-- **Rust 1.85+** (2024 edition)
+**1. Download the binary for your OS** from the
+[latest release](https://github.com/fu-foo/fhir-sazare/releases/latest)
+(macOS Intel/Apple Silicon, Linux x86-64/ARM64, Windows x86-64).
 
-### Build and Run
-
-```bash
-git clone https://github.com/fu-foo/fhir-sazare.git
-cd fhir-sazare
-cargo build --release
-./target/release/sazare-server
-```
-
-The server starts at `http://localhost:8080` with default settings (no authentication).
-
-**Just want to look around?** Run with sample data and open the dashboard automatically:
+**2. Unpack and run it with sample data:**
 
 ```bash
-./target/release/sazare-server --demo --open
+# macOS (Apple Silicon shown — pick the asset matching your OS/arch)
+tar xzf sazare-server-macos-arm64.tar.gz
+./sazare-server --demo --open
 ```
 
-`--demo` pre-loads a few patients with vitals, a condition, an encounter, and a
-prescription; `--open` launches the built-in dashboard in your browser. A single
-binary — no Docker, no JVM, no setup. (The dashboard also has a one-click "Load
-sample data" button and a search builder, and speaks English or Japanese.)
+```powershell
+# Windows: unzip, then
+.\sazare-server.exe --demo --open
+```
 
-### Verify
+`--demo` pre-loads a few sample patients with vitals, a condition, an encounter,
+and a prescription; `--open` launches the built-in dashboard in your browser.
+That's the whole setup.
+
+> **macOS first run**: the binary is unsigned, so Gatekeeper may block it. Allow
+> it with `xattr -d com.apple.quarantine ./sazare-server`, or right-click → Open.
+
+The server listens on `http://localhost:8080` (no authentication by default). The
+dashboard has a one-click "Load sample data" button and a search builder, and
+speaks English or Japanese.
+
+### Try it from the command line
 
 ```bash
 # CapabilityStatement
 curl http://localhost:8080/metadata
 
-# Open dashboard in browser
-open http://localhost:8080/
-```
-
-### Create Your First Resource
-
-```bash
+# Create your first resource
 curl -X POST http://localhost:8080/Patient \
-  -H "Content-Type: application/json" \
+  -H "Content-Type: application/fhir+json" \
   -d '{
     "resourceType": "Patient",
     "name": [{"family": "Doe", "given": ["Jane"]}],
     "gender": "female",
     "birthDate": "1990-01-01"
   }'
+
+# Search for it
+curl "http://localhost:8080/Patient?name=Doe"
+```
+
+### Build from source (optional)
+
+Prefer to build it yourself? You'll need **Rust 1.85+** (2024 edition):
+
+```bash
+git clone https://github.com/fu-foo/fhir-sazare.git
+cd fhir-sazare
+cargo build --release
+./target/release/sazare-server --demo --open
 ```
 
 ---
