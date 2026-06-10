@@ -129,8 +129,23 @@ impl SubscriptionManager {
 
         for sub in &subscriptions {
             if let Err(e) = Self::process_subscription(state, sub, resource_type, resource_id, resource).await {
-                debug!("Subscription notification failed: {}", e);
-                // Update subscription status to error
+                let sub_id = sub.get("id").and_then(|v| v.as_str()).unwrap_or("unknown");
+                // Record the failure: a warning in the log AND an audit entry, so a
+                // dead endpoint is visible rather than swallowed.
+                warn!("Subscription {} delivery failed: {}", sub_id, e);
+                let ctx = crate::audit::AuditContext::new(
+                    Some("subscription".to_string()),
+                    "system".to_string(),
+                );
+                crate::audit::log_operation_error(
+                    &ctx,
+                    "NOTIFY",
+                    "Subscription",
+                    Some(sub_id),
+                    &e,
+                    &state.audit,
+                );
+                // Mark the subscription as errored (only after retries are exhausted).
                 Self::update_subscription_status(state, sub, "error").await;
             }
         }
@@ -226,11 +241,61 @@ impl SubscriptionManager {
             .and_then(|v| v.as_str())
             .ok_or("No endpoint in channel")?;
 
-        // Send HTTP POST to endpoint
+        // Pre-fetch the payload body once (when the channel wants the full
+        // resource); reused across retry attempts.
+        let payload_type = channel
+            .get("payload")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let body = if payload_type.contains("json") {
+            state.store.get(resource_type, resource_id).ok().flatten()
+        } else {
+            None
+        };
+
+        // Best-effort delivery: a few attempts with short backoff (500ms, 1s).
+        // This is deliberately NOT durable/guaranteed delivery — no persistent
+        // queue, no ordering — which belongs to a dedicated eventing tier, not a
+        // lightweight single-binary server. Transient endpoint blips are smoothed
+        // over; a persistently-failing endpoint exhausts the retries and is
+        // recorded by the caller.
+        const MAX_ATTEMPTS: u32 = 3;
+        let mut last_err = String::new();
+        for attempt in 1..=MAX_ATTEMPTS {
+            match Self::deliver_rest_hook(channel, endpoint, body.as_deref()).await {
+                Ok(()) => {
+                    debug!(
+                        "Subscription notification sent to {} for {}/{} (attempt {})",
+                        endpoint, resource_type, resource_id, attempt
+                    );
+                    return Ok(());
+                }
+                Err(e) => {
+                    last_err = e;
+                    if attempt < MAX_ATTEMPTS {
+                        let backoff =
+                            std::time::Duration::from_millis(500u64 * (1u64 << (attempt - 1)));
+                        tokio::time::sleep(backoff).await;
+                    }
+                }
+            }
+        }
+        Err(format!(
+            "rest-hook delivery to {} failed after {} attempts: {}",
+            endpoint, MAX_ATTEMPTS, last_err
+        ))
+    }
+
+    /// One rest-hook delivery attempt: POST the optional body to `endpoint` with
+    /// the subscription's custom headers. Err on transport failure or non-2xx.
+    async fn deliver_rest_hook(
+        channel: &Value,
+        endpoint: &str,
+        body: Option<&[u8]>,
+    ) -> Result<(), String> {
         let client = reqwest::Client::new();
         let mut request = client.post(endpoint);
 
-        // Add custom headers if specified
         if let Some(headers) = channel.get("header").and_then(|v| v.as_array()) {
             for header_val in headers {
                 if let Some(header_str) = header_val.as_str()
@@ -248,36 +313,19 @@ impl SubscriptionManager {
             }
         }
 
-        let payload_type = channel
-            .get("payload")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-
-        // Send notification based on payload content type
-        if payload_type.contains("json") {
-            // Full resource payload
-            if let Ok(Some(data)) = state.store.get(resource_type, resource_id) {
-                request = request
-                    .header("Content-Type", "application/fhir+json")
-                    .body(data);
-            }
+        if let Some(body) = body {
+            request = request
+                .header("Content-Type", "application/fhir+json")
+                .body(body.to_vec());
         }
-        // Empty payload or other types: just send the POST with no body
 
         let response = request
             .send()
             .await
             .map_err(|e| format!("HTTP request failed: {}", e))?;
-
         if !response.status().is_success() {
-            return Err(format!("Endpoint returned status: {}", response.status()));
+            return Err(format!("endpoint returned status {}", response.status()));
         }
-
-        debug!(
-            "Subscription notification sent to {} for {}/{}",
-            endpoint, resource_type, resource_id
-        );
-
         Ok(())
     }
 
@@ -417,3 +465,42 @@ mod tests {
     }
 }
 
+
+#[cfg(test)]
+mod delivery_tests {
+    use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+
+    /// A throwaway HTTP server that accepts one connection and replies with the
+    /// given status line, so we can exercise the rest-hook delivery primitive.
+    async fn one_shot_server(status_line: &'static str) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            if let Ok((mut sock, _)) = listener.accept().await {
+                let mut buf = [0u8; 1024];
+                let _ = sock.read(&mut buf).await;
+                let resp = format!("HTTP/1.1 {status_line}\r\nContent-Length: 0\r\n\r\n");
+                let _ = sock.write_all(resp.as_bytes()).await;
+                let _ = sock.flush().await;
+            }
+        });
+        format!("http://{addr}/")
+    }
+
+    #[tokio::test]
+    async fn deliver_ok_on_2xx() {
+        let url = one_shot_server("200 OK").await;
+        let channel = serde_json::json!({});
+        assert!(SubscriptionManager::deliver_rest_hook(&channel, &url, None).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn deliver_err_on_5xx() {
+        let url = one_shot_server("500 Internal Server Error").await;
+        let channel = serde_json::json!({});
+        let r = SubscriptionManager::deliver_rest_hook(&channel, &url, None).await;
+        assert!(r.is_err(), "non-2xx must be an error so the retry loop kicks in");
+    }
+}
