@@ -75,6 +75,10 @@ pub struct ExportParams {
     pub _since: Option<String>,
     /// Output format; only NDJSON variants are supported.
     pub _outputFormat: Option<String>,
+    /// `_typeFilter` is part of the Bulk Data IG but not implemented here; it is
+    /// captured only so we can reject it rather than silently ignore it (which
+    /// would over-disclose data the client asked to filter out).
+    pub _typeFilter: Option<String>,
 }
 
 #[derive(Clone)]
@@ -268,6 +272,18 @@ async fn run_export(
     request_path: &str,
     params: ExportParams,
 ) -> Response {
+    // Reject _typeFilter rather than silently ignoring it (over-disclosure).
+    if params._typeFilter.is_some() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(op_outcome(
+                "not-supported",
+                "_typeFilter is not supported by this server".into(),
+            )),
+        )
+            .into_response();
+    }
+
     // Validate _outputFormat (NDJSON only).
     if let Some(fmt) = &params._outputFormat {
         let ok = matches!(

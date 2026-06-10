@@ -784,6 +784,65 @@ async fn create(client: &reqwest::Client, base_url: &str, type_: &str, body: &Va
 }
 
 #[tokio::test]
+async fn test_post_with_existing_id_conflicts() {
+    let (base_url, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+
+    // First create with an explicit id succeeds.
+    let body = json!({"resourceType": "Patient", "id": "fixed-1", "name": [{"family": "One"}]});
+    let r = client.post(format!("{base_url}/Patient")).json(&body).send().await.unwrap();
+    assert_eq!(r.status(), 201);
+
+    // A second POST reusing that id must NOT clobber it — expect 409.
+    let body2 = json!({"resourceType": "Patient", "id": "fixed-1", "name": [{"family": "Two"}]});
+    let r2 = client.post(format!("{base_url}/Patient")).json(&body2).send().await.unwrap();
+    assert_eq!(r2.status(), 409, "re-POST of an existing id must conflict, not overwrite");
+
+    // The original survives.
+    let got: Value = client.get(format!("{base_url}/Patient/fixed-1")).send().await.unwrap().json().await.unwrap();
+    assert_eq!(got["name"][0]["family"], "One");
+}
+
+#[tokio::test]
+async fn test_repeated_date_params_are_anded() {
+    let (base_url, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+
+    // Two Observations on different dates.
+    create(&client, &base_url, "Observation", &json!({
+        "resourceType": "Observation", "status": "final",
+        "code": {"coding": [{"code": "x"}]},
+        "effectiveDateTime": "2024-06-15"
+    })).await;
+    create(&client, &base_url, "Observation", &json!({
+        "resourceType": "Observation", "status": "final",
+        "code": {"coding": [{"code": "x"}]},
+        "effectiveDateTime": "2023-01-01"
+    })).await;
+
+    // A bounded range (AND of two date params) must return only the 2024 one.
+    let bundle: Value = client
+        .get(format!("{base_url}/Observation?date=ge2024-01-01&date=le2024-12-31"))
+        .send().await.unwrap().json().await.unwrap();
+    assert_eq!(bundle["total"], 1, "repeated date params must AND, not last-wins");
+}
+
+#[tokio::test]
+async fn test_if_match_conflict_is_412() {
+    let (base_url, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let id = create(&client, &base_url, "Patient", &json!({"resourceType": "Patient", "name": [{"family": "M"}]})).await;
+
+    // Update with a stale If-Match version → 412 Precondition Failed.
+    let r = client
+        .put(format!("{base_url}/Patient/{id}"))
+        .header("If-Match", "W/\"99\"")
+        .json(&json!({"resourceType": "Patient", "id": id, "name": [{"family": "M2"}]}))
+        .send().await.unwrap();
+    assert_eq!(r.status(), 412, "stale If-Match must be 412");
+}
+
+#[tokio::test]
 async fn test_conditional_create_if_none_exist() {
     let (base_url, _dir) = start_test_server().await;
     let client = reqwest::Client::new();

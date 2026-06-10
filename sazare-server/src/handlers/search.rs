@@ -342,11 +342,15 @@ async fn do_search(
         &state.audit,
     );
 
-    Ok(super::fhir_json(StatusCode::OK, json!({
+    // Omit `entry` entirely when empty — FHIR JSON forbids empty arrays.
+    let mut bundle = json!({
         "resourceType": "Bundle",
         "type": "searchset",
         "total": total,
         "link": links,
-        "entry": entries
-    })))
+    });
+    if !entries.is_empty() {
+        bundle["entry"] = json!(entries);
+    }
+    Ok(super::fhir_json(StatusCode::OK, bundle))
 }
