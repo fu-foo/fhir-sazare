@@ -10,6 +10,7 @@ pub mod bundle;
 pub mod compartment_check;
 pub mod config;
 pub mod dashboard;
+pub mod demo;
 pub mod handlers;
 pub mod plugins;
 pub mod smart;
@@ -134,6 +135,10 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         // Dashboard browse (auth-free)
         .route("/$browse/{resource_type}", get(dashboard::browse_list))
         .route("/$browse/{resource_type}/{id}", get(dashboard::browse_read))
+        // One-click sample data for first-run exploration. Writes data, so it is
+        // NOT auth-exempt — when auth is enabled it requires a credential like
+        // any other write; in the default (auth-off) local mode it just works.
+        .route("/$demo", post(demo::load_demo))
         // Plugin listing
         .route("/$plugins", get(plugins::list_plugins))
         // Bulk operations — async Bulk Data IG export (with sync fallback) + import

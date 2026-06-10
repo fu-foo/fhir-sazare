@@ -784,6 +784,37 @@ async fn create(client: &reqwest::Client, base_url: &str, type_: &str, body: &Va
 }
 
 #[tokio::test]
+async fn test_demo_loads_sample_data() {
+    let (base_url, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+
+    // Load the curated sample dataset.
+    let resp = client.post(format!("{base_url}/$demo")).send().await.unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    // Every demo resource must be valid (no load errors) and several must load.
+    assert_eq!(body["errors"].as_array().unwrap().len(), 0, "demo data should be valid: {body}");
+    assert!(body["loaded"].as_u64().unwrap() >= 5, "expected several demo resources, got {body}");
+
+    // The sample patients are now searchable.
+    let bundle: Value = client
+        .get(format!("{base_url}/Patient"))
+        .send().await.unwrap().json().await.unwrap();
+    assert!(bundle["total"].as_u64().unwrap() >= 2, "demo patients should be searchable");
+
+    // Idempotent: loading again doesn't error or duplicate.
+    let resp2 = client.post(format!("{base_url}/$demo")).send().await.unwrap();
+    assert_eq!(resp2.status(), 200);
+    let bundle2: Value = client
+        .get(format!("{base_url}/Patient"))
+        .send().await.unwrap().json().await.unwrap();
+    assert_eq!(
+        bundle["total"], bundle2["total"],
+        "re-running $demo must not duplicate resources"
+    );
+}
+
+#[tokio::test]
 async fn test_post_with_existing_id_conflicts() {
     let (base_url, _dir) = start_test_server().await;
     let client = reqwest::Client::new();

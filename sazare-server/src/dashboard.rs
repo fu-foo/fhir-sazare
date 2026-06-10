@@ -190,6 +190,10 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
   .endpoints code { background: #f0f0f0; padding: 2px 6px; border-radius: 3px; font-size: 12px; }
   .endpoints li { margin-bottom: 6px; list-style: none; }
   .refresh-note { text-align: center; color: #bbb; font-size: 12px; margin-top: 16px; }
+  .primary-btn { background: #2980b9; color: #fff; border: none; border-radius: 6px;
+                 padding: 10px 20px; font-size: 14px; cursor: pointer; transition: background 0.15s; }
+  .primary-btn:hover { background: #2471a3; }
+  .primary-btn:disabled { opacity: 0.5; cursor: default; }
 </style>
 </head>
 <body>
@@ -207,6 +211,16 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
       <span>Running</span>
       <span style="color:#95a5a6; margin-left: auto;" id="version"></span>
     </div>
+  </div>
+
+  <div class="card hidden" id="welcome">
+    <h2>はじめての方へ / Getting started</h2>
+    <p style="margin-bottom:14px; color:#555;">
+      サーバは空の状態です。サンプルデータを入れると、患者・検査値・処方などをすぐに眺められます。<br>
+      <span style="color:#95a5a6; font-size:13px;">This server is empty. Load a small sample dataset to start exploring.</span>
+    </p>
+    <button id="demo-btn" class="primary-btn" onclick="loadDemo()">サンプルデータを入れる / Load sample data</button>
+    <span id="demo-status" style="margin-left:12px; color:#95a5a6; font-size:13px;"></span>
   </div>
 
   <div class="card">
@@ -288,6 +302,11 @@ async function refresh() {
     document.getElementById('version').textContent =
       'v' + data.version + ' / FHIR ' + data.fhirVersion;
 
+    // First-run welcome: show the sample-data prompt only while empty.
+    const welcome = document.getElementById('welcome');
+    if (data.totalResources === 0) welcome.classList.remove('hidden');
+    else welcome.classList.add('hidden');
+
     // Resource type stats
     const statsEl = document.getElementById('stats');
     let statsHtml = '<div class="stat"><div class="num">' + data.totalResources +
@@ -317,6 +336,27 @@ async function refresh() {
     noteEl.textContent = 'Last updated: ' + new Date().toLocaleTimeString();
   } catch (err) {
     noteEl.textContent = 'Fetch failed: ' + err.message + ' (' + new Date().toLocaleTimeString() + ')';
+  }
+}
+
+async function loadDemo() {
+  const btn = document.getElementById('demo-btn');
+  const status = document.getElementById('demo-status');
+  btn.disabled = true;
+  status.textContent = '読み込み中… / Loading…';
+  try {
+    const res = await fetch('/$demo', { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) {
+      status.textContent = 'エラー / Error: HTTP ' + res.status;
+      btn.disabled = false;
+      return;
+    }
+    status.textContent = (data.message || 'Loaded') + ' ✓';
+    await refresh();
+  } catch (err) {
+    status.textContent = 'エラー / Error: ' + err.message;
+    btn.disabled = false;
   }
 }
 
