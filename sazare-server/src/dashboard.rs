@@ -2,6 +2,10 @@
 //!
 //! GET /           — HTML dashboard (when Accept is not application/json)
 //! GET /$status    — JSON API for dashboard polling
+//!
+//! UI text is localized client-side via a small message catalog (default
+//! English, auto-detecting Japanese from the browser, switchable). Server API
+//! responses (OperationOutcome, etc.) remain English-only.
 
 use crate::AppState;
 
@@ -124,7 +128,7 @@ pub async fn browse_read(
 }
 
 const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
-<html lang="ja">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -134,9 +138,12 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
          background: #f5f5f5; color: #333; line-height: 1.6; }
-  .header { background: #2c3e50; color: #fff; padding: 20px 32px; }
+  .header { background: #2c3e50; color: #fff; padding: 20px 32px; display: flex; align-items: center; }
   .header h1 { font-size: 24px; font-weight: 600; }
   .header .sub { color: #95a5a6; font-size: 14px; margin-top: 4px; }
+  .lang-toggle { margin-left: auto; background: rgba(255,255,255,0.12); color: #fff; border: 1px solid rgba(255,255,255,0.25);
+                 border-radius: 4px; padding: 4px 12px; cursor: pointer; font-size: 13px; }
+  .lang-toggle:hover { background: rgba(255,255,255,0.22); }
   .container { max-width: 960px; margin: 24px auto; padding: 0 16px; }
   .card { background: #fff; border-radius: 8px; padding: 20px 24px; margin-bottom: 16px;
           box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
@@ -194,53 +201,86 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
                  padding: 10px 20px; font-size: 14px; cursor: pointer; transition: background 0.15s; }
   .primary-btn:hover { background: #2471a3; }
   .primary-btn:disabled { opacity: 0.5; cursor: default; }
+  .search-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .search-row input { border: 1px solid #ddd; border-radius: 4px; padding: 8px 10px; font-size: 14px; }
+  .search-row input#search-type { width: 180px; }
+  .search-row input#search-query { flex: 1; min-width: 200px; }
+  .search-btn { background: #2980b9; color: #fff; border: none; border-radius: 4px;
+                padding: 8px 18px; font-size: 14px; cursor: pointer; }
+  .search-btn:hover { background: #2471a3; }
+  .search-hint { color: #95a5a6; font-size: 12px; margin-top: 8px; }
+  .search-url { margin-top: 10px; font-size: 12px; color: #555; }
+  .search-url code { background: #f0f0f0; padding: 3px 8px; border-radius: 3px;
+                     font-family: "SF Mono", Menlo, Consolas, monospace; word-break: break-all; }
+  .chip { display: inline-block; background: #eef3f8; color: #2980b9; border-radius: 12px;
+          padding: 2px 10px; font-size: 12px; margin: 2px 4px 2px 0; cursor: pointer; }
+  .chip:hover { background: #dceaf6; }
 </style>
 </head>
 <body>
 
 <div class="header">
-  <h1>sazare</h1>
-  <div class="sub">Lightweight FHIR R4 Server</div>
+  <div>
+    <h1>sazare</h1>
+    <div class="sub" data-i18n="subtitle">Lightweight FHIR R4 Server</div>
+  </div>
+  <button class="lang-toggle" id="lang-toggle" onclick="toggleLang()"></button>
 </div>
 
 <div class="container">
   <div class="card">
-    <h2>Server Status</h2>
+    <h2 data-i18n="status.title">Server Status</h2>
     <div class="status-row">
       <div class="dot"></div>
-      <span>Running</span>
+      <span data-i18n="status.running">Running</span>
       <span style="color:#95a5a6; margin-left: auto;" id="version"></span>
     </div>
   </div>
 
   <div class="card hidden" id="welcome">
-    <h2>はじめての方へ / Getting started</h2>
-    <p style="margin-bottom:14px; color:#555;">
-      サーバは空の状態です。サンプルデータを入れると、患者・検査値・処方などをすぐに眺められます。<br>
-      <span style="color:#95a5a6; font-size:13px;">This server is empty. Load a small sample dataset to start exploring.</span>
+    <h2 data-i18n="welcome.title">Getting started</h2>
+    <p style="margin-bottom:14px; color:#555;" data-i18n="welcome.body">
+      This server is empty. Load a small sample dataset to start exploring patients, vitals, and prescriptions right away.
     </p>
-    <button id="demo-btn" class="primary-btn" onclick="loadDemo()">サンプルデータを入れる / Load sample data</button>
+    <button id="demo-btn" class="primary-btn" data-i18n="welcome.btn" onclick="loadDemo()">Load sample data</button>
     <span id="demo-status" style="margin-left:12px; color:#95a5a6; font-size:13px;"></span>
   </div>
 
   <div class="card">
-    <h2>Resources</h2>
+    <h2 data-i18n="resources.title">Resources</h2>
     <div class="stats" id="stats">
       <div class="stat">
         <div class="num" id="total">-</div>
-        <div class="label">Total</div>
+        <div class="label" data-i18n="resources.total">Total</div>
       </div>
     </div>
   </div>
 
+  <div class="card">
+    <h2 data-i18n="search.title">Search</h2>
+    <div class="search-row">
+      <input id="search-type" list="search-types" data-i18n-ph="search.type" placeholder="Resource type">
+      <datalist id="search-types"></datalist>
+      <input id="search-query" data-i18n-ph="search.query" placeholder="name=Yamada"
+             onkeydown="if(event.key==='Enter')runSearch()">
+      <button class="search-btn" data-i18n="search.btn" onclick="runSearch()">Search</button>
+    </div>
+    <div class="search-hint" data-i18n="search.hint">Tip: type a resource type and a parameter, e.g. Patient with name=Yamada. The FHIR URL is shown so you can learn it.</div>
+    <div class="search-url hidden" id="search-url"></div>
+    <table class="resource-table hidden" id="search-results-table" style="margin-top:10px;">
+      <thead><tr><th data-i18n="list.id">ID</th><th data-i18n="list.summary">Summary</th></tr></thead>
+      <tbody id="search-results-body"></tbody>
+    </table>
+  </div>
+
   <div class="card hidden" id="resource-list">
     <div class="panel-header">
-      <button class="back-btn" onclick="hideResourceList()">&larr; Back</button>
+      <button class="back-btn" data-i18n="list.back" onclick="hideResourceList()">&larr; Back</button>
       <h2 id="resource-list-title">Resources</h2>
     </div>
     <table class="resource-table">
       <thead>
-        <tr><th>ID</th><th>Last Updated</th><th>Summary</th></tr>
+        <tr><th data-i18n="list.id">ID</th><th data-i18n="list.updated">Last Updated</th><th data-i18n="list.summary">Summary</th></tr>
       </thead>
       <tbody id="resource-list-body">
       </tbody>
@@ -250,26 +290,26 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
 
   <div class="card hidden" id="resource-detail">
     <div class="panel-header">
-      <button class="back-btn" onclick="hideResourceDetail()">&larr; Back</button>
+      <button class="back-btn" data-i18n="detail.back" onclick="hideResourceDetail()">&larr; Back</button>
       <h2 id="resource-detail-title">Resource</h2>
     </div>
     <pre class="json-view" id="resource-detail-json"></pre>
   </div>
 
   <div class="card" id="activity-card">
-    <h2>Recent Activity</h2>
+    <h2 data-i18n="activity.title">Recent Activity</h2>
     <table class="log-table">
       <thead>
-        <tr><th>Time</th><th>Operation</th><th>Resource</th><th>Result</th></tr>
+        <tr><th data-i18n="activity.time">Time</th><th data-i18n="activity.op">Operation</th><th data-i18n="activity.resource">Resource</th><th data-i18n="activity.result">Result</th></tr>
       </thead>
       <tbody id="logs">
-        <tr><td colspan="4" style="color:#bbb">Loading...</td></tr>
+        <tr><td colspan="4" style="color:#bbb" data-i18n="activity.loading">Loading...</td></tr>
       </tbody>
     </table>
   </div>
 
   <div class="card">
-    <h2>API Endpoints</h2>
+    <h2 data-i18n="endpoints.title">API Endpoints</h2>
     <ul class="endpoints">
       <li><code>GET /metadata</code> CapabilityStatement</li>
       <li><code>GET /{type}?params</code> Search</li>
@@ -285,16 +325,96 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
     </ul>
   </div>
 
-  <div class="refresh-note" id="refresh-note">Auto-refreshes every 5 seconds</div>
+  <div class="refresh-note" id="refresh-note"></div>
 </div>
 
 <script>
+// --- Minimal i18n: a message catalog keyed by string id. Default English,
+// auto-detect Japanese from the browser, switchable and remembered. Adding a
+// language is just adding one dictionary here. ---
+const I18N = {
+  en: {
+    "subtitle": "Lightweight FHIR R4 Server",
+    "status.title": "Server Status", "status.running": "Running",
+    "welcome.title": "Getting started",
+    "welcome.body": "This server is empty. Load a small sample dataset to start exploring patients, vitals, and prescriptions right away.",
+    "welcome.btn": "Load sample data", "welcome.loading": "Loading…",
+    "resources.title": "Resources", "resources.total": "Total",
+    "search.title": "Search", "search.type": "Resource type", "search.query": "name=Yamada",
+    "search.btn": "Search",
+    "search.hint": "Tip: pick a resource type and a parameter, e.g. Patient with name=Yamada. The FHIR URL is shown so you can learn it.",
+    "search.results": "results", "search.none": "No matches", "search.error": "Search error",
+    "activity.title": "Recent Activity", "activity.time": "Time", "activity.op": "Operation",
+    "activity.resource": "Resource", "activity.result": "Result",
+    "activity.loading": "Loading...", "activity.none": "No activity yet",
+    "endpoints.title": "API Endpoints",
+    "list.back": "← Back", "list.id": "ID", "list.updated": "Last Updated", "list.summary": "Summary",
+    "list.loading": "Loading...", "list.none": "No resources",
+    "list.prev": "← Prev", "list.next": "Next →", "list.of": "of",
+    "detail.back": "← Back",
+    "footer.auto": "Auto-refreshes every 5 seconds", "footer.updated": "Last updated:",
+    "footer.fetchError": "Fetch error", "footer.fetchFailed": "Fetch failed",
+    "lang.name": "日本語"
+  },
+  ja: {
+    "subtitle": "軽量 FHIR R4 サーバ",
+    "status.title": "サーバ状態", "status.running": "稼働中",
+    "welcome.title": "はじめての方へ",
+    "welcome.body": "サーバは空の状態です。サンプルデータを入れると、患者・検査値・処方などをすぐに眺められます。",
+    "welcome.btn": "サンプルデータを入れる", "welcome.loading": "読み込み中…",
+    "resources.title": "リソース", "resources.total": "合計",
+    "search.title": "検索", "search.type": "リソース型", "search.query": "name=山田",
+    "search.btn": "検索",
+    "search.hint": "ヒント：リソース型とパラメータを入力（例：Patient に name=山田）。生成された FHIR の URL を見ながら覚えられます。",
+    "search.results": "件", "search.none": "該当なし", "search.error": "検索エラー",
+    "activity.title": "最近の操作", "activity.time": "時刻", "activity.op": "操作",
+    "activity.resource": "リソース", "activity.result": "結果",
+    "activity.loading": "読み込み中...", "activity.none": "まだ操作はありません",
+    "endpoints.title": "API エンドポイント",
+    "list.back": "← 戻る", "list.id": "ID", "list.updated": "更新日時", "list.summary": "概要",
+    "list.loading": "読み込み中...", "list.none": "リソースはありません",
+    "list.prev": "← 前", "list.next": "次 →", "list.of": "／",
+    "detail.back": "← 戻る",
+    "footer.auto": "5秒ごとに自動更新", "footer.updated": "最終更新:",
+    "footer.fetchError": "取得エラー", "footer.fetchFailed": "取得失敗",
+    "lang.name": "English"
+  }
+};
+
+let lang = localStorage.getItem('lang') ||
+           ((navigator.language || 'en').toLowerCase().startsWith('ja') ? 'ja' : 'en');
+
+function t(key) {
+  return (I18N[lang] && I18N[lang][key]) || I18N.en[key] || key;
+}
+
+function applyI18n() {
+  document.documentElement.lang = lang;
+  document.querySelectorAll('[data-i18n]').forEach(function(el) {
+    el.textContent = t(el.getAttribute('data-i18n'));
+  });
+  document.querySelectorAll('[data-i18n-ph]').forEach(function(el) {
+    el.setAttribute('placeholder', t(el.getAttribute('data-i18n-ph')));
+  });
+  document.getElementById('lang-toggle').textContent = t('lang.name');
+}
+
+function toggleLang() {
+  lang = (lang === 'ja') ? 'en' : 'ja';
+  localStorage.setItem('lang', lang);
+  applyI18n();
+  refresh();
+  if (!document.getElementById('resource-list').classList.contains('hidden')) {
+    showResourceList(currentType, currentOffset);
+  }
+}
+
 async function refresh() {
   const noteEl = document.getElementById('refresh-note');
   try {
     const res = await fetch('/$status?_=' + Date.now(), { cache: 'no-store' });
     if (!res.ok) {
-      noteEl.textContent = 'Fetch error: HTTP ' + res.status + ' (' + new Date().toLocaleTimeString() + ')';
+      noteEl.textContent = t('footer.fetchError') + ': HTTP ' + res.status + ' (' + new Date().toLocaleTimeString() + ')';
       return;
     }
     const data = await res.json();
@@ -310,17 +430,21 @@ async function refresh() {
     // Resource type stats
     const statsEl = document.getElementById('stats');
     let statsHtml = '<div class="stat"><div class="num">' + data.totalResources +
-                    '</div><div class="label">Total</div></div>';
+                    '</div><div class="label">' + t('resources.total') + '</div></div>';
     for (const rc of data.resourceCounts) {
       statsHtml += '<div class="stat clickable" onclick="showResourceList(\'' + rc.type + '\')">' +
                    '<div class="num">' + rc.count + '</div><div class="label">' + rc.type + '</div></div>';
     }
     statsEl.innerHTML = statsHtml;
 
+    // Populate the search type suggestions.
+    const dl = document.getElementById('search-types');
+    dl.innerHTML = data.resourceCounts.map(rc => '<option value="' + rc.type + '">').join('');
+
     // Activity log
     const logsEl = document.getElementById('logs');
     if (data.recentActivity.length === 0) {
-      logsEl.innerHTML = '<tr><td colspan="4" style="color:#bbb">No activity yet</td></tr>';
+      logsEl.innerHTML = '<tr><td colspan="4" style="color:#bbb">' + t('activity.none') + '</td></tr>';
     } else {
       logsEl.innerHTML = data.recentActivity.map(e => {
         const badge = e.result === 'success'
@@ -333,9 +457,9 @@ async function refresh() {
       }).join('');
     }
 
-    noteEl.textContent = 'Last updated: ' + new Date().toLocaleTimeString();
+    noteEl.textContent = t('footer.updated') + ' ' + new Date().toLocaleTimeString();
   } catch (err) {
-    noteEl.textContent = 'Fetch failed: ' + err.message + ' (' + new Date().toLocaleTimeString() + ')';
+    noteEl.textContent = t('footer.fetchFailed') + ': ' + err.message + ' (' + new Date().toLocaleTimeString() + ')';
   }
 }
 
@@ -343,25 +467,62 @@ async function loadDemo() {
   const btn = document.getElementById('demo-btn');
   const status = document.getElementById('demo-status');
   btn.disabled = true;
-  status.textContent = '読み込み中… / Loading…';
+  status.textContent = t('welcome.loading');
   try {
     const res = await fetch('/$demo', { method: 'POST' });
     const data = await res.json();
     if (!res.ok) {
-      status.textContent = 'エラー / Error: HTTP ' + res.status;
+      status.textContent = (data.error || ('HTTP ' + res.status));
       btn.disabled = false;
       return;
     }
     status.textContent = (data.message || 'Loaded') + ' ✓';
     await refresh();
   } catch (err) {
-    status.textContent = 'エラー / Error: ' + err.message;
+    status.textContent = err.message;
     btn.disabled = false;
   }
 }
 
-refresh();
-setInterval(refresh, 5000);
+// --- Search builder: build a FHIR query, show the URL, list results. ---
+async function runSearch() {
+  const type = (document.getElementById('search-type').value || '').trim();
+  const query = (document.getElementById('search-query').value || '').trim();
+  if (!type) return;
+  const url = '/' + type + (query ? ('?' + query) : '');
+  const urlEl = document.getElementById('search-url');
+  const tableEl = document.getElementById('search-results-table');
+  const bodyEl = document.getElementById('search-results-body');
+
+  urlEl.classList.remove('hidden');
+  urlEl.innerHTML = 'GET <code>' + url.replace(/</g,'&lt;') + '</code>';
+  tableEl.classList.remove('hidden');
+  bodyEl.innerHTML = '<tr><td colspan="2" style="color:#bbb">' + t('list.loading') + '</td></tr>';
+
+  try {
+    const res = await fetch(url, { headers: { 'Accept': 'application/fhir+json' } });
+    const data = await res.json();
+    if (!res.ok) {
+      const msg = (data.issue && data.issue[0] && data.issue[0].diagnostics) || ('HTTP ' + res.status);
+      bodyEl.innerHTML = '<tr><td colspan="2" style="color:#c0392b">' + t('search.error') + ': ' + msg.replace(/</g,'&lt;') + '</td></tr>';
+      return;
+    }
+    const entries = (data.entry || []).filter(e => e.search ? e.search.mode === 'match' : true);
+    urlEl.innerHTML += ' &middot; <strong>' + (data.total != null ? data.total : entries.length) + '</strong> ' + t('search.results');
+    if (entries.length === 0) {
+      bodyEl.innerHTML = '<tr><td colspan="2" style="color:#bbb">' + t('search.none') + '</td></tr>';
+      return;
+    }
+    bodyEl.innerHTML = entries.map(e => {
+      const r = e.resource || {};
+      const id = r.id || '-';
+      return '<tr class="clickable-row" onclick="showResource(\'' + type + '\',\'' + id + '\')">' +
+             '<td><code>' + id + '</code></td><td>' + getSummary(r) + '</td></tr>';
+    }).join('');
+  } catch (err) {
+    bodyEl.innerHTML = '<tr><td colspan="2" style="color:#c0392b">' + t('search.error') + ': ' + err.message + '</td></tr>';
+  }
+}
 
 let currentType = '';
 let currentOffset = 0;
@@ -375,7 +536,7 @@ async function showResourceList(type, offset) {
   document.getElementById('resource-detail').classList.add('hidden');
 
   const body = document.getElementById('resource-list-body');
-  body.innerHTML = '<tr><td colspan="3" style="color:#bbb">Loading...</td></tr>';
+  body.innerHTML = '<tr><td colspan="3" style="color:#bbb">' + t('list.loading') + '</td></tr>';
 
   try {
     const res = await fetch('/$browse/' + type + '?_count=' + PAGE_SIZE + '&_offset=' + currentOffset);
@@ -384,7 +545,7 @@ async function showResourceList(type, offset) {
     const total = data.total || 0;
 
     if (entries.length === 0) {
-      body.innerHTML = '<tr><td colspan="3" style="color:#bbb">No resources</td></tr>';
+      body.innerHTML = '<tr><td colspan="3" style="color:#bbb">' + t('list.none') + '</td></tr>';
     } else {
       body.innerHTML = entries.map(e => {
         const id = e.id || '-';
@@ -399,9 +560,9 @@ async function showResourceList(type, offset) {
     const pag = document.getElementById('resource-list-pagination');
     const showing = Math.min(currentOffset + PAGE_SIZE, total);
     pag.innerHTML =
-      '<button ' + (currentOffset === 0 ? 'disabled' : 'onclick="showResourceList(\'' + type + '\',' + (currentOffset - PAGE_SIZE) + ')"') + '>&larr; Prev</button>' +
-      '<span>' + (currentOffset + 1) + '–' + showing + ' of ' + total + '</span>' +
-      '<button ' + (currentOffset + PAGE_SIZE >= total ? 'disabled' : 'onclick="showResourceList(\'' + type + '\',' + (currentOffset + PAGE_SIZE) + ')"') + '>Next &rarr;</button>';
+      '<button ' + (currentOffset === 0 ? 'disabled' : 'onclick="showResourceList(\'' + type + '\',' + (currentOffset - PAGE_SIZE) + ')"') + '>' + t('list.prev') + '</button>' +
+      '<span>' + (currentOffset + 1) + '–' + showing + ' ' + t('list.of') + ' ' + total + '</span>' +
+      '<button ' + (currentOffset + PAGE_SIZE >= total ? 'disabled' : 'onclick="showResourceList(\'' + type + '\',' + (currentOffset + PAGE_SIZE) + ')"') + '>' + t('list.next') + '</button>';
   } catch (err) {
     body.innerHTML = '<tr><td colspan="3" style="color:#c00">Error: ' + err.message + '</td></tr>';
   }
@@ -410,6 +571,7 @@ async function showResourceList(type, offset) {
 function getSummary(r) {
   if (r.name && r.name[0]) {
     const n = r.name[0];
+    if (n.text) return n.text;
     return [].concat(n.given || []).join(' ') + ' ' + (n.family || '');
   }
   if (r.code && r.code.text) return r.code.text;
@@ -446,9 +608,9 @@ function highlightJson(obj, indent) {
 async function showResource(type, id) {
   document.getElementById('resource-detail-title').textContent = type + '/' + id;
   document.getElementById('resource-detail').classList.remove('hidden');
-  document.getElementById('resource-list').classList.add('hidden');
   const pre = document.getElementById('resource-detail-json');
-  pre.textContent = 'Loading...';
+  pre.textContent = t('list.loading');
+  document.getElementById('resource-detail').scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   try {
     const res = await fetch('/$browse/' + type + '/' + id);
@@ -465,8 +627,11 @@ function hideResourceList() {
 
 function hideResourceDetail() {
   document.getElementById('resource-detail').classList.add('hidden');
-  document.getElementById('resource-list').classList.remove('hidden');
 }
+
+applyI18n();
+refresh();
+setInterval(refresh, 5000);
 </script>
 </body>
 </html>
