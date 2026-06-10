@@ -362,6 +362,61 @@ impl Phase2Validator {
         }
     }
 
+    /// Per-parent minimum leaf count for a required element.
+    ///
+    /// Returns `None` when no instance of the element's parent chain exists (so
+    /// the required-child constraint does not apply), otherwise `Some(n)` where
+    /// `n` is the *smallest* number of leaf occurrences found in any single
+    /// parent instance — the value to compare against `min`.
+    fn per_parent_min_count(value: &Value, parts: &[&str]) -> Option<u64> {
+        let field = parts[0];
+        let is_last = parts.len() == 1;
+
+        // Choice element (`value[x]`): match concrete typed fields on this object.
+        if let Some(prefix) = field.strip_suffix("[x]") {
+            let Value::Object(map) = value else {
+                return None;
+            };
+            let matched: Vec<&Value> = map
+                .iter()
+                .filter(|(k, _)| Self::is_choice_field(k, prefix))
+                .map(|(_, v)| v)
+                .collect();
+            if is_last {
+                return Some(matched.len() as u64);
+            }
+            return matched
+                .iter()
+                .filter_map(|c| Self::per_parent_min_count(c, &parts[1..]))
+                .min();
+        }
+
+        match value.get(field) {
+            // Leaf field absent on an existing parent → 0 occurrences here.
+            None if is_last => Some(0),
+            // Intermediate parent absent → no applicable parent context.
+            None => None,
+            Some(child) => {
+                if is_last {
+                    Some(match child {
+                        Value::Array(arr) => arr.len() as u64,
+                        Value::Null => 0,
+                        _ => 1,
+                    })
+                } else {
+                    match child {
+                        Value::Array(arr) => arr
+                            .iter()
+                            .filter_map(|item| Self::per_parent_min_count(item, &parts[1..]))
+                            .min(),
+                        Value::Object(_) => Self::per_parent_min_count(child, &parts[1..]),
+                        _ => None,
+                    }
+                }
+            }
+        }
+    }
+
     /// Validate extension structure (existing Phase 2 logic).
     fn validate_extensions(resource: &Value) -> Result<(), OperationOutcome> {
         if let Some(extensions) = resource.get("extension").and_then(|e| e.as_array()) {
@@ -444,16 +499,27 @@ impl Phase2Validator {
                 .unwrap_or(false);
 
             // --- Required element validation (min >= 1) ---
+            //
+            // Cardinality applies *per parent instance*: a required child under
+            // an optional/repeating parent is only required when that parent is
+            // present, and each parent instance must independently satisfy `min`.
+            // Summing leaf counts across all parents (the old behaviour) wrongly
+            // rejected conforming data — e.g. `Patient.telecom.system min=1` when
+            // the resource has no `telecom` at all. `per_parent_min_count` returns
+            // None when no parent context exists (constraint vacuously satisfied),
+            // or the smallest leaf count among the parent instances that do exist.
             if let Some(min_val) = min
                 && min_val >= 1
             {
-                let count = Self::count_element(resource, relative_path);
-                if count < min_val {
+                let parts: Vec<&str> = relative_path.split('.').collect();
+                if let Some(count) = Self::per_parent_min_count(resource, &parts)
+                    && count < min_val
+                {
                     issues.push(OperationOutcomeIssue {
                         severity: IssueSeverity::Error,
                         code: IssueType::Required,
                         diagnostics: Some(format!(
-                            "Profile '{}' requires element '{}' (min={}) but found {} occurrence(s)",
+                            "Profile '{}' requires element '{}' (min={}) but a parent instance has {} occurrence(s)",
                             profile_url, path, min_val, count
                         )),
                         details: None,
@@ -837,6 +903,76 @@ mod tests {
                 cardinality_errors
             );
         }
+    }
+
+    #[test]
+    fn test_required_child_under_absent_optional_parent_is_ok() {
+        // US Core Patient pattern: telecom is optional (min 0) but telecom.system
+        // is min 1. A Patient with no telecom at all must NOT be rejected.
+        let resource = json!({
+            "resourceType": "Patient",
+            "meta": {"profile": ["http://example.com/StructureDefinition/PatientProfile"]},
+            "name": [{"family": "Yamada"}]
+        });
+        let mut registry = ProfileRegistry::new();
+        registry.add_profile(json!({
+            "resourceType": "StructureDefinition",
+            "url": "http://example.com/StructureDefinition/PatientProfile",
+            "snapshot": {"element": [
+                {"path": "Patient", "min": 0, "max": "*"},
+                {"path": "Patient.telecom", "min": 0, "max": "*"},
+                {"path": "Patient.telecom.system", "min": 1, "max": "1"},
+                {"path": "Patient.telecom.value", "min": 1, "max": "1"}
+            ]}
+        }));
+        let result = Phase2Validator::validate(&resource, &registry);
+        assert!(result.is_ok(), "absent optional parent must not trigger child min: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_required_child_present_but_incomplete_is_rejected() {
+        // When telecom IS present, each instance must carry system+value.
+        let resource = json!({
+            "resourceType": "Patient",
+            "meta": {"profile": ["http://example.com/StructureDefinition/PatientProfile"]},
+            "telecom": [{"value": "555-1234"}]  // missing required `system`
+        });
+        let mut registry = ProfileRegistry::new();
+        registry.add_profile(json!({
+            "resourceType": "StructureDefinition",
+            "url": "http://example.com/StructureDefinition/PatientProfile",
+            "snapshot": {"element": [
+                {"path": "Patient", "min": 0, "max": "*"},
+                {"path": "Patient.telecom", "min": 0, "max": "*"},
+                {"path": "Patient.telecom.system", "min": 1, "max": "1"}
+            ]}
+        }));
+        let result = Phase2Validator::validate(&resource, &registry);
+        assert!(result.is_err(), "present parent missing a required child must be rejected");
+    }
+
+    #[test]
+    fn test_per_parent_min_flags_only_the_deficient_instance() {
+        // Two telecoms, one missing system → still a violation (per-parent).
+        let resource = json!({
+            "resourceType": "Patient",
+            "meta": {"profile": ["http://example.com/StructureDefinition/PatientProfile"]},
+            "telecom": [
+                {"system": "phone", "value": "1"},
+                {"value": "2"}
+            ]
+        });
+        let mut registry = ProfileRegistry::new();
+        registry.add_profile(json!({
+            "resourceType": "StructureDefinition",
+            "url": "http://example.com/StructureDefinition/PatientProfile",
+            "snapshot": {"element": [
+                {"path": "Patient", "min": 0, "max": "*"},
+                {"path": "Patient.telecom", "min": 0, "max": "*"},
+                {"path": "Patient.telecom.system", "min": 1, "max": "1"}
+            ]}
+        }));
+        assert!(Phase2Validator::validate(&resource, &registry).is_err());
     }
 
     #[test]
