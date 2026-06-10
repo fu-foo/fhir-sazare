@@ -81,15 +81,28 @@ const DEMO_RESOURCES: &str = r##"[
 
 /// `POST /$demo` — load the curated sample dataset (idempotent upsert).
 pub async fn load_demo(State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    let resources: Vec<Value> = match serde_json::from_str(DEMO_RESOURCES) {
-        Ok(r) => r,
-        Err(e) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"error": format!("demo data is corrupt: {e}")})),
-            )
-        }
-    };
+    match load_demo_into(&state).await {
+        Ok((loaded, errors)) => (
+            StatusCode::OK,
+            Json(json!({
+                "loaded": loaded,
+                "errors": errors,
+                "message": format!("{loaded} sample resources loaded")
+            })),
+        ),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": e})),
+        ),
+    }
+}
+
+/// Load the curated sample dataset into the store + index (idempotent upsert).
+/// Shared by the `POST /$demo` endpoint and the `--demo` startup flag. Returns
+/// `(loaded_count, per_resource_errors)`.
+pub async fn load_demo_into(state: &AppState) -> Result<(usize, Vec<String>), String> {
+    let resources: Vec<Value> =
+        serde_json::from_str(DEMO_RESOURCES).map_err(|e| format!("demo data is corrupt: {e}"))?;
 
     let mut loaded = 0;
     let mut errors: Vec<String> = Vec::new();
@@ -147,12 +160,5 @@ pub async fn load_demo(State(state): State<Arc<AppState>>) -> impl IntoResponse 
         loaded += 1;
     }
 
-    (
-        StatusCode::OK,
-        Json(json!({
-            "loaded": loaded,
-            "errors": errors,
-            "message": format!("{loaded} sample resources loaded")
-        })),
-    )
+    Ok((loaded, errors))
 }

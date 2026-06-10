@@ -26,6 +26,12 @@ async fn main() {
 
     tracing::info!("Starting fhir-sazare server...");
 
+    // Minimal flags: `--demo` pre-loads the sample dataset, `--open` opens the
+    // dashboard in a browser once the server is listening.
+    let args: Vec<String> = std::env::args().collect();
+    let want_demo = args.iter().any(|a| a == "--demo");
+    let want_open = args.iter().any(|a| a == "--open");
+
     // Load configuration
     let config = ServerConfig::load(
         std::path::Path::new("config.yaml")
@@ -126,6 +132,20 @@ async fn main() {
         seen_jti: std::sync::Mutex::new(std::collections::HashMap::new()),
     });
 
+    // `--demo`: load the curated sample dataset so a fresh run has something to
+    // explore immediately.
+    if want_demo {
+        match sazare_server::demo::load_demo_into(&state).await {
+            Ok((n, errors)) => {
+                tracing::info!("Demo data: {} sample resources loaded", n);
+                for e in errors {
+                    tracing::warn!("Demo data: {}", e);
+                }
+            }
+            Err(e) => tracing::warn!("Demo data failed to load: {}", e),
+        }
+    }
+
     tracing::info!(
         "Auth: {}",
         if config.auth.enabled {
@@ -156,6 +176,18 @@ async fn main() {
             std::process::exit(1);
         }
     };
+
+    // `--open`: launch the dashboard in the user's browser. Use a loopback host
+    // (0.0.0.0 isn't a connectable address) and the right scheme.
+    if want_open {
+        let scheme = if config.server.tls.is_some() { "https" } else { "http" };
+        let host = if config.server.host == "0.0.0.0" || config.server.host.is_empty() {
+            "127.0.0.1".to_string()
+        } else {
+            config.server.host.clone()
+        };
+        open_browser(&format!("{scheme}://{host}:{}", config.server.port));
+    }
 
     // Start server (HTTPS or HTTP)
     if let Some(ref tls_config) = config.server.tls {
@@ -198,6 +230,22 @@ async fn main() {
     }
 
     tracing::info!("Server shut down gracefully");
+}
+
+/// Best-effort: open `url` in the platform's default browser. Failures are
+/// non-fatal (the user can always open the URL printed in the log).
+fn open_browser(url: &str) {
+    #[cfg(target_os = "macos")]
+    let cmd = ("open", vec![url]);
+    #[cfg(target_os = "windows")]
+    let cmd = ("cmd", vec!["/C", "start", url]);
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    let cmd = ("xdg-open", vec![url]);
+
+    match std::process::Command::new(cmd.0).args(&cmd.1).spawn() {
+        Ok(_) => tracing::info!("Opening {} in your browser…", url),
+        Err(e) => tracing::warn!("Couldn't open a browser ({}). Open {} manually.", e, url),
+    }
 }
 
 /// Graceful shutdown signal handler

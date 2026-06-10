@@ -153,8 +153,10 @@ async fn do_search(
                     Json(json!(OperationOutcome::error(
                         IssueType::NotSupported,
                         format!(
-                            "Unknown search parameter '{}' for resource type '{}'",
-                            p.name, resource_type
+                            "'{}' is not a search parameter this server understands for {}. \
+                             Check the spelling, or open GET /metadata to see the search \
+                             parameters {} supports.",
+                            p.name, resource_type, resource_type
                         )
                     ))),
                 ));

@@ -121,7 +121,10 @@ pub async fn conditional_update(
             StatusCode::BAD_REQUEST,
             Json(json!(OperationOutcome::error(
                 IssueType::Invalid,
-                "resourceType mismatch"
+                format!(
+                    "The resource in the body is a {}, but the URL is for {}.",
+                    resource.resource_type, resource_type
+                )
             ))),
         ));
     }

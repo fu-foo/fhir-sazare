@@ -116,7 +116,11 @@ pub async fn create(
             StatusCode::BAD_REQUEST,
             Json(json!(OperationOutcome::error(
                 IssueType::Invalid,
-                "resourceType mismatch"
+                format!(
+                    "The resource in the body is a {}, but the URL is for {}. \
+                     Post to /{} instead, or change the body's resourceType.",
+                    resource.resource_type, resource_type, resource.resource_type
+                )
             ))),
         ));
     }
