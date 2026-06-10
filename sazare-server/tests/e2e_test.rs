@@ -625,7 +625,7 @@ async fn test_patient_crud_and_search() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), 404, "GET after DELETE should return 404");
+    assert_eq!(resp.status(), 410, "GET after DELETE should return 410 Gone");
 }
 
 #[tokio::test]
@@ -869,7 +869,7 @@ async fn test_conditional_delete() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), 404, "deleted resource should be 404");
+    assert_eq!(resp.status(), 410, "deleted resource should be 410 Gone");
 }
 
 #[tokio::test]

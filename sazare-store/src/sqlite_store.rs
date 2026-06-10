@@ -253,6 +253,27 @@ impl SqliteStore {
         }
     }
 
+    /// True if the resource has no current row but does have history — i.e. it
+    /// was deleted (a tombstone). Used to answer reads of deleted resources with
+    /// 410 Gone rather than 404 Not Found.
+    pub fn is_deleted(&self, resource_type: &str, id: &str) -> Result<bool> {
+        let conn = self.reader();
+        let current: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM resources WHERE resource_type = ? AND id = ?",
+            params![resource_type, id],
+            |row| row.get(0),
+        )?;
+        if current > 0 {
+            return Ok(false);
+        }
+        let history: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM resource_history WHERE resource_type = ? AND id = ?",
+            params![resource_type, id],
+            |row| row.get(0),
+        )?;
+        Ok(history > 0)
+    }
+
     /// Delete a resource (current version only, history is preserved)
     pub fn delete(&self, resource_type: &str, id: &str) -> Result<bool> {
         let conn = self.conn();

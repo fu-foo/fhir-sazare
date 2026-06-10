@@ -43,6 +43,20 @@ pub(super) async fn process_transaction(
                         return (StatusCode::BAD_REQUEST, Json(json!(outcome))).into_response();
                     }
                 };
+                // The body's resourceType must match the request URL's type — a
+                // REST create checks this, so a bundle entry must too (otherwise
+                // an Observation could be stored under type Patient).
+                let body_type = resource.get("resourceType").and_then(|v| v.as_str()).unwrap_or("");
+                if body_type != entry.resource_type {
+                    let outcome = OperationOutcome::error(
+                        IssueType::Invalid,
+                        format!(
+                            "entry[{}]: resourceType '{}' does not match request URL type '{}'",
+                            i, body_type, entry.resource_type
+                        ),
+                    );
+                    return (StatusCode::BAD_REQUEST, Json(json!(outcome))).into_response();
+                }
                 if let Err(outcome) = validate_resource_all_phases(
                     resource,
                     &state.profile_registry,

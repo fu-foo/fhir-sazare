@@ -290,22 +290,40 @@ impl SubscriptionManager {
 
         if let Ok(Some(data)) = state.store.get("Subscription", id)
             && let Ok(mut sub) = serde_json::from_slice::<Value>(&data)
-            && let Some(obj) = sub.as_object_mut()
+            && sub.is_object()
         {
-            obj.insert("status".to_string(), serde_json::json!(new_status));
+            let current = sub
+                .get("meta")
+                .and_then(|m| m.get("versionId"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("1")
+                .to_string();
+            let new_ver = (current.parse::<i32>().unwrap_or(1) + 1).to_string();
+            {
+                let obj = sub.as_object_mut().unwrap();
+                obj.insert("status".to_string(), serde_json::json!(new_status));
+                if let Some(meta) = obj.get_mut("meta").and_then(|m| m.as_object_mut()) {
+                    meta.insert("versionId".to_string(), serde_json::json!(new_ver));
+                }
+            }
             if let Ok(bytes) = serde_json::to_vec(&sub) {
-                let version = sub
-                    .get("meta")
-                    .and_then(|m| m.get("versionId"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("1");
-                let new_ver: i32 = version.parse().unwrap_or(1) + 1;
-                let _ = state.store.put_with_version(
-                    "Subscription",
-                    id,
-                    &new_ver.to_string(),
-                    &bytes,
-                );
+                // Compare-and-swap so a concurrent user edit of the Subscription
+                // isn't silently clobbered by this background status flip.
+                let wrote = state
+                    .store
+                    .put_with_version_cas("Subscription", id, Some(&current), &new_ver, &bytes)
+                    .unwrap_or(false);
+                // Keep the search index in step (status is an indexed param).
+                if wrote {
+                    let index = state.index.lock().await;
+                    crate::handlers::update_search_index(
+                        &index,
+                        &state.search_param_registry,
+                        "Subscription",
+                        id,
+                        &sub,
+                    );
+                }
             }
         }
     }

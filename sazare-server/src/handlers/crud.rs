@@ -240,10 +240,22 @@ pub async fn read(
             audit::log_operation_success(&audit_ctx, "READ", &resource_type, &id, &state.audit);
             Ok(response_with_etag(StatusCode::OK, resource).into_response())
         }
-        Ok(None) => Err((
-            StatusCode::NOT_FOUND,
-            Json(json!(OperationOutcome::not_found(&resource_type, &id))),
-        )),
+        Ok(None) => {
+            // A previously-deleted resource is Gone (410), not merely Not Found.
+            if state.store.is_deleted(&resource_type, &id).unwrap_or(false) {
+                return Err((
+                    StatusCode::GONE,
+                    Json(json!(OperationOutcome::error(
+                        IssueType::Deleted,
+                        format!("{}/{} has been deleted", resource_type, id)
+                    ))),
+                ));
+            }
+            Err((
+                StatusCode::NOT_FOUND,
+                Json(json!(OperationOutcome::not_found(&resource_type, &id))),
+            ))
+        }
         Err(e) => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!(OperationOutcome::storage_error(e.to_string()))),
