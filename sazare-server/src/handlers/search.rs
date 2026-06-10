@@ -1,7 +1,7 @@
 use axum::{
     extract::{Path, Request, State},
     http::StatusCode,
-    response::{IntoResponse, Json, Response},
+    response::{Json, Response},
 };
 use sazare_core::{
     operation_outcome::IssueType,
@@ -182,18 +182,18 @@ async fn do_search(
                 )
             })?;
             let filtered = filter_by_compartment(auth_user.as_ref(), &state.compartment_def, &resource_type, resources);
-            return Ok(Json(json!({
+            return Ok(super::fhir_json(StatusCode::OK, json!({
                 "resourceType": "Bundle",
                 "type": "searchset",
                 "total": filtered.len()
-            })).into_response());
+            })));
         }
 
-        return Ok(Json(json!({
+        return Ok(super::fhir_json(StatusCode::OK, json!({
             "resourceType": "Bundle",
             "type": "searchset",
             "total": ids.len()
-        })).into_response());
+        })));
     }
 
     let index = state.index.lock().await;
@@ -226,7 +226,7 @@ async fn do_search(
     // Process _include
     let included = if !query.include.is_empty() {
         executor
-            .process_includes(&resources, &query.include)
+            .process_includes(&resources, &query.include, &state.search_param_registry)
             .unwrap_or_default()
     } else {
         Vec::new()
@@ -342,11 +342,11 @@ async fn do_search(
         &state.audit,
     );
 
-    Ok(Json(json!({
+    Ok(super::fhir_json(StatusCode::OK, json!({
         "resourceType": "Bundle",
         "type": "searchset",
         "total": total,
         "link": links,
         "entry": entries
-    })).into_response())
+    })))
 }

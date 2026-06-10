@@ -146,6 +146,18 @@ pub async fn import(
                         system.as_deref(),
                     );
                 }
+                drop(index);
+                // Fire subscriptions/webhooks for imported resources too.
+                state.webhook.maybe_task_completed(&resource);
+                {
+                    let state = state.clone();
+                    let rt = resource_type.clone();
+                    let rid = id.clone();
+                    let rv = resource.clone();
+                    tokio::spawn(async move {
+                        crate::subscription::SubscriptionManager::notify(&state, &rt, &rid, &rv).await;
+                    });
+                }
                 created += 1;
             }
             Err(e) => {

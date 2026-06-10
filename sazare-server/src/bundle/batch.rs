@@ -42,6 +42,19 @@ pub(super) async fn process_batch(
     (StatusCode::OK, Json(response_bundle)).into_response()
 }
 
+/// Fire subscription notifications and lifecycle webhooks for a created/updated
+/// resource, matching the single-resource CRUD handlers.
+fn notify_change(state: &Arc<AppState>, resource_type: &str, id: &str, resource: &Value) {
+    state.webhook.maybe_task_completed(resource);
+    let state = state.clone();
+    let rt = resource_type.to_string();
+    let rid = id.to_string();
+    let rv = resource.clone();
+    tokio::spawn(async move {
+        crate::subscription::SubscriptionManager::notify(&state, &rt, &rid, &rv).await;
+    });
+}
+
 /// Process a single batch entry independently.
 async fn process_batch_entry(
     state: &Arc<AppState>,
@@ -131,6 +144,7 @@ async fn process_batch_entry(
                         );
                     }
 
+                    notify_change(state, &entry.resource_type, &id, resource);
                     json!({
                         "response": {
                             "status": "201 Created",
@@ -222,6 +236,7 @@ async fn process_batch_entry(
                         );
                     }
 
+                    notify_change(state, &entry.resource_type, &id, resource);
                     let status = if is_create {
                         "201 Created"
                     } else {

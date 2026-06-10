@@ -9,7 +9,7 @@ pub mod validate;
 
 use axum::{
     http::{header, HeaderMap, StatusCode},
-    response::{IntoResponse, Json},
+    response::{IntoResponse, Json, Response},
 };
 use serde_json::Value;
 use sazare_core::SearchParamRegistry;
@@ -106,6 +106,17 @@ pub fn merge_version_meta(obj: &mut serde_json::Map<String, Value>, version_id: 
     let meta = meta_entry.as_object_mut().unwrap();
     meta.insert("versionId".to_string(), Value::String(version_id.to_string()));
     meta.insert("lastUpdated".to_string(), Value::String(now));
+}
+
+/// Wrap a JSON body (Bundle, OperationOutcome, …) in a response carrying the
+/// FHIR media type `application/fhir+json` rather than bare `application/json`.
+pub fn fhir_json(status: StatusCode, body: Value) -> Response {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        header::CONTENT_TYPE,
+        "application/fhir+json; charset=utf-8".parse().unwrap(),
+    );
+    (status, headers, Json(body)).into_response()
 }
 
 /// Update search index for a resource (synchronous — must not be async)

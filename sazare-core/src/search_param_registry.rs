@@ -153,6 +153,21 @@ impl SearchParamRegistry {
         self.definitions.contains_key(resource_type)
     }
 
+    /// The top-level JSON element a reference search parameter reads, used to
+    /// resolve `_include`/`_revinclude` where the parameter name differs from the
+    /// element (e.g. `Observation:patient` → `subject`, `general-practitioner` →
+    /// `generalPractitioner`). Matches by name or alias; returns the first path
+    /// segment.
+    pub fn reference_element(&self, resource_type: &str, param_name: &str) -> Option<String> {
+        let defs = self.get_definitions(resource_type);
+        for def in defs {
+            if def.name == param_name || def.aliases.iter().any(|a| a == param_name) {
+                return def.path.first().cloned();
+            }
+        }
+        None
+    }
+
     /// Look up the SearchParamType for a given resource type and parameter name.
     /// Checks aliases as well. Returns None if not found.
     pub fn lookup_param_type(

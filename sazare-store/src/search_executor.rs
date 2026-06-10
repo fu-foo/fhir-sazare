@@ -420,34 +420,54 @@ impl<'a> SearchExecutor<'a> {
         Ok(included)
     }
 
-    /// Process _include parameter to load related resources
+    /// Process _include parameter to load related resources.
+    ///
+    /// `registry` maps a search-parameter name to the JSON element it reads, so
+    /// `_include`s whose parameter name differs from the element resolve
+    /// correctly (`Observation:patient` → `subject`, hyphenated
+    /// `general-practitioner` → `generalPractitioner`). Results are de-duplicated
+    /// (a resource SHALL appear once in a searchset Bundle).
     pub fn process_includes(
         &self,
         resources: &[Value],
         includes: &[String],
+        registry: &sazare_core::SearchParamRegistry,
     ) -> Result<Vec<Value>, String> {
         let mut included = Vec::new();
+        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
 
         for include_spec in includes {
-            // Parse include spec: ResourceType:search-param
+            // Spec: `SourceType:search-param` or `SourceType:search-param:TargetType`.
+            // The optional target type is only a filter on the included results.
             let parts: Vec<&str> = include_spec.split(':').collect();
-            if parts.len() != 2 {
+            if parts.len() < 2 || parts.len() > 3 {
                 continue;
             }
+            let source_type = parts[0];
+            let search_param = parts[1];
+            let target_filter = parts.get(2).copied();
 
-            let (_source_type, search_param) = (parts[0], parts[1]);
+            // Resolve the JSON element the parameter reads (registry first, then
+            // the parameter name itself / its choice + camelCase fallbacks).
+            let element = registry
+                .reference_element(source_type, search_param)
+                .unwrap_or_else(|| search_param.to_string());
 
-            // Extract references from source resources. A single search param can
-            // resolve multiple references (array-valued elements like `performer`),
-            // so fan out over all of them.
             for resource in resources {
-                for reference in extract_references(resource, search_param) {
-                    if let Some((ref_type, ref_id)) = parse_reference(&reference)
-                        && let Ok(Some(data)) = self.store.get(ref_type, ref_id)
-                    {
-                        let included_resource: Value =
-                            serde_json::from_slice(&data).unwrap_or_default();
-                        included.push(included_resource);
+                for reference in extract_references(resource, &element) {
+                    if let Some((ref_type, ref_id)) = parse_reference(&reference) {
+                        if let Some(t) = target_filter
+                            && t != ref_type
+                        {
+                            continue;
+                        }
+                        let key = format!("{ref_type}/{ref_id}");
+                        if !seen.insert(key) {
+                            continue;
+                        }
+                        if let Ok(Some(data)) = self.store.get(ref_type, ref_id) {
+                            included.push(serde_json::from_slice(&data).unwrap_or_default());
+                        }
                     }
                 }
             }
@@ -468,14 +488,18 @@ impl<'a> SearchExecutor<'a> {
 /// A choice-type element bound to a non-reference (e.g. `medicationCodeableConcept`)
 /// yields nothing, since there is no resource to include.
 fn extract_references(resource: &Value, field: &str) -> Vec<String> {
-    // Prefer the element named exactly like the search param; fall back to the
-    // choice-type variant `<field>Reference` (FHIR capitalizes the type suffix).
-    let value = match resource.get(field) {
+    // Prefer the element named exactly like the field; fall back to the
+    // choice-type variant `<field>Reference` (FHIR capitalizes the type suffix),
+    // then to a hyphen→camelCase form (`general-practitioner` →
+    // `generalPractitioner`) for params not resolved via the registry.
+    let camel = hyphen_to_camel(field);
+    let value = resource
+        .get(field)
+        .or_else(|| resource.get(format!("{field}Reference")))
+        .or_else(|| if camel != field { resource.get(&camel) } else { None });
+    let value = match value {
         Some(v) => v,
-        None => match resource.get(format!("{field}Reference")) {
-            Some(v) => v,
-            None => return Vec::new(),
-        },
+        None => return Vec::new(),
     };
 
     let ref_of = |v: &Value| {
@@ -489,6 +513,24 @@ fn extract_references(resource: &Value, field: &str) -> Vec<String> {
         Value::Object(_) => ref_of(value).into_iter().collect(),
         _ => Vec::new(),
     }
+}
+
+/// Convert a hyphenated search-param name to the camelCase JSON element it most
+/// likely maps to (`general-practitioner` → `generalPractitioner`).
+fn hyphen_to_camel(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut upper = false;
+    for c in s.chars() {
+        if c == '-' {
+            upper = true;
+        } else if upper {
+            out.extend(c.to_uppercase());
+            upper = false;
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }
 
 /// Parse a FHIR reference string (e.g., "Patient/123")

@@ -15,7 +15,7 @@ pub async fn history(
     State(state): State<Arc<AppState>>,
     Path((resource_type, id)): Path<(String, String)>,
     headers: HeaderMap,
-) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+) -> Result<Response, (StatusCode, Json<Value>)> {
     let versions = state
         .store
         .list_versions(&resource_type, &id)
@@ -56,7 +56,7 @@ pub async fn history(
         }
     }
 
-    Ok(Json(json!({
+    Ok(super::fhir_json(StatusCode::OK, json!({
         "resourceType": "Bundle",
         "type": "history",
         "total": entries.len(),

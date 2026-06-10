@@ -303,6 +303,20 @@ pub(super) async fn process_transaction(
         }
     }
 
+    // Fire subscription notifications and lifecycle webhooks for every created
+    // or updated resource — transaction is the most common ingestion path, and
+    // these were previously only triggered by the single-resource CRUD handlers.
+    for (resource_type, id, resource) in &resources_for_index {
+        state.webhook.maybe_task_completed(resource);
+        let state = state.clone();
+        let rt = resource_type.clone();
+        let rid = id.clone();
+        let rv = resource.clone();
+        tokio::spawn(async move {
+            crate::subscription::SubscriptionManager::notify(&state, &rt, &rid, &rv).await;
+        });
+    }
+
     audit::log_operation_success(
         audit_ctx, "TRANSACTION", "Bundle",
         &format!("{} entries", response_entries.len()),

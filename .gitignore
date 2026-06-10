@@ -35,6 +35,9 @@ AGENTS.md
 docs/
 scripts/
 
+# Aider (local AI pair-programming experiments — config, history, caches)
+.aider*
+
 # Personal notes
 memo.txt
 
