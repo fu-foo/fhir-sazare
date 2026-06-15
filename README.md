@@ -514,6 +514,10 @@ If you find this project useful, consider supporting its development:
 
 Licensed under the [Apache License, Version 2.0](LICENSE).
 
+Bundled FHIR profiles (US Core, JP Core) and the DICOM modality value set are
+third-party artifacts redistributed under CC0-1.0 — see [NOTICE.md](NOTICE.md)
+for provenance and attribution.
+
 ---
 
 ## Japanese / 日本語
