@@ -93,10 +93,10 @@ export function OrderList({ reloadKey }: { reloadKey: number }) {
     <div className="card">
       <div className="toolbar">
         <div style={{ fontSize: 13, color: '#555' }}>
-          LabOrder: {orders.length} 件
+          LabOrder: {orders.length}
         </div>
         <button className="refresh" onClick={load} disabled={loading}>
-          {loading ? '読み込み中...' : '再読み込み'}
+          {loading ? 'Loading...' : 'Reload'}
         </button>
       </div>
 
@@ -115,15 +115,15 @@ export function OrderList({ reloadKey }: { reloadKey: number }) {
         <thead>
           <tr>
             <th style={{ width: 40 }}></th>
-            <th>伝票番号</th>
-            <th>患者</th>
-            <th>依頼日時</th>
-            <th>項目数</th>
+            <th>Order No.</th>
+            <th>Patient</th>
+            <th>Ordered At</th>
+            <th>Item count</th>
           </tr>
         </thead>
         <tbody>
           {orders.length === 0 && !loading && (
-            <tr><td colSpan={5} style={{ textAlign: 'center', color: '#888', padding: 24 }}>依頼なし</td></tr>
+            <tr><td colSpan={5} style={{ textAlign: 'center', color: '#888', padding: 24 }}>No orders</td></tr>
           )}
           {orders.map((o) => {
             const items = itemsByOrder[o.id] ?? [];
@@ -134,7 +134,7 @@ export function OrderList({ reloadKey }: { reloadKey: number }) {
                   <td>{isOpen ? '▼' : '▶'}</td>
                   <td>{o.denpyoNo}</td>
                   <td>{o.patient}</td>
-                  <td>{new Date(o.authoredOn).toLocaleString('ja-JP')}</td>
+                  <td>{new Date(o.authoredOn).toLocaleString('en-US')}</td>
                   <td>{items.length}</td>
                 </tr>
                 {isOpen && (
@@ -146,10 +146,10 @@ export function OrderList({ reloadKey }: { reloadKey: number }) {
                           <pre>{JSON.stringify(o.raw, null, 2)}</pre>
                         </details>
                         <div style={{ fontSize: 12, color: '#666', margin: '12px 0 4px' }}>
-                          basedOn で紐づく LabItem ({items.length} 件)
+                          LabItems linked via basedOn ({items.length})
                         </div>
                         {items.length === 0 && (
-                          <div style={{ color: '#888', fontSize: 13 }}>項目なし</div>
+                          <div style={{ color: '#888', fontSize: 13 }}>No items</div>
                         )}
                         {items.map((it) => (
                           <details key={it.id} className="json-preview">

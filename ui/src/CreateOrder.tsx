@@ -24,9 +24,9 @@ export function CreateOrder({ onCreated }: { onCreated: () => void }) {
 
   const submit = async () => {
     setMsg(null);
-    if (!patientId.trim()) { setMsg({ kind: 'err', text: '患者ID を入力してください' }); return; }
+    if (!patientId.trim()) { setMsg({ kind: 'err', text: 'Please enter a Patient ID' }); return; }
     const items: TestItem[] = TEST_ITEMS.filter((t) => selected.has(t.code));
-    if (items.length === 0) { setMsg({ kind: 'err', text: '検査項目を1つ以上選択してください' }); return; }
+    if (items.length === 0) { setMsg({ kind: 'err', text: 'Please select at least one test item' }); return; }
     setBusy(true);
     try {
       const bundle = buildOrderBundle({
@@ -36,7 +36,7 @@ export function CreateOrder({ onCreated }: { onCreated: () => void }) {
       });
       const res = await postBundle(bundle);
       const created = res.entry?.length ?? 0;
-      setMsg({ kind: 'ok', text: `登録完了: ${created} リソース (伝票1 + 項目${created - 1})` });
+      setMsg({ kind: 'ok', text: `Created: ${created} resources (1 order + ${created - 1} items)` });
       setDenpyoNo('');
       onCreated();
     } catch (e) {
@@ -48,7 +48,7 @@ export function CreateOrder({ onCreated }: { onCreated: () => void }) {
 
   return (
     <div className="card">
-      <label>患者ID</label>
+      <label>Patient ID</label>
       <input
         type="text"
         value={patientId}
@@ -56,7 +56,7 @@ export function CreateOrder({ onCreated }: { onCreated: () => void }) {
         placeholder="patient-demo-001"
       />
 
-      <label>伝票番号 (空欄で自動採番)</label>
+      <label>Order No. (auto-generated if blank)</label>
       <input
         type="text"
         value={denpyoNo}
@@ -64,7 +64,7 @@ export function CreateOrder({ onCreated }: { onCreated: () => void }) {
         placeholder="DEN-..."
       />
 
-      <label>検査項目 ({selected.size} 件選択中)</label>
+      <label>Test Items ({selected.size} selected)</label>
       <div className="check-grid">
         {TEST_ITEMS.map((t) => (
           <label key={t.code}>
@@ -79,7 +79,7 @@ export function CreateOrder({ onCreated }: { onCreated: () => void }) {
       </div>
 
       <button className="primary" onClick={submit} disabled={busy}>
-        {busy ? '登録中...' : '依頼を登録'}
+        {busy ? 'Submitting...' : 'Submit Order'}
       </button>
 
       {msg?.kind === 'ok' && <div className="msg-ok">{msg.text}</div>}
@@ -101,17 +101,17 @@ function BundlePreview({ patientId, denpyoNo, items }: {
     if (!patientId.trim() || items.length === 0) return null;
     return buildOrderBundle({
       patientId: patientId.trim(),
-      denpyoNo: denpyoNo.trim() || 'DEN-(自動採番)',
+      denpyoNo: denpyoNo.trim() || 'DEN-(auto)',
       items,
     });
   }, [patientId, denpyoNo, items]);
 
   return (
     <details className="json-preview" open>
-      <summary>送信される Bundle JSON (transaction)</summary>
+      <summary>Bundle JSON to be sent (transaction)</summary>
       {preview
         ? <pre>{JSON.stringify(preview, null, 2)}</pre>
-        : <div style={{ color: '#888', fontSize: 13, padding: 8 }}>患者IDと検査項目を入れるとプレビュー表示</div>}
+        : <div style={{ color: '#888', fontSize: 13, padding: 8 }}>Enter a Patient ID and test items to see a preview</div>}
     </details>
   );
 }

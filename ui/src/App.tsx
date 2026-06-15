@@ -10,20 +10,20 @@ export function App() {
 
   return (
     <div className="container">
-      <h1>ServiceRequest 検査依頼デモ</h1>
+      <h1>ServiceRequest Lab Order Demo</h1>
       <div className="subtitle">
-        伝票(ServiceRequest_LabOrder) と 項目(ServiceRequest_LabItem) を別プロファイルとして登録し、
-        <code> _profile </code> で検索します。
+        Register the order (ServiceRequest_LabOrder) and its items (ServiceRequest_LabItem) as separate profiles,
+        then search them with <code> _profile </code>.
       </div>
       <nav>
         <button
           className={tab === 'create' ? 'active' : ''}
           onClick={() => setTab('create')}
-        >依頼作成</button>
+        >New Order</button>
         <button
           className={tab === 'list' ? 'active' : ''}
           onClick={() => setTab('list')}
-        >依頼一覧</button>
+        >Orders</button>
       </nav>
       {tab === 'create' && (
         <CreateOrder onCreated={() => {

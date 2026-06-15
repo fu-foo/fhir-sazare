@@ -141,9 +141,6 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
   .header { background: #2c3e50; color: #fff; padding: 20px 32px; display: flex; align-items: center; }
   .header h1 { font-size: 24px; font-weight: 600; }
   .header .sub { color: #95a5a6; font-size: 14px; margin-top: 4px; }
-  .lang-toggle { margin-left: auto; background: rgba(255,255,255,0.12); color: #fff; border: 1px solid rgba(255,255,255,0.25);
-                 border-radius: 4px; padding: 4px 12px; cursor: pointer; font-size: 13px; }
-  .lang-toggle:hover { background: rgba(255,255,255,0.22); }
   .container { max-width: 960px; margin: 24px auto; padding: 0 16px; }
   .card { background: #fff; border-radius: 8px; padding: 20px 24px; margin-bottom: 16px;
           box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
@@ -224,7 +221,6 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
     <h1>sazare</h1>
     <div class="sub" data-i18n="subtitle">Lightweight FHIR R4 Server</div>
   </div>
-  <button class="lang-toggle" id="lang-toggle" onclick="toggleLang()"></button>
 </div>
 
 <div class="container">
@@ -329,9 +325,7 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
 </div>
 
 <script>
-// --- Minimal i18n: a message catalog keyed by string id. Default English,
-// auto-detect Japanese from the browser, switchable and remembered. Adding a
-// language is just adding one dictionary here. ---
+// --- Minimal message catalog keyed by string id (English). ---
 const I18N = {
   en: {
     "subtitle": "Lightweight FHIR R4 Server",
@@ -353,60 +347,22 @@ const I18N = {
     "list.prev": "← Prev", "list.next": "Next →", "list.of": "of",
     "detail.back": "← Back",
     "footer.auto": "Auto-refreshes every 5 seconds", "footer.updated": "Last updated:",
-    "footer.fetchError": "Fetch error", "footer.fetchFailed": "Fetch failed",
-    "lang.name": "日本語"
-  },
-  ja: {
-    "subtitle": "軽量 FHIR R4 サーバ",
-    "status.title": "サーバ状態", "status.running": "稼働中",
-    "welcome.title": "はじめての方へ",
-    "welcome.body": "サーバは空の状態です。サンプルデータを入れると、患者・検査値・処方などをすぐに眺められます。",
-    "welcome.btn": "サンプルデータを入れる", "welcome.loading": "読み込み中…",
-    "resources.title": "リソース", "resources.total": "合計",
-    "search.title": "検索", "search.type": "リソース型", "search.query": "name=Brown",
-    "search.btn": "検索",
-    "search.hint": "ヒント：リソース型とパラメータを入力（例：Patient に name=Brown）。生成された FHIR の URL を見ながら覚えられます。",
-    "search.results": "件", "search.none": "該当なし", "search.error": "検索エラー",
-    "activity.title": "最近の操作", "activity.time": "時刻", "activity.op": "操作",
-    "activity.resource": "リソース", "activity.result": "結果",
-    "activity.loading": "読み込み中...", "activity.none": "まだ操作はありません",
-    "endpoints.title": "API エンドポイント",
-    "list.back": "← 戻る", "list.id": "ID", "list.updated": "更新日時", "list.summary": "概要",
-    "list.loading": "読み込み中...", "list.none": "リソースはありません",
-    "list.prev": "← 前", "list.next": "次 →", "list.of": "／",
-    "detail.back": "← 戻る",
-    "footer.auto": "5秒ごとに自動更新", "footer.updated": "最終更新:",
-    "footer.fetchError": "取得エラー", "footer.fetchFailed": "取得失敗",
-    "lang.name": "English"
+    "footer.fetchError": "Fetch error", "footer.fetchFailed": "Fetch failed"
   }
 };
 
-let lang = localStorage.getItem('lang') ||
-           ((navigator.language || 'en').toLowerCase().startsWith('ja') ? 'ja' : 'en');
-
 function t(key) {
-  return (I18N[lang] && I18N[lang][key]) || I18N.en[key] || key;
+  return I18N.en[key] || key;
 }
 
 function applyI18n() {
-  document.documentElement.lang = lang;
+  document.documentElement.lang = 'en';
   document.querySelectorAll('[data-i18n]').forEach(function(el) {
     el.textContent = t(el.getAttribute('data-i18n'));
   });
   document.querySelectorAll('[data-i18n-ph]').forEach(function(el) {
     el.setAttribute('placeholder', t(el.getAttribute('data-i18n-ph')));
   });
-  document.getElementById('lang-toggle').textContent = t('lang.name');
-}
-
-function toggleLang() {
-  lang = (lang === 'ja') ? 'en' : 'ja';
-  localStorage.setItem('lang', lang);
-  applyI18n();
-  refresh();
-  if (!document.getElementById('resource-list').classList.contains('hidden')) {
-    showResourceList(currentType, currentOffset);
-  }
 }
 
 async function refresh() {

@@ -23,7 +23,7 @@
 - **Japanese name search** — Search names by kana (`name-kana`) / kanji (`name-kanji`), kept as language support (JP Core profiles themselves are loadable, not bundled — see below)
 - **Bulk data** — NDJSON `$import`, and `$export` both synchronous and async (FHIR Bulk Data Access IG: `Prefer: respond-async` kick-off, status poll, manifest, `_type`/`_since`/`_outputFormat`)
 - **Plugin system** — Serve domain-specific SPAs at top-level paths (e.g. `/sample-patient-register/`)
-- **Web dashboard** — Built-in console at `/`: browse resources, a search builder that shows the generated FHIR URL, one-click sample data, English/Japanese — no build step, served from the binary
+- **Web dashboard** — Built-in console at `/`: browse resources, a search builder that shows the generated FHIR URL, one-click sample data — no build step, served from the binary
 - **Audit logging** — All operations recorded to dedicated SQLite database
 - **PATCH** — JSON Patch (RFC 6902)
 - **$everything** — Patient compartment operation
@@ -114,8 +114,7 @@ That's the whole setup.
 > **Linux**: no such gate — download, `chmod +x sazare-server` if needed, and run.
 
 The server listens on `http://localhost:8080` (no authentication by default). The
-dashboard has a one-click "Load sample data" button and a search builder, and
-speaks English or Japanese.
+dashboard has a one-click "Load sample data" button and a search builder.
 
 ### Try it from the command line
 

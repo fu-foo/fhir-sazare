@@ -4,9 +4,9 @@ export const LAB_ITEM_PROFILE = 'http://example.org/fhir/StructureDefinition/Ser
 export type TestItem = { code: string; display: string };
 
 export const TEST_ITEMS: TestItem[] = [
-  { code: '3A015000002327101', display: '白血球数' },
-  { code: '3A025000002327101', display: '赤血球数' },
-  { code: '3B035000002327101', display: '血糖' },
+  { code: '3A015000002327101', display: 'WBC count' },
+  { code: '3A025000002327101', display: 'RBC count' },
+  { code: '3B035000002327101', display: 'Blood glucose' },
   { code: '3D010000002327101', display: 'HbA1c' },
   { code: '3F015000002327101', display: 'AST' },
   { code: '3F020000002327101', display: 'ALT' },
