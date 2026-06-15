@@ -20,7 +20,7 @@
 - **Resource filtering** — `_summary` (5 modes) and `_elements` support
 - **Validation** — Multi-phase validation against US Core profiles; load any other IG (e.g. JP Core) by dropping its profiles in a `profiles/` directory
 - **US Core conformance** — Passes the Inferno US Core v7 & v8 FHIR API test suites (`examples/us-core-seed.json` for v7, `examples/us-core-v8-seed.json` for v8; the TLS test requires an HTTPS deployment)
-- **Japanese name search** — Search names by kana (`name-kana`) / kanji (`name-kanji`), kept as language support (JP Core profiles themselves are loadable, not bundled — see below)
+- **Custom search parameters** — Drop FHIR `SearchParameter` resources into a `searchparameters/` directory; their FHIRPath `expression` is compiled by a bounded evaluator (unsupported expressions are rejected at load, never mis-evaluated)
 - **Bulk data** — NDJSON `$import`, and `$export` both synchronous and async (FHIR Bulk Data Access IG: `Prefer: respond-async` kick-off, status poll, manifest, `_type`/`_since`/`_outputFormat`)
 - **Plugin system** — Serve domain-specific SPAs at top-level paths (e.g. `/sample-patient-register/`)
 - **Web dashboard** — Built-in console at `/`: browse resources, a search builder that shows the generated FHIR URL, one-click sample data — no build step, served from the binary
@@ -249,10 +249,6 @@ curl "http://localhost:8080/Patient?_count=10&_offset=0"
 # Summary and elements
 curl "http://localhost:8080/Patient?_summary=true"
 curl "http://localhost:8080/Patient?_elements=name,gender"
-
-# Japanese name search by kana (reading) or kanji
-curl "http://localhost:8080/Patient?name-kana=ヤマダ"
-curl "http://localhost:8080/Patient?name-kanji=山田"
 ```
 
 ### Chain Search
@@ -279,6 +275,33 @@ curl "http://localhost:8080/Patient?_has:Observation:subject:code=29463-7"
 # Composable with ordinary parameters (AND)
 curl "http://localhost:8080/Patient?gender=male&_has:Observation:subject:code=29463-7"
 ```
+
+### Custom search parameters
+
+Define your own search parameters without rebuilding. Drop a FHIR
+`SearchParameter` resource into a `searchparameters/` directory next to the
+binary; its `expression` (FHIRPath) is compiled at startup by a bounded
+evaluator, and the parameter then works like any built-in one. This is also how
+an Implementation Guide's search params are supplied — e.g. JP Core's kana-name
+search alongside its profiles in `profiles/`, with nothing baked into the core.
+
+```jsonc
+// searchparameters/name-kana.json
+{
+  "resourceType": "SearchParameter",
+  "code": "name-kana",
+  "base": ["Patient"],
+  "type": "string",
+  "expression": "Patient.name.where(extension('http://hl7.org/fhir/StructureDefinition/iso21090-EN-representation').value.ofType(code)='SYL').text"
+}
+```
+
+```bash
+curl "http://localhost:8080/Patient?name-kana=ヤマダ"
+```
+
+Expressions outside the supported FHIRPath subset (e.g. `resolve()`, boolean
+logic) are rejected at load — never silently mis-evaluated into wrong results.
 
 ### Conditional Create
 
@@ -543,7 +566,7 @@ CC0-1.0 — see [NOTICE.md](NOTICE.md) for provenance and attribution.
 - `_summary` / `_elements` によるリソースフィルタリング
 - US Core プロファイルによるバリデーション（JP Core 等の他 IG は `profiles/` ディレクトリから読み込み）
 - US Core 適合 — Inferno US Core v7 & v8 の FHIR API テストスイートをパス（v7: `examples/us-core-seed.json` / v8: `examples/us-core-v8-seed.json`。TLS テストは HTTPS デプロイが前提）
-- 日本語サポート — 氏名のかな検索（`name-kana`）・漢字検索（`name-kanji`）。JP Core プロファイル自体は同梱せず、必要なら `profiles/` から読み込み
+- カスタム検索パラメータ — FHIR `SearchParameter` を `searchparameters/` に置くと、その FHIRPath `expression` を限定評価器がコンパイル（対応外の式はロード時に拒否、誤評価しない）
 - NDJSON 形式での一括エクスポート / インポート
 - プラグインシステム（SPA をトップレベル URL で配信、例: `/sample-patient-register/`）
 - ブラウザで確認できる Web ダッシュボード

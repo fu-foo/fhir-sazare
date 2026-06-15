@@ -52,23 +52,6 @@ pub enum ExtractionMode {
     /// `path[0]` is the extension container ("extension"), `path[1]` the
     /// extension URL; yields the extension's `valueDateTime`.
     ExtensionDate,
-    /// JP Core name by representation: HumanName entries (`path[0]`, e.g.
-    /// `name`) whose `iso21090-EN-representation` extension equals the code in
-    /// `path[1]` (e.g. `SYL` for kana, `IDE` for kanji). Indexes their `text`,
-    /// `family` and `given` as strings, enabling search by Japanese phonetic
-    /// (kana) or ideographic (kanji) name.
-    JpNameRepresentation,
-    /// JP Core extension value: a top-level extension (`path[0]` = "extension")
-    /// identified by URL (`path[1]`), with the value kind in `path[2]`:
-    /// `string` (valueString), `coding` (valueCoding → code + system, token) or
-    /// `identifier` (valueIdentifier → value + system, token). Used by JP Core
-    /// search params like Coverage insured-person number and Organization
-    /// insurance institution number.
-    JpExtensionValue,
-    /// JP Core dosage period start: the `start` of a `valuePeriod` carried by an
-    /// extension (`path[1]`) under each `MedicationRequest.dosageInstruction`
-    /// (`path[0]`). Indexed as a date (JP `jp-medication-start`).
-    JpDosagePeriodStart,
     /// A FHIRPath expression evaluated against the resource. Used by custom
     /// search parameters loaded at runtime from a `SearchParameter` resource;
     /// `path` is unused. See [`crate::fhirpath`].
@@ -317,24 +300,6 @@ fn patient_definitions() -> Vec<SearchParamDef> {
             extraction: ExtractionMode::NestedArrayScalar,
             aliases: vec![],
         },
-        // JP Core: search by Japanese name representation. `name-kana` matches
-        // only the SYL (syllabic/kana) names and `name-kanji` only the IDE
-        // (ideographic/kanji) names, while plain `name=...` still matches every
-        // representation. The representation code is carried in `path[1]`.
-        SearchParamDef {
-            name: "name-kana".to_string(),
-            param_type: SearchParamType::String,
-            path: vec!["name".to_string(), "SYL".to_string()],
-            extraction: ExtractionMode::JpNameRepresentation,
-            aliases: vec![],
-        },
-        SearchParamDef {
-            name: "name-kanji".to_string(),
-            param_type: SearchParamType::String,
-            path: vec!["name".to_string(), "IDE".to_string()],
-            extraction: ExtractionMode::JpNameRepresentation,
-            aliases: vec![],
-        },
         SearchParamDef {
             name: "birthdate".to_string(),
             param_type: SearchParamType::Date,
@@ -549,17 +514,6 @@ fn condition_definitions() -> Vec<SearchParamDef> {
 
 fn medication_request_definitions() -> Vec<SearchParamDef> {
     vec![
-        // JP Core: medication start date (valuePeriod.start of a dosage extension).
-        SearchParamDef {
-            name: "jp-medication-start".to_string(),
-            param_type: SearchParamType::Date,
-            path: vec![
-                "dosageInstruction".to_string(),
-                "http://jpfhir.jp/fhir/core/Extension/StructureDefinition/JP_MedicationDosage_PeriodOfUse".to_string(),
-            ],
-            extraction: ExtractionMode::JpDosagePeriodStart,
-            aliases: vec![],
-        },
         SearchParamDef {
             name: "status".to_string(),
             param_type: SearchParamType::Token,
@@ -868,41 +822,6 @@ fn practitioner_definitions() -> Vec<SearchParamDef> {
 
 fn organization_definitions() -> Vec<SearchParamDef> {
     vec![
-        // JP Core: insurance institution number (Identifier), institution
-        // category and prefecture number (Coding) — all token, from extensions.
-        SearchParamDef {
-            name: "jp-insurance-organizationno".to_string(),
-            param_type: SearchParamType::Token,
-            path: vec![
-                "extension".to_string(),
-                "http://jpfhir.jp/fhir/core/Extension/StructureDefinition/JP_Organization_InsuranceOrganizationNo".to_string(),
-                "identifier".to_string(),
-            ],
-            extraction: ExtractionMode::JpExtensionValue,
-            aliases: vec![],
-        },
-        SearchParamDef {
-            name: "jp-insurance-organizationcategory".to_string(),
-            param_type: SearchParamType::Token,
-            path: vec![
-                "extension".to_string(),
-                "http://jpfhir.jp/fhir/core/Extension/StructureDefinition/JP_Organization_InsuranceOrganizationCategory".to_string(),
-                "coding".to_string(),
-            ],
-            extraction: ExtractionMode::JpExtensionValue,
-            aliases: vec![],
-        },
-        SearchParamDef {
-            name: "jp-prefectureno".to_string(),
-            param_type: SearchParamType::Token,
-            path: vec![
-                "extension".to_string(),
-                "http://jpfhir.jp/fhir/core/Extension/StructureDefinition/JP_Organization_PrefectureNo".to_string(),
-                "coding".to_string(),
-            ],
-            extraction: ExtractionMode::JpExtensionValue,
-            aliases: vec![],
-        },
         SearchParamDef {
             name: "identifier".to_string(),
             param_type: SearchParamType::Token,
@@ -995,40 +914,6 @@ fn goal_definitions() -> Vec<SearchParamDef> {
 
 fn coverage_definitions() -> Vec<SearchParamDef> {
     vec![
-        // JP Core: insured person number / symbol / sub-number (extension values).
-        SearchParamDef {
-            name: "jp-insured-personnumber".to_string(),
-            param_type: SearchParamType::String,
-            path: vec![
-                "extension".to_string(),
-                "http://jpfhir.jp/fhir/core/Extension/StructureDefinition/JP_Coverage_InsuredPersonNumber".to_string(),
-                "string".to_string(),
-            ],
-            extraction: ExtractionMode::JpExtensionValue,
-            aliases: vec![],
-        },
-        SearchParamDef {
-            name: "jp-insured-personsymbol".to_string(),
-            param_type: SearchParamType::String,
-            path: vec![
-                "extension".to_string(),
-                "http://jpfhir.jp/fhir/core/Extension/StructureDefinition/JP_Coverage_InsuredPersonSymbol".to_string(),
-                "string".to_string(),
-            ],
-            extraction: ExtractionMode::JpExtensionValue,
-            aliases: vec![],
-        },
-        SearchParamDef {
-            name: "jp-insured-personsubnumber".to_string(),
-            param_type: SearchParamType::String,
-            path: vec![
-                "extension".to_string(),
-                "http://jpfhir.jp/fhir/core/Extension/StructureDefinition/JP_Coverage_InsuredPersonSubNumber".to_string(),
-                "string".to_string(),
-            ],
-            extraction: ExtractionMode::JpExtensionValue,
-            aliases: vec![],
-        },
         SearchParamDef {
             name: "patient".to_string(),
             param_type: SearchParamType::Reference,

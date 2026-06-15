@@ -5,7 +5,6 @@
 //! Phase 3: Terminology binding (ValueSet/CodeSystem)
 
 pub mod bindings;
-pub mod jp_extensions;
 pub mod phase1;
 pub mod phase2;
 pub mod phase3;
@@ -33,9 +32,6 @@ pub fn validate_resource_all_phases(
 ) -> Result<ValidationResult, OperationOutcome> {
     // Phase 1: Required fields, types, cardinality
     phase1::Phase1Validator::validate(resource)?;
-
-    // JP Core extension value-type structure check (anywhere in the resource).
-    jp_extensions::validate(resource)?;
 
     // Phase 2: Extension validation + Profile-based validation
     let phase2_warnings = phase2::Phase2Validator::validate(resource, profile_registry)?;
