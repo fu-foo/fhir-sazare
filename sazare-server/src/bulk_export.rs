@@ -33,6 +33,10 @@ use crate::AppState;
 /// system-level `*.{action}` scope. Auth-disabled deployments (no `AuthUser`)
 /// and coarse server credentials (API key / Basic, which carry no scopes in this
 /// server's model) are allowed through, matching how CRUD scope checks behave.
+// The `Err` is a ready-to-return axum `Response`; callers just `return resp`.
+// Boxing it (what `result_large_err` wants) would only add an allocation on the
+// auth-failure path and ripple through every caller for no real benefit.
+#[allow(clippy::result_large_err)]
 pub(crate) fn authorize_bulk(
     auth: &Option<Extension<AuthUser>>,
     action: &str,

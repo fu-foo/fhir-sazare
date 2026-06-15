@@ -134,19 +134,19 @@ impl IndexBuilder {
                     }
                 }
                 "coding" => {
-                    if let Some(coding) = ext.get("valueCoding") {
-                        if let Some(code) = coding.get("code").and_then(|v| v.as_str()) {
-                            let system = coding.get("system").and_then(|v| v.as_str()).map(str::to_string);
-                            indices.push((name.to_string(), param_type.to_string(), code.to_string(), system));
-                        }
+                    if let Some(coding) = ext.get("valueCoding")
+                        && let Some(code) = coding.get("code").and_then(|v| v.as_str())
+                    {
+                        let system = coding.get("system").and_then(|v| v.as_str()).map(str::to_string);
+                        indices.push((name.to_string(), param_type.to_string(), code.to_string(), system));
                     }
                 }
                 "identifier" => {
-                    if let Some(id) = ext.get("valueIdentifier") {
-                        if let Some(value) = id.get("value").and_then(|v| v.as_str()) {
-                            let system = id.get("system").and_then(|v| v.as_str()).map(str::to_string);
-                            indices.push((name.to_string(), param_type.to_string(), value.to_string(), system));
-                        }
+                    if let Some(id) = ext.get("valueIdentifier")
+                        && let Some(value) = id.get("value").and_then(|v| v.as_str())
+                    {
+                        let system = id.get("system").and_then(|v| v.as_str()).map(str::to_string);
+                        indices.push((name.to_string(), param_type.to_string(), value.to_string(), system));
                     }
                 }
                 _ => {}

@@ -279,6 +279,7 @@ impl<'a> SearchExecutor<'a> {
     /// Example: `subject:Patient.name=Doe` on Observation
     /// 1. Search Patient where name=Doe → [Patient/p1, Patient/p2]
     /// 2. Search Observation where subject = Patient/p1 OR Patient/p2
+    ///
     /// Resolve a (possibly multi-level) chained search. The terminal parameter
     /// is searched against the final target type, then each reference hop is
     /// walked backward toward `resource_type`. For
