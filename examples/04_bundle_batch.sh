@@ -19,9 +19,9 @@ curl -s -X POST "$BASE/" \
       {
         "resource": {
           "resourceType": "Practitioner",
-          "name": [{"family": "Watanabe", "given": ["Kenji"]}],
+          "name": [{"family": "Lee", "given": ["Jordan"]}],
           "qualification": [{
-            "code": {"coding": [{"system": "http://jpfhir.jp/fhir/CodeSystem/physician-category", "code": "medical"}]},
+            "code": {"coding": [{"system": "http://terminology.hl7.org/CodeSystem/v2-0360", "code": "MD", "display": "Doctor of Medicine"}]},
             "period": {"start": "2010-04-01"}
           }]
         },
@@ -30,10 +30,10 @@ curl -s -X POST "$BASE/" \
       {
         "resource": {
           "resourceType": "Organization",
-          "name": "Tokyo General Hospital",
+          "name": "Riverside General Hospital",
           "type": [{"coding": [{"system": "http://terminology.hl7.org/CodeSystem/organization-type", "code": "prov"}]}],
-          "telecom": [{"system": "phone", "value": "03-0000-0000"}],
-          "address": [{"city": "Tokyo", "country": "JP"}]
+          "telecom": [{"system": "phone", "value": "555-0100"}],
+          "address": [{"city": "Boston", "state": "MA", "country": "US"}]
         },
         "request": {"method": "POST", "url": "Organization"}
       },
@@ -52,7 +52,7 @@ curl -s -X POST "$BASE/" \
           "status": "active",
           "intent": "order",
           "medicationCodeableConcept": {
-            "coding": [{"system": "http://jpfhir.jp/fhir/CodeSystem/YJ", "code": "2149023F1025", "display": "Amlodipine 5mg"}]
+            "coding": [{"system": "http://www.nlm.nih.gov/research/umls/rxnorm", "code": "197361", "display": "Amlodipine 5 MG Oral Tablet"}]
           },
           "dosageInstruction": [{
             "timing": {"code": {"text": "Once daily after breakfast"}},
