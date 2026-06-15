@@ -26,6 +26,20 @@ impl ProfileRegistry {
         self.profiles.get(url)
     }
 
+    /// Canonical URLs of every loaded profile constraining `resource_type`,
+    /// sorted. Used to advertise `supportedProfile` in the CapabilityStatement
+    /// directly from what is loaded, so it can't drift from reality.
+    pub fn supported_profile_urls(&self, resource_type: &str) -> Vec<String> {
+        let mut urls: Vec<String> = self
+            .profiles
+            .values()
+            .filter(|p| p.get("type").and_then(|t| t.as_str()) == Some(resource_type))
+            .filter_map(|p| p.get("url").and_then(|u| u.as_str()).map(String::from))
+            .collect();
+        urls.sort();
+        urls
+    }
+
     /// Load multiple profiles
     pub fn load_profiles(&mut self, profiles: Vec<Value>) {
         for profile in profiles {

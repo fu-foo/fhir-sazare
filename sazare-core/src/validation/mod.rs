@@ -99,27 +99,28 @@ mod tests {
 
     #[test]
     fn test_pattern_codeable_concept_enforced() {
-        // US Core Smoking Status fixes Observation.code to LOINC 72166-2 via
+        // US Core Body Weight fixes Observation.code to LOINC 29463-7 via
         // patternCodeableConcept.
-        let url = "http://hl7.org/fhir/us/core/StructureDefinition/us-core-smokingstatus";
+        let url = "http://hl7.org/fhir/us/core/StructureDefinition/us-core-body-weight";
         let obs = |code: &str| {
             json!({
                 "resourceType": "Observation",
                 "meta": {"profile": [url]},
                 "status": "final",
+                "category": [{"coding": [{"system": "http://terminology.hl7.org/CodeSystem/observation-category", "code": "vital-signs"}]}],
                 "code": {"coding": [{"system": "http://loinc.org", "code": code}]},
                 "subject": {"reference": "Patient/x"},
-                "issued": "2025-12-01T00:00:00Z",
-                "valueCodeableConcept": {"coding": [{"system": "http://snomed.info/sct", "code": "266919005"}]}
+                "effectiveDateTime": "2025-12-01",
+                "valueQuantity": {"value": 70, "unit": "kg", "system": "http://unitsofmeasure.org", "code": "kg"}
             })
         };
         // Wrong code violates the fixed pattern.
         assert!(
             validate_resource_all_phases(&obs("99999-9"), &us_core_registry(), &TerminologyRegistry::new()).is_err(),
-            "smoking status with the wrong code should fail"
+            "body weight with the wrong code should fail"
         );
         // The fixed code passes.
-        let ok = validate_resource_all_phases(&obs("72166-2"), &us_core_registry(), &TerminologyRegistry::new());
-        assert!(ok.is_ok(), "smoking status with code 72166-2 should pass: {:?}", ok.err());
+        let ok = validate_resource_all_phases(&obs("29463-7"), &us_core_registry(), &TerminologyRegistry::new());
+        assert!(ok.is_ok(), "body weight with code 29463-7 should pass: {:?}", ok.err());
     }
 }

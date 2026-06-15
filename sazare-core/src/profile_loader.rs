@@ -1,6 +1,10 @@
 use serde_json::Value;
 use std::path::Path;
 
+// `US_CORE_PROFILE_JSON: &[&str]` — every file under profiles/us-core/, embedded
+// by build.rs so the set can't drift from the directory.
+include!(concat!(env!("OUT_DIR"), "/us_core_embedded.rs"));
+
 /// Profile loader for StructureDefinition resources
 pub struct ProfileLoader;
 
@@ -61,86 +65,19 @@ impl ProfileLoader {
         Ok(resources)
     }
 
-    /// Get embedded US-Core profiles (no download required)
+    /// Every embedded US Core StructureDefinition — the full US Core 8.0.0 set,
+    /// generated from `profiles/us-core/` by build.rs (no download required).
     pub fn get_embedded_us_core_profiles() -> Vec<Value> {
-        tracing::info!("Loading embedded US-Core profiles...");
-
-        // Embedded StructureDefinition JSON files (all 29 US-Core v5.0.1 profiles)
-        const US_CORE_PATIENT: &str = include_str!("../profiles/us-core/us-core-patient.json");
-        const US_CORE_PRACTITIONER: &str = include_str!("../profiles/us-core/us-core-practitioner.json");
-        const US_CORE_PRACTITIONERROLE: &str = include_str!("../profiles/us-core/us-core-practitionerrole.json");
-        const US_CORE_ORGANIZATION: &str = include_str!("../profiles/us-core/us-core-organization.json");
-        const US_CORE_LOCATION: &str = include_str!("../profiles/us-core/us-core-location.json");
-        const US_CORE_RELATEDPERSON: &str = include_str!("../profiles/us-core/us-core-relatedperson.json");
-        const US_CORE_CONDITION: &str = include_str!("../profiles/us-core/us-core-condition.json");
-        const US_CORE_PROCEDURE: &str = include_str!("../profiles/us-core/us-core-procedure.json");
-        const US_CORE_ENCOUNTER: &str = include_str!("../profiles/us-core/us-core-encounter.json");
-        const US_CORE_ALLERGYINTOLERANCE: &str = include_str!("../profiles/us-core/us-core-allergyintolerance.json");
-        const US_CORE_IMMUNIZATION: &str = include_str!("../profiles/us-core/us-core-immunization.json");
-        const US_CORE_CAREPLAN: &str = include_str!("../profiles/us-core/us-core-careplan.json");
-        const US_CORE_CARETEAM: &str = include_str!("../profiles/us-core/us-core-careteam.json");
-        const US_CORE_GOAL: &str = include_str!("../profiles/us-core/us-core-goal.json");
-        const US_CORE_OBSERVATION_LAB: &str = include_str!("../profiles/us-core/us-core-observation-lab.json");
-        const US_CORE_VITAL_SIGNS: &str = include_str!("../profiles/us-core/us-core-vital-signs.json");
-        const US_CORE_SMOKINGSTATUS: &str = include_str!("../profiles/us-core/us-core-smokingstatus.json");
-        const PEDIATRIC_BMI_FOR_AGE: &str = include_str!("../profiles/us-core/pediatric-bmi-for-age.json");
-        const PEDIATRIC_WEIGHT_FOR_HEIGHT: &str = include_str!("../profiles/us-core/pediatric-weight-for-height.json");
-        const US_CORE_PULSE_OXIMETRY: &str = include_str!("../profiles/us-core/us-core-pulse-oximetry.json");
-        const US_CORE_DIAGNOSTICREPORT_LAB: &str = include_str!("../profiles/us-core/us-core-diagnosticreport-lab.json");
-        const US_CORE_DIAGNOSTICREPORT_NOTE: &str = include_str!("../profiles/us-core/us-core-diagnosticreport-note.json");
-        const US_CORE_DOCUMENTREFERENCE: &str = include_str!("../profiles/us-core/us-core-documentreference.json");
-        const US_CORE_MEDICATION: &str = include_str!("../profiles/us-core/us-core-medication.json");
-        const US_CORE_MEDICATIONREQUEST: &str = include_str!("../profiles/us-core/us-core-medicationrequest.json");
-        const US_CORE_PROVENANCE: &str = include_str!("../profiles/us-core/us-core-provenance.json");
-        const US_CORE_SERVICEREQUEST: &str = include_str!("../profiles/us-core/us-core-servicerequest.json");
-        const US_CORE_COVERAGE: &str = include_str!("../profiles/us-core/us-core-coverage.json");
-        const US_CORE_QUESTIONNAIRERESPONSE: &str = include_str!("../profiles/us-core/us-core-questionnaireresponse.json");
-
-        let mut profiles = Vec::new();
-
-        let embedded_jsons = vec![
-            US_CORE_PATIENT,
-            US_CORE_PRACTITIONER,
-            US_CORE_PRACTITIONERROLE,
-            US_CORE_ORGANIZATION,
-            US_CORE_LOCATION,
-            US_CORE_RELATEDPERSON,
-            US_CORE_CONDITION,
-            US_CORE_PROCEDURE,
-            US_CORE_ENCOUNTER,
-            US_CORE_ALLERGYINTOLERANCE,
-            US_CORE_IMMUNIZATION,
-            US_CORE_CAREPLAN,
-            US_CORE_CARETEAM,
-            US_CORE_GOAL,
-            US_CORE_OBSERVATION_LAB,
-            US_CORE_VITAL_SIGNS,
-            US_CORE_SMOKINGSTATUS,
-            PEDIATRIC_BMI_FOR_AGE,
-            PEDIATRIC_WEIGHT_FOR_HEIGHT,
-            US_CORE_PULSE_OXIMETRY,
-            US_CORE_DIAGNOSTICREPORT_LAB,
-            US_CORE_DIAGNOSTICREPORT_NOTE,
-            US_CORE_DOCUMENTREFERENCE,
-            US_CORE_MEDICATION,
-            US_CORE_MEDICATIONREQUEST,
-            US_CORE_PROVENANCE,
-            US_CORE_SERVICEREQUEST,
-            US_CORE_COVERAGE,
-            US_CORE_QUESTIONNAIRERESPONSE,
-        ];
-
-        for json_str in embedded_jsons {
-            match serde_json::from_str::<Value>(json_str) {
-                Ok(profile) => profiles.push(profile),
+        US_CORE_PROFILE_JSON
+            .iter()
+            .filter_map(|json| match serde_json::from_str::<Value>(json) {
+                Ok(profile) => Some(profile),
                 Err(e) => {
-                    tracing::error!("Failed to parse embedded profile: {}", e);
+                    tracing::error!("Failed to parse embedded US Core profile: {}", e);
+                    None
                 }
-            }
-        }
-
-        tracing::info!("Loaded {} embedded US-Core profiles", profiles.len());
-        profiles
+            })
+            .collect()
     }
 }
 
@@ -149,6 +86,45 @@ mod tests {
     use super::*;
     use std::fs;
     use tempfile::TempDir;
+
+    /// Guards against the embedded US Core set silently shrinking or going stale
+    /// (it was once 29 of 54 profiles, at v5.0.1). build.rs embeds the whole
+    /// directory, so this asserts the directory holds the complete US Core 8.0.0
+    /// set, including the granular vital-signs and USCDI Observations that were
+    /// previously missing.
+    #[test]
+    fn embedded_us_core_is_complete_and_v8() {
+        let profiles = ProfileLoader::get_embedded_us_core_profiles();
+        assert_eq!(
+            profiles.len(),
+            54,
+            "expected the full US Core 8.0.0 profile set (54), got {}",
+            profiles.len()
+        );
+        for p in &profiles {
+            let v = p.get("version").and_then(|v| v.as_str()).unwrap_or("");
+            assert!(
+                v.starts_with("8."),
+                "non-v8 profile {:?}: version {v}",
+                p.get("url")
+            );
+        }
+        let urls: std::collections::HashSet<&str> = profiles
+            .iter()
+            .filter_map(|p| p.get("url").and_then(|u| u.as_str()))
+            .collect();
+        // Profiles that were absent before the full embed.
+        for must in [
+            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-blood-pressure",
+            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-body-weight",
+            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-heart-rate",
+            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-observation-pregnancystatus",
+            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-observation-occupation",
+            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-average-blood-pressure",
+        ] {
+            assert!(urls.contains(must), "missing US Core profile: {must}");
+        }
+    }
 
     #[test]
     fn test_load_from_empty_directory() {

@@ -15,8 +15,8 @@ is courtesy, not a legal requirement.
 ## Bundled profiles
 
 ### HL7 FHIR US Core Implementation Guide
-- **What:** 29 `StructureDefinition` profiles in `sazare-core/profiles/us-core/`
-- **Source package:** `hl7.fhir.us.core` version `5.0.1`
+- **What:** the complete set of 54 `StructureDefinition` profiles in `sazare-core/profiles/us-core/`
+- **Source package:** `hl7.fhir.us.core` version `8.0.0`
 - **Publisher:** HL7 International
 - **License:** CC0-1.0 (verified in the package manifest)
 

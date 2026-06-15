@@ -51,74 +51,6 @@ fn bulk_export_operations_for(resource_type: &str) -> Vec<Value> {
     vec![json!({"name": "export", "definition": def})]
 }
 
-/// US Core v7 & v8 profiles supported per resource type. Declared in
-/// `CapabilityStatement.rest.resource[].supportedProfile` so that Inferno's
-/// US Core Server test recognizes the server as US Core conformant. URLs are
-/// unversioned, so they satisfy both the v7 and v8 test suites.
-fn us_core_profiles_for(resource_type: &str) -> Vec<&'static str> {
-    match resource_type {
-        "Patient" => vec!["http://hl7.org/fhir/us/core/StructureDefinition/us-core-patient"],
-        "Practitioner" => vec!["http://hl7.org/fhir/us/core/StructureDefinition/us-core-practitioner"],
-        "Organization" => vec!["http://hl7.org/fhir/us/core/StructureDefinition/us-core-organization"],
-        "Encounter" => vec!["http://hl7.org/fhir/us/core/StructureDefinition/us-core-encounter"],
-        "Condition" => vec![
-            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-condition-encounter-diagnosis",
-            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-condition-problems-health-concerns",
-        ],
-        "Observation" => vec![
-            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-observation-lab",
-            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-vital-signs",
-            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-blood-pressure",
-            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-average-blood-pressure",
-            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-body-weight",
-            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-body-height",
-            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-body-temperature",
-            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-bmi",
-            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-heart-rate",
-            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-respiratory-rate",
-            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-pulse-oximetry",
-            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-head-circumference",
-            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-smokingstatus",
-            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-simple-observation",
-            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-observation-clinical-result",
-            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-observation-screening-assessment",
-            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-observation-pregnancystatus",
-            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-observation-pregnancyintent",
-            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-observation-occupation",
-            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-observation-sexual-orientation",
-            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-observation-adi-documentation",
-            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-treatment-intervention-preference",
-            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-care-experience-preference",
-        ],
-        "AllergyIntolerance" => vec!["http://hl7.org/fhir/us/core/StructureDefinition/us-core-allergyintolerance"],
-        "DiagnosticReport" => vec![
-            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-diagnosticreport-lab",
-            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-diagnosticreport-note",
-        ],
-        "Immunization" => vec!["http://hl7.org/fhir/us/core/StructureDefinition/us-core-immunization"],
-        "MedicationRequest" => vec!["http://hl7.org/fhir/us/core/StructureDefinition/us-core-medicationrequest"],
-        "Procedure" => vec!["http://hl7.org/fhir/us/core/StructureDefinition/us-core-procedure"],
-        "Provenance" => vec!["http://hl7.org/fhir/us/core/StructureDefinition/us-core-provenance"],
-        "CarePlan" => vec!["http://hl7.org/fhir/us/core/StructureDefinition/us-core-careplan"],
-        "CareTeam" => vec!["http://hl7.org/fhir/us/core/StructureDefinition/us-core-careteam"],
-        "RelatedPerson" => vec!["http://hl7.org/fhir/us/core/StructureDefinition/us-core-relatedperson"],
-        "Location" => vec!["http://hl7.org/fhir/us/core/StructureDefinition/us-core-location"],
-        "PractitionerRole" => vec!["http://hl7.org/fhir/us/core/StructureDefinition/us-core-practitionerrole"],
-        "Goal" => vec!["http://hl7.org/fhir/us/core/StructureDefinition/us-core-goal"],
-        "Coverage" => vec!["http://hl7.org/fhir/us/core/StructureDefinition/us-core-coverage"],
-        "Device" => vec!["http://hl7.org/fhir/us/core/StructureDefinition/us-core-implantable-device"],
-        "MedicationDispense" => vec!["http://hl7.org/fhir/us/core/StructureDefinition/us-core-medicationdispense"],
-        "DocumentReference" => vec![
-            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-documentreference",
-            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-adi-documentreference",
-        ],
-        "ServiceRequest" => vec!["http://hl7.org/fhir/us/core/StructureDefinition/us-core-servicerequest"],
-        "Specimen" => vec!["http://hl7.org/fhir/us/core/StructureDefinition/us-core-specimen"],
-        "QuestionnaireResponse" => vec!["http://hl7.org/fhir/us/core/StructureDefinition/us-core-questionnaireresponse"],
-        _ => vec![],
-    }
-}
-
 /// Health check (GET /health)
 pub async fn health_check() -> impl IntoResponse {
     Json(json!({
@@ -152,7 +84,7 @@ pub async fn capability_statement(State(state): State<Arc<AppState>>) -> Json<Va
                 "interaction": interactions,
                 "searchParam": get_search_params_from_registry(&state.search_param_registry, rt),
             });
-            let profiles = us_core_profiles_for(rt);
+            let profiles = state.profile_registry.supported_profile_urls(rt);
             if !profiles.is_empty() {
                 entry["supportedProfile"] = json!(profiles);
             }
