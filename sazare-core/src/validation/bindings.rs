@@ -131,32 +131,3 @@ fn collect<'a>(value: &'a Value, parts: &[&str], out: &mut Vec<&'a Value>) {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::profile_loader::ProfileLoader;
-    use serde_json::json;
-
-    fn registries() -> (ProfileRegistry, TerminologyRegistry) {
-        let mut p = ProfileRegistry::new();
-        p.load_profiles(ProfileLoader::get_embedded_jp_core_profiles());
-        (p, TerminologyRegistry::new())
-    }
-
-    #[test]
-    fn test_imagingstudy_modality_required_binding() {
-        let (p, t) = registries();
-        let study = |modality: &str| {
-            json!({
-                "resourceType": "ImagingStudy",
-                "meta": {"profile": ["http://jpfhir.jp/fhir/core/StructureDefinition/JP_ImagingStudy_Radiology"]},
-                "modality": [{"system": "http://dicom.nema.org/resources/ontology/DCM", "code": modality}]
-            })
-        };
-        // CT is a valid DICOM modality.
-        assert!(validate(&study("CT"), &p, &t).is_ok());
-        // ZZ is not.
-        assert!(validate(&study("ZZ"), &p, &t).is_err());
-    }
-}

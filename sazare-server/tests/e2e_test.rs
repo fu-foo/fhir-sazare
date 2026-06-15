@@ -1462,7 +1462,9 @@ async fn test_jp_name_representation_search() {
 }
 
 #[tokio::test]
-async fn test_metadata_advertises_jp_core() {
+async fn test_metadata_advertises_jp_name_search() {
+    // JP Core profiles are no longer embedded, but the Japanese-name search
+    // capability (kana/kanji) is kept as language support and stays advertised.
     let (base_url, _dir) = start_test_server().await;
     let client = reqwest::Client::new();
 
@@ -1491,19 +1493,6 @@ async fn test_metadata_advertises_jp_core() {
         .collect();
     assert!(param_names.contains(&"name-kana"), "metadata should advertise name-kana");
     assert!(param_names.contains(&"name-kanji"), "metadata should advertise name-kanji");
-
-    // JP Core Patient profile is declared as supported alongside US Core.
-    let profiles: Vec<&str> = patient["supportedProfile"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|p| p.as_str().unwrap())
-        .collect();
-    assert!(
-        profiles.contains(&"http://jpfhir.jp/fhir/core/StructureDefinition/JP_Patient"),
-        "supportedProfile should include JP_Patient, got {:?}",
-        profiles
-    );
 }
 
 #[tokio::test]

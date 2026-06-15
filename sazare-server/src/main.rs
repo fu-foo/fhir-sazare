@@ -69,10 +69,10 @@ async fn main() {
     let mut profile_registry = ProfileRegistry::new();
     let us_core_profiles = ProfileLoader::get_embedded_us_core_profiles();
     profile_registry.load_profiles(us_core_profiles);
-    let jp_core_profiles = ProfileLoader::get_embedded_jp_core_profiles();
-    profile_registry.load_profiles(jp_core_profiles);
 
-    // Load custom profiles from profiles/ directory if it exists
+    // Load custom profiles from profiles/ directory if it exists (this is how
+    // JP Core or any other IG is supplied now — drop the package's profiles in).
+    // Validation against US Core remains the only built-in conformance claim.
     match ProfileLoader::load_from_directory("profiles") {
         Ok(custom_profiles) if !custom_profiles.is_empty() => {
             tracing::info!("Loading {} custom profiles", custom_profiles.len());

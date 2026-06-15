@@ -119,75 +119,6 @@ fn us_core_profiles_for(resource_type: &str) -> Vec<&'static str> {
     }
 }
 
-/// JP Core (HL7 FHIR JP Core v1.2.0) profiles supported per resource type,
-/// declared in `CapabilityStatement.rest.resource[].supportedProfile`. Mirrors
-/// the embedded set in `ProfileLoader::get_embedded_jp_core_profiles`.
-fn jp_core_profiles_for(resource_type: &str) -> Vec<&'static str> {
-    match resource_type {
-        "Patient" => vec!["http://jpfhir.jp/fhir/core/StructureDefinition/JP_Patient"],
-        "Organization" => vec!["http://jpfhir.jp/fhir/core/StructureDefinition/JP_Organization"],
-        "Practitioner" => vec!["http://jpfhir.jp/fhir/core/StructureDefinition/JP_Practitioner"],
-        "PractitionerRole" => vec!["http://jpfhir.jp/fhir/core/StructureDefinition/JP_PractitionerRole"],
-        "Encounter" => vec!["http://jpfhir.jp/fhir/core/StructureDefinition/JP_Encounter"],
-        "Condition" => vec![
-            "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Condition",
-            "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Condition_Diagnosis",
-        ],
-        "AllergyIntolerance" => vec!["http://jpfhir.jp/fhir/core/StructureDefinition/JP_AllergyIntolerance"],
-        "Immunization" => vec!["http://jpfhir.jp/fhir/core/StructureDefinition/JP_Immunization"],
-        "Medication" => vec!["http://jpfhir.jp/fhir/core/StructureDefinition/JP_Medication"],
-        "MedicationRequest" => vec![
-            "http://jpfhir.jp/fhir/core/StructureDefinition/JP_MedicationRequest",
-            "http://jpfhir.jp/fhir/core/StructureDefinition/JP_MedicationRequest_Injection",
-        ],
-        "MedicationDispense" => vec![
-            "http://jpfhir.jp/fhir/core/StructureDefinition/JP_MedicationDispense",
-            "http://jpfhir.jp/fhir/core/StructureDefinition/JP_MedicationDispense_Injection",
-        ],
-        "MedicationAdministration" => vec![
-            "http://jpfhir.jp/fhir/core/StructureDefinition/JP_MedicationAdministration",
-            "http://jpfhir.jp/fhir/core/StructureDefinition/JP_MedicationAdministration_Injection",
-        ],
-        "MedicationStatement" => vec![
-            "http://jpfhir.jp/fhir/core/StructureDefinition/JP_MedicationStatement",
-            "http://jpfhir.jp/fhir/core/StructureDefinition/JP_MedicationStatement_Injection",
-        ],
-        "Coverage" => vec!["http://jpfhir.jp/fhir/core/StructureDefinition/JP_Coverage"],
-        "Location" => vec!["http://jpfhir.jp/fhir/core/StructureDefinition/JP_Location"],
-        "Observation" => vec![
-            "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Observation_BodyMeasurement",
-            "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Observation_LabResult",
-            "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Observation_PhysicalExam",
-            "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Observation_SocialHistory",
-            "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Observation_VitalSigns",
-            "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Observation_Electrocardiogram",
-            "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Observation_Endoscopy",
-            "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Observation_Radiology_Findings",
-            "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Observation_Radiology_Impression",
-            "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Observation_DentalOral_eCS",
-            "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Observation_DentalOral_MissingToothCondition",
-            "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Observation_DentalOral_ToothExistence",
-            "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Observation_DentalOral_ToothTreatmentCondition",
-        ],
-        "DiagnosticReport" => vec![
-            "http://jpfhir.jp/fhir/core/StructureDefinition/JP_DiagnosticReport_LabResult",
-            "http://jpfhir.jp/fhir/core/StructureDefinition/JP_DiagnosticReport_Radiology",
-            "http://jpfhir.jp/fhir/core/StructureDefinition/JP_DiagnosticReport_Endoscopy",
-            "http://jpfhir.jp/fhir/core/StructureDefinition/JP_DiagnosticReport_Microbiology",
-            "http://jpfhir.jp/fhir/core/StructureDefinition/JP_DiagnosticReport_DentalOral",
-        ],
-        "ImagingStudy" => vec![
-            "http://jpfhir.jp/fhir/core/StructureDefinition/JP_ImagingStudy_Radiology",
-            "http://jpfhir.jp/fhir/core/StructureDefinition/JP_ImagingStudy_Endoscopy",
-        ],
-        "Media" => vec!["http://jpfhir.jp/fhir/core/StructureDefinition/JP_Media_Endoscopy"],
-        "FamilyMemberHistory" => vec!["http://jpfhir.jp/fhir/core/StructureDefinition/JP_FamilyMemberHistory"],
-        "Procedure" => vec!["http://jpfhir.jp/fhir/core/StructureDefinition/JP_Procedure"],
-        "Specimen" => vec!["http://jpfhir.jp/fhir/core/StructureDefinition/JP_Specimen_Common"],
-        _ => vec![],
-    }
-}
-
 /// Health check (GET /health)
 pub async fn health_check() -> impl IntoResponse {
     Json(json!({
@@ -221,8 +152,7 @@ pub async fn capability_statement(State(state): State<Arc<AppState>>) -> Json<Va
                 "interaction": interactions,
                 "searchParam": get_search_params_from_registry(&state.search_param_registry, rt),
             });
-            let mut profiles = us_core_profiles_for(rt);
-            profiles.extend(jp_core_profiles_for(rt));
+            let profiles = us_core_profiles_for(rt);
             if !profiles.is_empty() {
                 entry["supportedProfile"] = json!(profiles);
             }

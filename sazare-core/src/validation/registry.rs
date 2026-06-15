@@ -225,9 +225,6 @@ impl TerminologyRegistry {
             &["unconfirmed", "presumed", "confirmed", "refuted", "entered-in-error"],
         ));
 
-        // Enumerated ValueSet resources embedded as data.
-        registry.load_value_set_resource(include_str!("../../valuesets/jp-dicom-modality.json"));
-
         registry
     }
 
