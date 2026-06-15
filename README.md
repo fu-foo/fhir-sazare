@@ -525,7 +525,57 @@ Licensed under the [Apache License, Version 2.0](LICENSE).
 - コンパートメントベースのアクセス制御
 - TLS/HTTPS 対応
 
-### クイックスタート
+### クイックスタート — 30秒で FHIR サーバーを動かす
+
+ファイルを1つ落として実行するだけ。Docker も JVM もデータベースも設定も不要です。
+
+**macOS / Linux は Homebrew が一番ラク** — 後述の macOS Gatekeeper 警告も回避できます（brew で入れたバイナリは隔離フラグが付かないため）:
+
+```bash
+brew install fu-foo/tap/sazare
+sazare-server --demo --open
+```
+
+**それ以外は、お使いの OS のバイナリ**を
+[最新リリース](https://github.com/fu-foo/fhir-sazare/releases/latest)
+（macOS Intel/Apple Silicon、Linux x86-64/ARM64、Windows x86-64）からダウンロードして、展開して実行します:
+
+```bash
+# macOS / Linux（Apple Silicon の例。OS/アーキテクチャに合うアセットを選んでください）
+tar xzf sazare-server-macos-arm64.tar.gz
+./sazare-server --demo --open
+```
+
+```powershell
+# Windows: 展開してから
+.\sazare-server.exe --demo --open
+```
+
+`--demo` はサンプル患者（バイタル・条件・受診・処方）を事前投入し、`--open` は内蔵ダッシュボードをブラウザで開きます。これで準備完了。サーバーは `http://localhost:8080` で待ち受けます（デフォルトは認証なし）。
+
+> **macOS の初回起動**（直接ダウンロードした場合のみ）: バイナリは未署名なので、Gatekeeper が「開発元を確認できません」と表示してブロックします。隔離フラグを外して実行してください:
+> ```bash
+> xattr -d com.apple.quarantine ./sazare-server && ./sazare-server --demo --open
+> ```
+> または **システム設定 → プライバシーとセキュリティ → 「このまま開く」** で許可します（macOS 15 Sequoia では、従来の「右クリック → 開く」は使えなくなりました）。`brew` で入れればこの手順は不要です。
+
+> **Windows の初回起動**（直接ダウンロードした場合のみ）: `.exe` が未署名のため、Microsoft Defender SmartScreen が青い「**Windows によって PC が保護されました**」を表示し、目立つボタンは *実行しない* だけになります。これは上記 macOS のダイアログの Windows 版で、「マルウェア」ではなく「ネットからダウンロードされた、まだ認知されていないアプリ」という意味です。抜け方は2つ:
+>
+> - **クリックで抜ける**: ダイアログの **詳細情報** をクリック →現れる **実行** ボタンを押す
+> - **一度で恒久的に解除（PowerShell）**: ファイルのブロックを解除すれば次回から出ません（macOS の `xattr` に相当）:
+>   ```powershell
+>   Unblock-File .\sazare-server.exe
+>   .\sazare-server.exe --demo --open
+>   ```
+>   （GUI なら `.exe` を右クリック → **プロパティ** → 下部の **ブロックの解除** にチェック → **OK**）
+>
+> SmartScreen はダウンロード実績が貯まると自動的に警告しなくなります。Windows / macOS バイナリの署名は 1.0 に向けた課題です。
+
+> **Linux**: この種のゲートはありません。ダウンロードして、必要なら `chmod +x sazare-server` し、実行するだけです。
+
+#### ソースからビルドする場合
+
+Rust ツールチェーンがあれば、自分でビルドすることもできます:
 
 ```bash
 git clone https://github.com/fu-foo/fhir-sazare.git
@@ -533,8 +583,6 @@ cd fhir-sazare
 cargo build --release
 ./target/release/sazare-server
 ```
-
-サーバーが `http://localhost:8080` で起動します。ブラウザでアクセスするとダッシュボードが表示されます。
 
 ### 設定
 
