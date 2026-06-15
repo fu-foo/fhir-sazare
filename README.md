@@ -41,14 +41,22 @@
 Download one file, run it, and you're looking at live FHIR data. No Docker, no
 JVM, no database, no config.
 
-**1. Download the binary for your OS** from the
-[latest release](https://github.com/fu-foo/fhir-sazare/releases/latest)
-(macOS Intel/Apple Silicon, Linux x86-64/ARM64, Windows x86-64).
-
-**2. Unpack and run it with sample data:**
+**On macOS or Linux, Homebrew is the smoothest path** — it also sidesteps the
+macOS Gatekeeper warning below, because brew-installed binaries aren't
+quarantined:
 
 ```bash
-# macOS (Apple Silicon shown — pick the asset matching your OS/arch)
+brew install fu-foo/tap/sazare
+sazare-server --demo --open
+```
+
+**Otherwise, download the binary for your OS** from the
+[latest release](https://github.com/fu-foo/fhir-sazare/releases/latest)
+(macOS Intel/Apple Silicon, Linux x86-64/ARM64, Windows x86-64), then unpack and
+run it with sample data:
+
+```bash
+# macOS / Linux (Apple Silicon shown — pick the asset matching your OS/arch)
 tar xzf sazare-server-macos-arm64.tar.gz
 ./sazare-server --demo --open
 ```
@@ -62,8 +70,19 @@ tar xzf sazare-server-macos-arm64.tar.gz
 and a prescription; `--open` launches the built-in dashboard in your browser.
 That's the whole setup.
 
-> **macOS first run**: the binary is unsigned, so Gatekeeper may block it. Allow
-> it with `xattr -d com.apple.quarantine ./sazare-server`, or right-click → Open.
+> **macOS first run** (direct download only): the binary is unsigned, so
+> Gatekeeper blocks it with an "unidentified developer" dialog. Clear the
+> quarantine flag and run:
+> ```bash
+> xattr -d com.apple.quarantine ./sazare-server && ./sazare-server --demo --open
+> ```
+> Or allow it via **System Settings → Privacy & Security → "Open Anyway"** (on
+> macOS 15 Sequoia the old right-click → Open shortcut no longer works).
+> Installing with `brew` avoids this entirely.
+
+> **Windows first run** (direct download only): SmartScreen may show "Windows
+> protected your PC". Click **More info → Run anyway**. Linux has no such gate —
+> just `chmod +x` if needed.
 
 The server listens on `http://localhost:8080` (no authentication by default). The
 dashboard has a one-click "Load sample data" button and a search builder, and
