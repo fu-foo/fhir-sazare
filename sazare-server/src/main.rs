@@ -84,9 +84,27 @@ async fn main() {
         }
     }
 
+    // Load custom search parameters from searchparameters/ if it exists. Each is
+    // a FHIR SearchParameter resource whose `expression` is compiled by the
+    // bounded FHIRPath evaluator; ones outside the supported subset are rejected
+    // loudly here rather than producing wrong results later. This is how JP Core
+    // (or any IG) search params are supplied now — drop them in alongside the
+    // matching profiles in profiles/.
+    let mut search_param_registry = SearchParamRegistry::new();
+    match ProfileLoader::load_resources_from_directory("searchparameters", "SearchParameter") {
+        Ok(sps) => {
+            for sp in &sps {
+                match search_param_registry.register_search_parameter(sp) {
+                    Ok(()) => {}
+                    Err(e) => tracing::warn!("Skipping custom search parameter: {}", e),
+                }
+            }
+        }
+        Err(e) => tracing::warn!("Failed to load custom search parameters: {}", e),
+    }
+
     // Auto-reindex if the search index is empty (fresh deploy, or after an index wipe
     // following a schema change like added common params _id/_profile/_tag/etc.)
-    let search_param_registry = SearchParamRegistry::new();
     match index.row_count() {
         Ok(0) => {
             let store_has_data = store

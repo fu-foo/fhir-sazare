@@ -45,7 +45,7 @@ impl IndexBuilder {
             sazare_core::SearchParamType::Number => "number",
         };
 
-        match def.extraction {
+        match &def.extraction {
             ExtractionMode::Simple => {
                 Self::extract_simple(resource, &def.path, &def.name, param_type_str, &def.aliases, indices);
             }
@@ -103,6 +103,74 @@ impl IndexBuilder {
             ExtractionMode::JpDosagePeriodStart => {
                 Self::extract_jp_dosage_period_start(resource, &def.path, &def.name, param_type_str, indices);
             }
+            ExtractionMode::FhirPath(expr) => {
+                Self::extract_fhirpath(resource, expr, def, param_type_str, indices);
+            }
+        }
+    }
+
+    /// Evaluate a FHIRPath expression and index its result nodes according to
+    /// the parameter's type — the runtime counterpart of the hardcoded
+    /// extractors above, used by search params loaded from `searchparameters/`.
+    fn extract_fhirpath(
+        resource: &Value,
+        expr: &sazare_core::fhirpath::Expr,
+        def: &SearchParamDef,
+        param_type: &str,
+        indices: &mut Vec<(String, String, String, Option<String>)>,
+    ) {
+        use sazare_core::SearchParamType;
+        let name = &def.name;
+        for node in sazare_core::fhirpath::evaluate(expr, resource) {
+            match def.param_type {
+                SearchParamType::String => {
+                    if let Some(s) = node.as_str() {
+                        indices.push((name.clone(), param_type.to_string(), s.to_lowercase(), None));
+                    }
+                }
+                SearchParamType::Date => {
+                    if let Some(s) = node.as_str() {
+                        indices.push((name.clone(), param_type.to_string(), s.to_string(), None));
+                    }
+                }
+                SearchParamType::Reference => {
+                    let r = node
+                        .get("reference")
+                        .and_then(|v| v.as_str())
+                        .or_else(|| node.as_str());
+                    if let Some(r) = r {
+                        indices.push((name.clone(), param_type.to_string(), r.to_string(), None));
+                    }
+                }
+                SearchParamType::Token => Self::push_token_node(node, name, param_type, indices),
+                SearchParamType::Number => {}
+            }
+        }
+    }
+
+    /// Shape a FHIRPath result node into token index rows: CodeableConcept,
+    /// Coding, Identifier, or a bare code string.
+    fn push_token_node(
+        node: &Value,
+        name: &str,
+        param_type: &str,
+        indices: &mut Vec<(String, String, String, Option<String>)>,
+    ) {
+        if let Some(codings) = node.get("coding").and_then(|v| v.as_array()) {
+            for c in codings {
+                if let Some(code) = c.get("code").and_then(|v| v.as_str()) {
+                    let system = c.get("system").and_then(|v| v.as_str()).map(str::to_string);
+                    indices.push((name.to_string(), param_type.to_string(), code.to_string(), system));
+                }
+            }
+        } else if let Some(code) = node.get("code").and_then(|v| v.as_str()) {
+            let system = node.get("system").and_then(|v| v.as_str()).map(str::to_string);
+            indices.push((name.to_string(), param_type.to_string(), code.to_string(), system));
+        } else if let Some(value) = node.get("value").and_then(|v| v.as_str()) {
+            let system = node.get("system").and_then(|v| v.as_str()).map(str::to_string);
+            indices.push((name.to_string(), param_type.to_string(), value.to_string(), system));
+        } else if let Some(s) = node.as_str() {
+            indices.push((name.to_string(), param_type.to_string(), s.to_string(), None));
         }
     }
 
@@ -770,6 +838,51 @@ impl IndexBuilder {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn test_custom_fhirpath_search_parameter() {
+        // A runtime-loaded SearchParameter — here the kana-name search expressed
+        // as FHIRPath, proving the loadable path can do what was hardcoded.
+        let mut reg = SearchParamRegistry::new();
+        let sp = json!({
+            "resourceType": "SearchParameter",
+            "code": "name-phonetic",
+            "base": ["Patient"],
+            "type": "string",
+            "expression": "Patient.name.where(extension('http://hl7.org/fhir/StructureDefinition/iso21090-EN-representation').value.ofType(code)='SYL').text"
+        });
+        reg.register_search_parameter(&sp).unwrap();
+
+        let patient = json!({
+            "resourceType": "Patient",
+            "name": [
+                {"text": "Yamada Taro"},
+                {"text": "ヤマダ タロウ", "extension": [{
+                    "url": "http://hl7.org/fhir/StructureDefinition/iso21090-EN-representation",
+                    "valueCode": "SYL"
+                }]}
+            ]
+        });
+        let idx = IndexBuilder::extract_indices_with_registry(&reg, "Patient", &patient);
+        // Only the SYL (kana) name is indexed under name-kana, not the plain one.
+        let kana: Vec<&String> = idx
+            .iter()
+            .filter(|(n, t, _, _)| n == "name-phonetic" && t == "string")
+            .map(|(_, _, v, _)| v)
+            .collect();
+        assert_eq!(kana, vec![&"ヤマダ タロウ".to_lowercase()]);
+    }
+
+    #[test]
+    fn test_register_rejects_out_of_subset_expression() {
+        let mut reg = SearchParamRegistry::new();
+        let sp = json!({
+            "resourceType": "SearchParameter",
+            "code": "bad", "base": ["Patient"], "type": "reference",
+            "expression": "Patient.link.other.where(resolve() is Patient)"
+        });
+        assert!(reg.register_search_parameter(&sp).is_err());
+    }
 
     #[test]
     fn test_extract_patient_indices() {

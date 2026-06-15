@@ -7,11 +7,21 @@ pub struct ProfileLoader;
 impl ProfileLoader {
     /// Load StructureDefinitions from a directory
     pub fn load_from_directory(dir_path: impl AsRef<Path>) -> Result<Vec<Value>, String> {
-        let mut profiles = Vec::new();
+        Self::load_resources_from_directory(dir_path, "StructureDefinition")
+    }
+
+    /// Load every JSON resource of the given `resourceType` from a directory.
+    /// Used for runtime-supplied conformance content (StructureDefinitions in
+    /// `profiles/`, SearchParameters in `searchparameters/`).
+    pub fn load_resources_from_directory(
+        dir_path: impl AsRef<Path>,
+        resource_type: &str,
+    ) -> Result<Vec<Value>, String> {
+        let mut resources = Vec::new();
         let dir_path = dir_path.as_ref();
 
         if !dir_path.exists() {
-            return Ok(profiles);
+            return Ok(resources);
         }
 
         let entries = std::fs::read_dir(dir_path)
@@ -23,21 +33,18 @@ impl ProfileLoader {
 
             if path.extension().and_then(|s| s.to_str()) == Some("json") {
                 match std::fs::read_to_string(&path) {
-                    Ok(content) => {
-                        match serde_json::from_str::<Value>(&content) {
-                            Ok(profile) => {
-                                // Verify it's a StructureDefinition
-                                if profile.get("resourceType").and_then(|v| v.as_str())
-                                    == Some("StructureDefinition")
-                                {
-                                    profiles.push(profile);
-                                }
-                            }
-                            Err(e) => {
-                                tracing::warn!("Failed to parse profile {:?}: {}", path, e);
+                    Ok(content) => match serde_json::from_str::<Value>(&content) {
+                        Ok(resource) => {
+                            if resource.get("resourceType").and_then(|v| v.as_str())
+                                == Some(resource_type)
+                            {
+                                resources.push(resource);
                             }
                         }
-                    }
+                        Err(e) => {
+                            tracing::warn!("Failed to parse {:?}: {}", path, e);
+                        }
+                    },
                     Err(e) => {
                         tracing::warn!("Failed to read file {:?}: {}", path, e);
                     }
@@ -45,8 +52,13 @@ impl ProfileLoader {
             }
         }
 
-        tracing::info!("Loaded {} profiles from {:?}", profiles.len(), dir_path);
-        Ok(profiles)
+        tracing::info!(
+            "Loaded {} {} resource(s) from {:?}",
+            resources.len(),
+            resource_type,
+            dir_path
+        );
+        Ok(resources)
     }
 
     /// Get embedded US-Core profiles (no download required)

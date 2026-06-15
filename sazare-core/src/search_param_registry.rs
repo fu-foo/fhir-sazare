@@ -69,6 +69,10 @@ pub enum ExtractionMode {
     /// extension (`path[1]`) under each `MedicationRequest.dosageInstruction`
     /// (`path[0]`). Indexed as a date (JP `jp-medication-start`).
     JpDosagePeriodStart,
+    /// A FHIRPath expression evaluated against the resource. Used by custom
+    /// search parameters loaded at runtime from a `SearchParameter` resource;
+    /// `path` is unused. See [`crate::fhirpath`].
+    FhirPath(crate::fhirpath::Expr),
 }
 
 /// Definition of a single search parameter
@@ -151,6 +155,54 @@ impl SearchParamRegistry {
     /// Check if a resource type has explicit definitions in the registry.
     pub fn has_resource_type(&self, resource_type: &str) -> bool {
         self.definitions.contains_key(resource_type)
+    }
+
+    /// Register a custom search parameter from a FHIR `SearchParameter` resource
+    /// (loaded at runtime). The `expression` is compiled with the bounded
+    /// FHIRPath evaluator; an expression outside the supported subset is
+    /// rejected here, at load time, rather than producing wrong results at query
+    /// time. The parameter is added to every `base` resource type it declares.
+    pub fn register_search_parameter(&mut self, sp: &serde_json::Value) -> Result<(), String> {
+        let code = sp
+            .get("code")
+            .and_then(|v| v.as_str())
+            .ok_or("SearchParameter has no code")?;
+        let type_str = sp
+            .get("type")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| format!("{code}: SearchParameter has no type"))?;
+        let param_type = match type_str {
+            "token" => SearchParamType::Token,
+            "string" => SearchParamType::String,
+            "date" => SearchParamType::Date,
+            "reference" => SearchParamType::Reference,
+            "number" => SearchParamType::Number,
+            other => return Err(format!("{code}: unsupported search parameter type '{other}'")),
+        };
+        let expr_str = sp
+            .get("expression")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| format!("{code}: SearchParameter has no expression"))?;
+        let expr = crate::fhirpath::parse(expr_str).map_err(|e| format!("{code}: {e}"))?;
+        let bases: Vec<String> = sp
+            .get("base")
+            .and_then(|v| v.as_array())
+            .map(|a| a.iter().filter_map(|b| b.as_str().map(String::from)).collect())
+            .unwrap_or_default();
+        if bases.is_empty() {
+            return Err(format!("{code}: SearchParameter has no base resource type"));
+        }
+        let def = SearchParamDef {
+            name: code.to_string(),
+            param_type,
+            path: Vec::new(),
+            extraction: ExtractionMode::FhirPath(expr),
+            aliases: Vec::new(),
+        };
+        for base in bases {
+            self.definitions.entry(base).or_default().push(def.clone());
+        }
+        Ok(())
     }
 
     /// The top-level JSON element a reference search parameter reads, used to
