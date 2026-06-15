@@ -1,5 +1,6 @@
 pub mod compartment;
 pub mod error;
+pub mod fhirpath;
 pub mod operation_outcome;
 pub mod profile_loader;
 pub mod resource;
