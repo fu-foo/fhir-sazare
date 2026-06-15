@@ -50,6 +50,16 @@ brew install fu-foo/tap/sazare
 sazare-server --demo --open
 ```
 
+**On Windows, [Scoop](https://scoop.sh) is the smoothest path** — it likewise
+sidesteps the SmartScreen warning below, because Scoop downloads aren't tagged
+with the Mark-of-the-Web:
+
+```powershell
+scoop bucket add fu-foo https://github.com/fu-foo/scoop-bucket
+scoop install sazare
+sazare-server --demo --open
+```
+
 **Otherwise, download the binary for your OS** from the
 [latest release](https://github.com/fu-foo/fhir-sazare/releases/latest)
 (macOS Intel/Apple Silicon, Linux x86-64/ARM64, Windows x86-64), then unpack and
@@ -97,8 +107,9 @@ That's the whole setup.
 >   (GUI equivalent: right-click the `.exe` → **Properties** → tick **Unblock**
 >   at the bottom → **OK**.)
 >
-> SmartScreen also stops warning on its own once a build earns download
-> reputation. Signing the Windows and macOS binaries is on the road to 1.0.
+> Installing with `scoop` avoids this entirely. SmartScreen also stops warning
+> on its own once a build earns download reputation; signing the Windows and
+> macOS binaries is on the road to 1.0.
 
 > **Linux**: no such gate — download, `chmod +x sazare-server` if needed, and run.
 
@@ -536,6 +547,14 @@ brew install fu-foo/tap/sazare
 sazare-server --demo --open
 ```
 
+**Windows は [Scoop](https://scoop.sh) が一番ラク** — 同様に後述の SmartScreen 警告を回避できます（Scoop のダウンロードには Mark-of-the-Web が付かないため）:
+
+```powershell
+scoop bucket add fu-foo https://github.com/fu-foo/scoop-bucket
+scoop install sazare
+sazare-server --demo --open
+```
+
 **それ以外は、お使いの OS のバイナリ**を
 [最新リリース](https://github.com/fu-foo/fhir-sazare/releases/latest)
 （macOS Intel/Apple Silicon、Linux x86-64/ARM64、Windows x86-64）からダウンロードして、展開して実行します:
@@ -569,7 +588,7 @@ tar xzf sazare-server-macos-arm64.tar.gz
 >   ```
 >   （GUI なら `.exe` を右クリック → **プロパティ** → 下部の **ブロックの解除** にチェック → **OK**）
 >
-> SmartScreen はダウンロード実績が貯まると自動的に警告しなくなります。Windows / macOS バイナリの署名は 1.0 に向けた課題です。
+> `scoop` で入れればこの手順は不要です。SmartScreen はダウンロード実績が貯まると自動的に警告しなくなります。Windows / macOS バイナリの署名は 1.0 に向けた課題です。
 
 > **Linux**: この種のゲートはありません。ダウンロードして、必要なら `chmod +x sazare-server` し、実行するだけです。
 
