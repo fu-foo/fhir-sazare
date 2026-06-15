@@ -1,9 +1,18 @@
 use axum::{
-    extract::State,
+    extract::{Query, State},
     response::{IntoResponse, Json},
 };
+use serde::Deserialize;
 use serde_json::{json, Value};
 use std::sync::Arc;
+
+/// Query parameters for `GET /metadata`. `mode=terminology` returns a
+/// TerminologyCapabilities resource; anything else (`full` / `normative` /
+/// absent) returns the CapabilityStatement.
+#[derive(Deserialize, Default)]
+pub struct MetadataQuery {
+    pub mode: Option<String>,
+}
 
 use crate::AppState;
 use sazare_core::SearchParamRegistry;
@@ -60,8 +69,36 @@ pub async fn health_check() -> impl IntoResponse {
     }))
 }
 
-/// Dynamic CapabilityStatement (GET /metadata)
-pub async fn capability_statement(State(state): State<Arc<AppState>>) -> Json<Value> {
+/// Minimal TerminologyCapabilities for `GET /metadata?mode=terminology`. sazare
+/// uses terminology only for required-binding validation of resources — it is
+/// not a terminology server, so this declares no `$expand` / `$validate-code` /
+/// `$translate` operations (their absence is the honest signal that they are
+/// not offered).
+fn terminology_capabilities() -> Value {
+    let date = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    json!({
+        "resourceType": "TerminologyCapabilities",
+        "status": "active",
+        "date": date,
+        "kind": "instance",
+        "software": {
+            "name": "sazare",
+            "version": env!("CARGO_PKG_VERSION"),
+        },
+        "description": "sazare uses terminology only for required-binding validation of resources. It is not a terminology server: $expand, $validate-code and $translate are not offered."
+    })
+}
+
+/// Dynamic CapabilityStatement (GET /metadata). `?mode=terminology` returns a
+/// TerminologyCapabilities instead (a different resource type, per the spec).
+pub async fn capability_statement(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<MetadataQuery>,
+) -> Json<Value> {
+    if query.mode.as_deref() == Some("terminology") {
+        return Json(terminology_capabilities());
+    }
+
     let interactions = vec![
         json!({"code": "read"}),
         json!({"code": "vread"}),

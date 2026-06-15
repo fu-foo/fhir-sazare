@@ -1441,3 +1441,32 @@ async fn test_search_by_profile() {
     assert_eq!(bundle["total"], 1, "_profile search should return only the JP_Patient");
     assert_eq!(bundle["entry"][0]["resource"]["id"], pid);
 }
+
+#[tokio::test]
+async fn test_metadata_mode_terminology() {
+    let (base_url, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+
+    // Default and ?mode=full return a CapabilityStatement.
+    for url in [format!("{base_url}/metadata"), format!("{base_url}/metadata?mode=full")] {
+        let body: Value = client.get(&url).send().await.unwrap().json().await.unwrap();
+        assert_eq!(body["resourceType"], "CapabilityStatement", "{url}");
+    }
+
+    // ?mode=terminology returns a *different* resource type.
+    let term: Value = client
+        .get(format!("{base_url}/metadata?mode=terminology"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(term["resourceType"], "TerminologyCapabilities");
+    assert_eq!(term["kind"], "instance");
+    assert_eq!(term["status"], "active");
+    assert!(term["date"].is_string());
+    // Not a terminology server: no operations are declared.
+    assert!(term.get("validateCode").is_none());
+    assert!(term.get("expansion").is_none());
+}
