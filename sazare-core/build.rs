@@ -4,7 +4,9 @@
 use std::{env, fs, path::Path};
 
 fn main() {
-    let manifest = env::var("CARGO_MANIFEST_DIR").unwrap();
+    // Forward slashes so the generated `include_str!` string literals are valid
+    // on Windows too (a backslashed path like `C:\a\...` is an invalid escape).
+    let manifest = env::var("CARGO_MANIFEST_DIR").unwrap().replace('\\', "/");
     let rel = "profiles/us-core";
     let dir = Path::new(&manifest).join(rel);
 
