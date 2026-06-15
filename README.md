@@ -80,9 +80,27 @@ That's the whole setup.
 > macOS 15 Sequoia the old right-click → Open shortcut no longer works).
 > Installing with `brew` avoids this entirely.
 
-> **Windows first run** (direct download only): SmartScreen may show "Windows
-> protected your PC". Click **More info → Run anyway**. Linux has no such gate —
-> just `chmod +x` if needed.
+> **Windows first run** (direct download only): because the `.exe` is unsigned,
+> Microsoft Defender SmartScreen shows a blue **"Windows protected your PC"**
+> box, and the only obvious button is *Don't run*. This is the Windows
+> equivalent of the macOS dialog above — it means "downloaded from the internet
+> and not yet recognized", not "this is malware". Two ways through:
+>
+> - **Click through:** in the dialog, click **More info**, then the **Run
+>   anyway** button that appears.
+> - **Clear it once (PowerShell):** unblock the file so it never prompts again —
+>   the counterpart to macOS's `xattr` command:
+>   ```powershell
+>   Unblock-File .\sazare-server.exe
+>   .\sazare-server.exe --demo --open
+>   ```
+>   (GUI equivalent: right-click the `.exe` → **Properties** → tick **Unblock**
+>   at the bottom → **OK**.)
+>
+> SmartScreen also stops warning on its own once a build earns download
+> reputation. Signing the Windows and macOS binaries is on the road to 1.0.
+
+> **Linux**: no such gate — download, `chmod +x sazare-server` if needed, and run.
 
 The server listens on `http://localhost:8080` (no authentication by default). The
 dashboard has a one-click "Load sample data" button and a search builder, and
