@@ -385,6 +385,59 @@ impl SearchIndex {
         Ok(ids)
     }
 
+    /// Resolve the references held by a set of source resources — the inverse of
+    /// [`search_reference`]. Given source resources of `source_type` and their
+    /// `param_name` reference parameter, return the ids of every referenced
+    /// resource of `target_type`. Used to evaluate `_has` reverse chains.
+    ///
+    /// References are stored as `value_string` like `"Patient/123"`, so we match
+    /// the `"{target_type}/"` prefix and strip it to recover the bare id.
+    pub fn referenced_targets(
+        &self,
+        source_type: &str,
+        param_name: &str,
+        source_ids: &[String],
+        target_type: &str,
+    ) -> Result<Vec<String>> {
+        if source_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let prefix = format!("{target_type}/");
+        let mut out: Vec<String> = Vec::new();
+        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+        // Chunk the IN list to stay clear of SQLite's bound-variable limit.
+        for chunk in source_ids.chunks(500) {
+            let placeholders = std::iter::repeat_n("?", chunk.len())
+                .collect::<Vec<_>>()
+                .join(",");
+            let sql = format!(
+                "SELECT DISTINCT value_string FROM search_index \
+                 WHERE resource_type = ? AND param_name = ? AND param_type = 'reference' \
+                 AND resource_id IN ({placeholders})"
+            );
+            let mut stmt = self.conn.prepare(&sql)?;
+
+            let mut args: Vec<&str> = Vec::with_capacity(chunk.len() + 2);
+            args.push(source_type);
+            args.push(param_name);
+            args.extend(chunk.iter().map(|s| s.as_str()));
+
+            let rows = stmt.query_map(rusqlite::params_from_iter(args), |row| {
+                row.get::<_, String>(0)
+            })?;
+            for row in rows {
+                let value = row?;
+                if let Some(id) = value.strip_prefix(&prefix)
+                    && seen.insert(id.to_string())
+                {
+                    out.push(id.to_string());
+                }
+            }
+        }
+        Ok(out)
+    }
+
     /// Date search (with prefix: eq, ne, ge, le, gt, lt).
     ///
     /// Indexed values are half-open epoch ranges `[start, end)` reflecting their
@@ -504,6 +557,30 @@ mod tests {
             .unwrap();
 
         assert_eq!(results, vec!["o1"]);
+    }
+
+    #[test]
+    fn test_referenced_targets() {
+        let index = SearchIndex::open(":memory:").unwrap();
+        // Two observations point at Patient/123, one at Patient/456, one elsewhere.
+        index.add_index("Observation", "o1", "patient", "reference", Some("Patient/123"), None).unwrap();
+        index.add_index("Observation", "o2", "patient", "reference", Some("Patient/123"), None).unwrap();
+        index.add_index("Observation", "o3", "patient", "reference", Some("Patient/456"), None).unwrap();
+        index.add_index("Observation", "o4", "patient", "reference", Some("Group/g1"), None).unwrap();
+
+        // Resolve the patients referenced by o1, o3, o4 — deduped, Patient-only.
+        let sources = vec!["o1".to_string(), "o3".to_string(), "o4".to_string()];
+        let mut targets = index
+            .referenced_targets("Observation", "patient", &sources, "Patient")
+            .unwrap();
+        targets.sort();
+        assert_eq!(targets, vec!["123".to_string(), "456".to_string()]);
+
+        // A source set that references nothing of the target type yields nothing.
+        let empty = index
+            .referenced_targets("Observation", "patient", &["o4".to_string()], "Patient")
+            .unwrap();
+        assert!(empty.is_empty());
     }
 
     #[test]

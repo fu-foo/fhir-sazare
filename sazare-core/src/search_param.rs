@@ -3,12 +3,35 @@
 pub struct SearchQuery {
     pub parameters: Vec<SearchParameter>,
     pub chain_parameters: Vec<ChainParameter>,
+    pub has_parameters: Vec<HasParameter>,
     pub include: Vec<String>,
     pub revinclude: Vec<String>,
     pub count: Option<usize>,
     pub offset: Option<usize>,
     pub summary: Option<SummaryMode>,
     pub elements: Vec<String>,
+}
+
+/// A reverse-chained `_has` search parameter (one level).
+///
+/// `Patient?_has:Observation:patient:code=1234-5` reads as "Patients that are
+/// referenced by an Observation whose `code` is 1234-5". It is the mirror image
+/// of a forward chain: instead of filtering the searched type by a property of
+/// what it points to, it filters the searched type by a property of resources
+/// that point *at* it.
+#[derive(Debug, Clone)]
+pub struct HasParameter {
+    /// The resource type that holds the back-reference (e.g. "Observation").
+    pub source_type: String,
+    /// The reference parameter on the source pointing back at the searched type
+    /// (e.g. "patient").
+    pub reference_param: String,
+    /// The search parameter applied to the source type (e.g. "code").
+    pub target_param: String,
+    /// The value the source's `target_param` must match.
+    pub value: String,
+    /// Inferred type of `target_param` on the source resource.
+    pub target_param_type: SearchParamType,
 }
 
 /// A chained search parameter. One level: `subject:Patient.name=Doe`.
@@ -77,6 +100,7 @@ impl SearchQuery {
     pub fn parse_for_resource(query_string: &str, resource_type: Option<&str>) -> Result<Self, String> {
         let mut parameters = Vec::new();
         let mut chain_parameters = Vec::new();
+        let mut has_parameters = Vec::new();
         let mut include = Vec::new();
         let mut revinclude = Vec::new();
         let mut count = None;
@@ -88,6 +112,7 @@ impl SearchQuery {
             return Ok(Self {
                 parameters,
                 chain_parameters,
+                has_parameters,
                 include,
                 revinclude,
                 count,
@@ -106,6 +131,16 @@ impl SearchQuery {
 
             let key = urlencoding::decode(parts[0]).map_err(|e| e.to_string())?;
             let value = urlencoding::decode(parts[1]).map_err(|e| e.to_string())?;
+
+            // Reverse chain: `_has:Type:reference-param:search-param=value`.
+            // Parsed before the generic `_`-prefixed skip below so it isn't
+            // dropped as an unsupported result parameter.
+            if key.starts_with("_has:") {
+                if let Some(has) = parse_has(&key, &value) {
+                    has_parameters.push(has);
+                }
+                continue;
+            }
 
             // Handle special parameters
             if key == "_include" {
@@ -195,6 +230,7 @@ impl SearchQuery {
         Ok(Self {
             parameters,
             chain_parameters,
+            has_parameters,
             include,
             revinclude,
             count,
@@ -258,6 +294,37 @@ fn parse_chain(reference_param: &str, modifier: &str, value: &str) -> Option<Cha
             target_param_type: infer_param_type(after),
         });
     }
+}
+
+/// Parse a one-level `_has` parameter key of the form
+/// `_has:<SourceType>:<reference-param>:<search-param>`.
+///
+/// Nested reverse chains (`_has:…:_has:…`) are not yet supported and return
+/// `None` so the parameter is ignored rather than mis-parsed.
+fn parse_has(key: &str, value: &str) -> Option<HasParameter> {
+    // key == "_has:Observation:patient:code"
+    let rest = key.strip_prefix("_has:")?;
+    let parts: Vec<&str> = rest.split(':').collect();
+    if parts.len() != 3 {
+        return None;
+    }
+    let source_type = parts[0];
+    let reference_param = parts[1];
+    let target_param = parts[2];
+    if source_type.is_empty() || reference_param.is_empty() || target_param.is_empty() {
+        return None;
+    }
+    // Nested `_has` (target_param == "_has") is out of scope for now.
+    if target_param == "_has" {
+        return None;
+    }
+    Some(HasParameter {
+        source_type: source_type.to_string(),
+        reference_param: reference_param.to_string(),
+        target_param: target_param.to_string(),
+        value: value.to_string(),
+        target_param_type: infer_param_type_for_resource(Some(source_type), target_param),
+    })
 }
 
 /// Parse date prefix from value (ge2020-01-01 -> (Some("ge"), "2020-01-01")).
@@ -427,6 +494,41 @@ mod tests {
         assert_eq!(chain.links[2].reference_param, "partof");
         assert_eq!(chain.links[2].target_type, "Organization");
         assert_eq!(chain.target_param, "name");
+    }
+
+    #[test]
+    fn test_parse_has_param() {
+        // Patients referenced by an Observation whose code is 1234-5.
+        let query = SearchQuery::parse("_has:Observation:patient:code=1234-5").unwrap();
+        assert_eq!(query.has_parameters.len(), 1);
+        let has = &query.has_parameters[0];
+        assert_eq!(has.source_type, "Observation");
+        assert_eq!(has.reference_param, "patient");
+        assert_eq!(has.target_param, "code");
+        assert_eq!(has.value, "1234-5");
+        assert_eq!(has.target_param_type, SearchParamType::Token);
+        // It is not mistaken for a regular or chain parameter.
+        assert!(query.parameters.is_empty());
+        assert!(query.chain_parameters.is_empty());
+    }
+
+    #[test]
+    fn test_parse_has_with_regular_params() {
+        let query = SearchQuery::parse("gender=male&_has:Observation:patient:code=1234-5").unwrap();
+        assert_eq!(query.parameters.len(), 1);
+        assert_eq!(query.parameters[0].name, "gender");
+        assert_eq!(query.has_parameters.len(), 1);
+        assert_eq!(query.has_parameters[0].source_type, "Observation");
+    }
+
+    #[test]
+    fn test_parse_has_malformed_ignored() {
+        // Missing the search-param segment -> not a valid one-level _has.
+        let query = SearchQuery::parse("_has:Observation:patient=x").unwrap();
+        assert!(query.has_parameters.is_empty());
+        // Nested _has is out of scope for now and is dropped, not mis-parsed.
+        let nested = SearchQuery::parse("_has:Group:member:_has=y").unwrap();
+        assert!(nested.has_parameters.is_empty());
     }
 
     #[test]

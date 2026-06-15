@@ -1,6 +1,6 @@
 use crate::sqlite_index::StringMatch;
 use crate::{SearchIndex, SqliteStore};
-use sazare_core::{ChainParameter, SearchParameter, SearchParamType, SearchQuery};
+use sazare_core::{ChainParameter, HasParameter, SearchParameter, SearchParamType, SearchQuery};
 use serde_json::Value;
 
 /// Execute FHIR search queries
@@ -59,6 +59,27 @@ impl<'a> SearchExecutor<'a> {
                         .collect();
                     Some(intersection)
                 }
+            };
+
+            if let Some(ref ids) = result_ids
+                && ids.is_empty()
+            {
+                break;
+            }
+        }
+
+        // Process reverse-chain (_has) parameters.
+        for has in &query.has_parameters {
+            let has_results = self.search_has(resource_type, has)?;
+
+            result_ids = match result_ids {
+                None => Some(has_results),
+                Some(existing) => Some(
+                    existing
+                        .into_iter()
+                        .filter(|id| has_results.contains(id))
+                        .collect(),
+                ),
             };
 
             if let Some(ref ids) = result_ids
@@ -128,6 +149,24 @@ impl<'a> SearchExecutor<'a> {
                         .collect();
                     Some(intersection)
                 }
+            };
+            if let Some(ref ids) = result_ids
+                && ids.is_empty()
+            {
+                break;
+            }
+        }
+
+        for has in &query.has_parameters {
+            let has_results = self.search_has(resource_type, has)?;
+            result_ids = match result_ids {
+                None => Some(has_results),
+                Some(existing) => Some(
+                    existing
+                        .into_iter()
+                        .filter(|id| has_results.contains(id))
+                        .collect(),
+                ),
             };
             if let Some(ref ids) = result_ids
                 && ids.is_empty()
@@ -340,6 +379,38 @@ impl<'a> SearchExecutor<'a> {
         }
 
         Ok(current_ids)
+    }
+
+    /// Execute a one-level `_has` reverse chain: find source resources matching
+    /// the inner search parameter, then return the searched-type resources they
+    /// reference back. The mirror of [`search_chain`].
+    ///
+    /// `Patient?_has:Observation:patient:code=1234-5`:
+    /// 1. `Observation?code=1234-5` -> matching observation ids
+    /// 2. follow each observation's `patient` reference -> the Patient ids
+    fn search_has(
+        &self,
+        resource_type: &str,
+        has: &HasParameter,
+    ) -> Result<Vec<String>, String> {
+        let inner = SearchParameter {
+            name: has.target_param.clone(),
+            value: has.value.clone(),
+            modifier: None,
+            prefix: if has.target_param_type == SearchParamType::Date {
+                Some("eq".to_string())
+            } else {
+                None
+            },
+            param_type: has.target_param_type.clone(),
+        };
+        let source_ids = self.search_parameter(&has.source_type, &inner)?;
+        if source_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        self.index
+            .referenced_targets(&has.source_type, &has.reference_param, &source_ids, resource_type)
+            .map_err(|e| e.to_string())
     }
 
     /// Load full resources for the given IDs

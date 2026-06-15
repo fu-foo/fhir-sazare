@@ -15,7 +15,7 @@
 - **Full CRUD** — Create, Read, Update, Delete for all resource types
 - **Version history** — `vread` and `_history` support
 - **Bundle** — Transaction (all-or-nothing) and Batch processing with `urn:uuid:` reference resolution
-- **Search** — Parameter-based search, chain search (`subject:Patient.name=...`), `_include`, `_revinclude`
+- **Search** — Parameter-based search, chain search (`subject:Patient.name=...`), reverse chain (`_has:Observation:subject:code=...`), `_include`, `_revinclude`
 - **Conditional operations** — Conditional create (`If-None-Exist`), update, and delete
 - **Resource filtering** — `_summary` (5 modes) and `_elements` support
 - **Validation** — Multi-phase validation with US Core and JP Core profile support
@@ -268,6 +268,19 @@ curl "http://localhost:8080/Observation?subject:Patient.name=Doe"
 curl "http://localhost:8080/Condition?encounter:Encounter.subject:Patient.name=Doe"
 ```
 
+### Reverse Chain (`_has`)
+
+The mirror of chain search: filter resources by a property of other resources
+that reference *them*. Form: `_has:{Type}:{reference-param}:{search-param}`.
+
+```bash
+# Patients that have an Observation with LOINC code 29463-7 (body weight)
+curl "http://localhost:8080/Patient?_has:Observation:subject:code=29463-7"
+
+# Composable with ordinary parameters (AND)
+curl "http://localhost:8080/Patient?gender=male&_has:Observation:subject:code=29463-7"
+```
+
 ### Conditional Create
 
 Prevent duplicate creation using search criteria:
@@ -483,6 +496,7 @@ cargo run -- --config path/to/config.yaml
 
 - [x] JP Core profile validation
 - [x] Multi-level chain search
+- [x] Reverse chain search (`_has`)
 - [x] Subscription via WebSocket
 
 ---
@@ -518,7 +532,7 @@ Licensed under the [Apache License, Version 2.0](LICENSE).
 - バージョン履歴（vread / _history）
 - Bundle 処理（transaction: all-or-nothing / batch: 各エントリ独立）
 - `urn:uuid:` 参照の自動解決（transaction 内）
-- 検索パラメータ、チェーンサーチ（`subject:Patient.name=テスト姓`）、`_include` / `_revinclude`
+- 検索パラメータ、チェーンサーチ（`subject:Patient.name=テスト姓`）、逆方向チェーン（`_has:Observation:subject:code=...`）、`_include` / `_revinclude`
 - 条件付き操作（作成 / 更新 / 削除）
 - JSON Patch (RFC 6902)
 - Patient `$everything` オペレーション
