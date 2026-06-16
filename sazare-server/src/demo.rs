@@ -103,11 +103,71 @@ pub async fn load_demo(State(state): State<Arc<AppState>>) -> impl IntoResponse 
 pub async fn load_demo_into(state: &AppState) -> Result<(usize, Vec<String>), String> {
     let resources: Vec<Value> =
         serde_json::from_str(DEMO_RESOURCES).map_err(|e| format!("demo data is corrupt: {e}"))?;
+    Ok(load_resources_into(state, &resources).await)
+}
 
+/// Seed the server from an external dataset file *only if the store is empty*.
+/// Wired to the `SAZARE_SEED_ON_EMPTY=<path>` env var so `docker run` (or a bare
+/// binary) can come up already populated — without baking the data into the
+/// binary. The file may be a FHIR transaction/collection Bundle, a JSON array of
+/// resources, or a single resource; references are upserted by fixed id, so the
+/// dataset should use stable ids (as `examples/demo/cohort.json` does).
+///
+/// Returns `Ok(None)` if the store already had data (seeding skipped), or
+/// `Ok(Some((loaded, errors)))` after a seed attempt.
+pub async fn seed_from_file_if_empty(
+    state: &AppState,
+    path: &str,
+) -> Result<Option<(usize, Vec<String>)>, String> {
+    let non_empty = state
+        .store
+        .count_by_type()
+        .map_err(|e| format!("cannot read store: {e}"))?
+        .iter()
+        .any(|(_, n)| *n > 0);
+    if non_empty {
+        return Ok(None);
+    }
+
+    let raw = std::fs::read_to_string(path).map_err(|e| format!("cannot read {path}: {e}"))?;
+    let parsed: Value = serde_json::from_str(&raw).map_err(|e| format!("{path} is not JSON: {e}"))?;
+    let resources = resources_from_dataset(parsed);
+    if resources.is_empty() {
+        return Err(format!("{path} contained no resources"));
+    }
+    Ok(Some(load_resources_into(state, &resources).await))
+}
+
+/// Extract the resources to load from a seed dataset value: a Bundle's
+/// `entry[].resource`, a top-level JSON array, or a single resource object.
+fn resources_from_dataset(value: Value) -> Vec<Value> {
+    if value.get("resourceType").and_then(|v| v.as_str()) == Some("Bundle") {
+        return value
+            .get("entry")
+            .and_then(|e| e.as_array())
+            .map(|entries| {
+                entries
+                    .iter()
+                    .filter_map(|e| e.get("resource").cloned())
+                    .collect()
+            })
+            .unwrap_or_default();
+    }
+    match value {
+        Value::Array(items) => items,
+        obj @ Value::Object(_) if obj.get("resourceType").is_some() => vec![obj],
+        _ => vec![],
+    }
+}
+
+/// Validate, upsert (fixed version 1), and index each resource. Shared by the
+/// embedded `--demo` set and the `SAZARE_SEED_ON_EMPTY` file loader. Returns
+/// `(loaded_count, per_resource_errors)`.
+async fn load_resources_into(state: &AppState, resources: &[Value]) -> (usize, Vec<String>) {
     let mut loaded = 0;
     let mut errors: Vec<String> = Vec::new();
 
-    for resource in &resources {
+    for resource in resources {
         let (rt, id) = match (
             resource.get("resourceType").and_then(|v| v.as_str()),
             resource.get("id").and_then(|v| v.as_str()),
@@ -160,5 +220,5 @@ pub async fn load_demo_into(state: &AppState) -> Result<(usize, Vec<String>), St
         loaded += 1;
     }
 
-    Ok((loaded, errors))
+    (loaded, errors)
 }

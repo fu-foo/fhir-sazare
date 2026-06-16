@@ -23,6 +23,22 @@ cargo run
 | `07_bulk_ndjson.sh` | NDJSON import and export |
 | `08_validation.sh` | Resource validation (`$validate`) |
 
+## Demo data — make search *visible*
+
+See [`demo/`](demo/) for the **hero cohort**: five legible patients (diabetic,
+hypertensive smoker, prenatal, well-child vaccines, oncology work-up) that make
+`_has`, `_include` and `$everything` visibly do something.
+
+```bash
+bash demo/load_demo.sh                                # into a running server
+SAZARE_SEED_ON_EMPTY=demo/cohort.json sazare-server   # at startup, if empty
+```
+
+For a realistic population, [`demo/synthea/`](demo/synthea/) generates and loads
+synthetic data with Synthea. The US Core conformance seeds (`us-core-seed.json`
+v7, `us-core-v8-seed.json` v8) are loaded by `09_us_core_seed.sh` /
+`10_us_core_v8_seed.sh` for Inferno testing.
+
 ## Usage
 
 ```bash

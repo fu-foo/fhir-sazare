@@ -136,6 +136,38 @@ curl -X POST http://localhost:8080/Patient \
 curl "http://localhost:8080/Patient?name=Doe"
 ```
 
+### Sample data — make search *visible*
+
+An empty server is hard to learn from: every query returns nothing. The richer
+**demo cohort** is five legible patients (a diabetic, a hypertensive smoker, a
+prenatal visit, a well-child vaccine schedule, an oncology work-up) with real
+LOINC/SNOMED/RxNorm codes — enough that `_has`, `_include` and `$everything`
+visibly *do something*. Load it either way:
+
+```bash
+# into a running server, over HTTP
+bash examples/demo/load_demo.sh
+
+# or at startup, only if the store is empty (great for Docker)
+SAZARE_SEED_ON_EMPTY=examples/demo/cohort.json sazare-server
+```
+
+Then try the queries that an empty server can't show you:
+
+```bash
+# every patient who has an HbA1c result (reverse chain)
+curl "http://localhost:8080/Patient?_has:Observation:patient:code=4548-4"
+
+# one patient's entire chart in a single call
+curl "http://localhost:8080/Patient/demo-ann-davis/\$everything"
+```
+
+For a realistic *population* (pagination, `$export`, dashboards), generate one
+with Synthea — see [`examples/demo/`](examples/demo/) for both the hero cohort
+and the Synthea bulk-load path. (The built-in `--demo` flag and the dashboard's
+"Load sample data" button use a tiny embedded two-patient set for a zero-file
+taste.)
+
 ### Build from source (optional)
 
 Prefer to build it yourself? You'll need **Rust 1.85+** (2024 edition):
@@ -630,6 +662,30 @@ tar xzf sazare-server-macos-arm64.tar.gz
 > `scoop` で入れればこの手順は不要です。SmartScreen はダウンロード実績が貯まると自動的に警告しなくなります。Windows / macOS バイナリの署名は 1.0 に向けた課題です。
 
 > **Linux**: この種のゲートはありません。ダウンロードして、必要なら `chmod +x sazare-server` し、実行するだけです。
+
+#### サンプルデータ — 検索を「見える」ようにする
+
+空のサーバーは学びにくい（どんな検索も空が返る）。より充実した**デモコホート**は、読める5人の患者（糖尿病、喫煙する高血圧、妊婦健診、小児の予防接種、がんの精査）を実コード（LOINC/SNOMED/RxNorm）で収録していて、`_has` や `_include`、`$everything` が**実際に何かを返す**ようになります。投入方法は2通り:
+
+```bash
+# 起動中のサーバーへ HTTP で投入
+bash examples/demo/load_demo.sh
+
+# または起動時に（ストアが空のときだけ。Docker に最適）
+SAZARE_SEED_ON_EMPTY=examples/demo/cohort.json sazare-server
+```
+
+投入後、空サーバーでは見えなかったクエリを試せます:
+
+```bash
+# HbA1c の結果を持つ患者すべて（逆チェーン検索）
+curl "http://localhost:8080/Patient?_has:Observation:patient:code=4548-4"
+
+# 1人の患者のカルテ全体を1回で
+curl "http://localhost:8080/Patient/demo-ann-davis/\$everything"
+```
+
+リアルな**集団**（ページング・`$export`・ダッシュボード）が欲しければ Synthea で生成できます。詳細は [`examples/demo/`](examples/demo/) を参照（ヒーローコホートと Synthea 一括投入の両方）。なお `--demo` フラグとダッシュボードの「サンプルデータを読み込む」ボタンは、ファイル不要で試せる極小の埋め込み2患者セットを使います。
 
 #### ソースからビルドする場合
 

@@ -164,6 +164,22 @@ async fn main() {
         }
     }
 
+    // `SAZARE_SEED_ON_EMPTY=<file>`: on a fresh (empty) store, load an external
+    // dataset (Bundle or array) so `docker run` / a bare binary comes up already
+    // populated, without baking the data into the binary.
+    if let Ok(seed_path) = std::env::var("SAZARE_SEED_ON_EMPTY") {
+        match sazare_server::demo::seed_from_file_if_empty(&state, &seed_path).await {
+            Ok(Some((n, errors))) => {
+                tracing::info!("Seed-on-empty: loaded {} resources from {}", n, seed_path);
+                for e in errors {
+                    tracing::warn!("Seed-on-empty: {}", e);
+                }
+            }
+            Ok(None) => tracing::info!("Seed-on-empty: store not empty, skipping {}", seed_path),
+            Err(e) => tracing::warn!("Seed-on-empty from {} failed: {}", seed_path, e),
+        }
+    }
+
     tracing::info!(
         "Auth: {}",
         if config.auth.enabled {

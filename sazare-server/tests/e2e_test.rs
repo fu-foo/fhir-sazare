@@ -815,6 +815,55 @@ async fn test_demo_loads_sample_data() {
 }
 
 #[tokio::test]
+async fn test_demo_cohort_loads_and_is_searchable() {
+    // Guards the curated demo cohort (examples/demo/cohort.json): it must stay
+    // base-R4-valid (every entry commits) and the "aha" queries it's designed
+    // for must return the right sets. A regression in US Core embedding or the
+    // validators that broke plain loading would trip this.
+    let (base_url, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+
+    let cohort_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../examples/demo/cohort.json");
+    let cohort = std::fs::read_to_string(cohort_path).expect("cohort.json should exist");
+
+    let resp = client
+        .post(format!("{base_url}/"))
+        .header("Content-Type", "application/json")
+        .body(cohort)
+        .send().await.unwrap();
+    assert_eq!(resp.status(), 200, "transaction bundle should succeed");
+    let body: Value = resp.json().await.unwrap();
+    let entries = body["entry"].as_array().unwrap();
+    for e in entries {
+        let status = e["response"]["status"].as_str().unwrap_or("");
+        assert!(status.starts_with('2'), "every cohort entry must commit, got {status}: {e}");
+    }
+
+    // Five legible patients.
+    let patients: Value = client
+        .get(format!("{base_url}/Patient"))
+        .send().await.unwrap().json().await.unwrap();
+    assert_eq!(patients["total"].as_u64().unwrap(), 5, "expected 5 demo patients");
+
+    // Reverse chain: only Ann Davis has an HbA1c (LOINC 4548-4).
+    let has: Value = client
+        .get(format!("{base_url}/Patient?_has:Observation:patient:code=4548-4"))
+        .send().await.unwrap().json().await.unwrap();
+    assert_eq!(has["total"].as_u64().unwrap(), 1, "_has HbA1c should match one patient");
+    assert_eq!(has["entry"][0]["resource"]["id"], "demo-ann-davis");
+
+    // $everything returns Ann's whole chart (patient + condition + obs + med + enc).
+    let everything: Value = client
+        .get(format!("{base_url}/Patient/demo-ann-davis/$everything"))
+        .send().await.unwrap().json().await.unwrap();
+    assert!(
+        everything["total"].as_u64().unwrap() >= 6,
+        "$everything should pull Ann's chart, got {}",
+        everything["total"]
+    );
+}
+
+#[tokio::test]
 async fn test_post_with_existing_id_conflicts() {
     let (base_url, _dir) = start_test_server().await;
     let client = reqwest::Client::new();
