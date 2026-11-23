@@ -45,6 +45,9 @@ jobs:
       - uses: ruby/setup-ruby@v1
         with:
           working-directory: ${{ runner.temp }}/us-core-test-kit
+          # The kit's .ruby-version pins a patch release that newer runner
+          # images don't ship; any 3.3.x works.
+          ruby-version: "3.3"
           bundler-cache: true
 
       - name: Start Inferno services
