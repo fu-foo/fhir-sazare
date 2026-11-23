@@ -67,6 +67,7 @@ jobs:
           status=0
           bundle exec inferno execute --suite us_core_v800 --groups 2 \
             --inputs url:http://localhost:18080 patient_ids:patient-example \
+              'smart_auth_info:{"access_token":"unused-auth-disabled"}' \
             > "$RUNNER_TEMP/inferno.txt" 2>&1 || status=$?
           cat "$RUNNER_TEMP/inferno.txt"
           {
