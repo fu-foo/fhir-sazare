@@ -32,16 +32,36 @@ async fn main() {
     let want_demo = args.iter().any(|a| a == "--demo");
     let want_open = args.iter().any(|a| a == "--open");
 
-    // Load configuration
-    let config = ServerConfig::load(
-        std::path::Path::new("config.yaml")
-            .exists()
-            .then_some("config.yaml"),
-    )
-    .unwrap_or_else(|e| {
-        tracing::warn!("Failed to load config, using defaults: {}", e);
-        ServerConfig::default()
+    // `--config <path>` / `--config=<path>` selects the config file; otherwise
+    // `./config.yaml` is used when present.
+    let explicit_config = args.iter().enumerate().find_map(|(i, a)| {
+        a.strip_prefix("--config=")
+            .map(str::to_string)
+            .or_else(|| (a == "--config").then(|| args.get(i + 1).cloned()).flatten())
     });
+    if args.iter().any(|a| a == "--config") && explicit_config.is_none() {
+        eprintln!("--config requires a path");
+        std::process::exit(2);
+    }
+
+    // Load configuration
+    let config = match explicit_config.as_deref() {
+        // An explicitly requested file must load — silently running on
+        // defaults (port, data_dir, auth off) would be a surprise.
+        Some(path) => ServerConfig::load(Some(path)).unwrap_or_else(|e| {
+            eprintln!("Failed to load config {path}: {e}");
+            std::process::exit(1);
+        }),
+        None => ServerConfig::load(
+            std::path::Path::new("config.yaml")
+                .exists()
+                .then_some("config.yaml"),
+        )
+        .unwrap_or_else(|e| {
+            tracing::warn!("Failed to load config, using defaults: {}", e);
+            ServerConfig::default()
+        }),
+    };
 
     // Create data directory
     if let Err(e) = std::fs::create_dir_all(&config.storage.data_dir) {
