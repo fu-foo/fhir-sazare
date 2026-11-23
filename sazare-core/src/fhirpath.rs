@@ -1,15 +1,14 @@
 //! Bounded FHIRPath evaluator for FHIR `SearchParameter.expression`s.
 //!
-//! **PROTOTYPE — not yet wired into the search index.** This is the keystone
-//! component for runtime-loadable custom search parameters (see the design
-//! note in `docs/fhirpath-search-subset.md`). It deliberately implements only
-//! the small, regular sub-language that real search-parameter expressions use.
-//! Running this parser over the real corpus (base R4 + US Core + JP Core, 1478
-//! expressions) accepts **97.0%** (1434/1478). The rest is rejected loudly
-//! rather than mis-evaluated (reject-don't-guess). The single dominant boundary
-//! is `resolve()` (40 of the 44 rejects): reference-target-type filters like
-//! `subject.where(resolve() is Patient)` — and those are the base cross-resource
-//! reference params that sazare's registry already handles directly.
+//! Compiles the expressions of runtime-loaded search parameters (the
+//! `searchparameters/` directory; see `SearchParamRegistry::register_search_parameter`)
+//! and evaluates them at index time. It implements the small, regular
+//! sub-language that real search-parameter expressions use. Over the base R4
+//! `search-parameters.json` plus the US Core 8.0.0 package (1480 expressions)
+//! it accepts **1479 (99.9%)**; the one reject is the computed boolean
+//! `Patient.deceased.exists() and Patient.deceased != false`. Anything outside
+//! the subset is rejected at load time rather than mis-evaluated
+//! (reject-don't-guess). Re-measure with the ignored `corpus` test below.
 //!
 //! Supported constructs:
 //! - path navigation:      `Patient.name.given`
@@ -17,9 +16,13 @@
 //! - choice types:         `Observation.value.ofType(Quantity)` / `... as Quantity`
 //! - extension sugar:      `Coverage.extension('url').value.ofType(string)`
 //! - simple slice filter:  `Patient.telecom.where(system='phone').value`
+//! - reference type filter: `Observation.subject.where(resolve() is Patient)`
+//!   (also `resolve() is A or resolve() is B`) — decided from the reference
+//!   string's type segment, without resolving anything
+//! - integer indexer:      `Bundle.entry[0].resource`
 //!
-//! Anything else (`resolve()`, `exists()`, `%vars`, `[n]` indexers, boolean
-//! logic, arithmetic, non-string comparison) is a parse error.
+//! Anything else (`resolve()` navigation, `exists()`, `%vars`, boolean logic,
+//! arithmetic, non-string comparison) is a parse error.
 //!
 //! Design invariants that keep this growable to a fuller FHIRPath later without
 //! a rewrite: values are modelled as FHIRPath collections (`Vec<&Value>`), each
@@ -39,6 +42,13 @@ pub enum Step {
     Extension(String),
     /// `.where(<relative pipeline> = 'literal')` slice filter.
     Where(Vec<Step>, String),
+    /// `.where(resolve() is A or resolve() is B)` — keep Reference nodes whose
+    /// target type is one of these. Decided from the reference string's type
+    /// segment (`Patient/1`, `http://x/fhir/Patient/1`), so no resolution is
+    /// needed; contained (`#id`) references don't match.
+    RefType(Vec<String>),
+    /// `[n]` indexer: the n-th (0-based) item of the collection.
+    Index(usize),
 }
 
 /// A parsed expression: a union of pipelines (the alternatives of `a | b`).
@@ -72,6 +82,7 @@ enum Tok {
     RParen,
     Eq,
     As,
+    Index(usize),
 }
 
 fn tokenize(s: &str) -> Result<Vec<Tok>, ParseError> {
@@ -104,6 +115,18 @@ fn tokenize(s: &str) -> Result<Vec<Tok>, ParseError> {
             '=' => {
                 toks.push(Tok::Eq);
                 i += 1;
+            }
+            '[' => {
+                let mut j = i + 1;
+                while j < chars.len() && chars[j].is_ascii_digit() {
+                    j += 1;
+                }
+                if j == i + 1 || j >= chars.len() || chars[j] != ']' {
+                    return Err(ParseError("indexer must be a non-negative integer literal, e.g. [0]".into()));
+                }
+                let n: String = chars[i + 1..j].iter().collect();
+                toks.push(Tok::Index(n.parse().map_err(|_| ParseError(format!("index too large: [{n}]")))?));
+                i = j + 1;
             }
             '\'' => {
                 let mut val = String::new();
@@ -222,6 +245,10 @@ fn parse_steps(p: &mut Parser) -> Result<Vec<Step>, ParseError> {
                 let ty = parse_ident(p)?;
                 reconcile(&mut steps, Raw::OfType(ty))?;
             }
+            Some(&Tok::Index(n)) => {
+                p.pos += 1;
+                steps.push(Step::Index(n));
+            }
             _ => break,
         }
     }
@@ -233,6 +260,7 @@ enum Raw {
     Member(String),
     Extension(String),
     Where(Vec<Step>, String),
+    RefType(Vec<String>),
     OfType(String),
 }
 
@@ -255,8 +283,12 @@ fn parse_raw(p: &mut Parser) -> Result<Raw, ParseError> {
             }
             "ofType" => Raw::OfType(parse_ident(p)?),
             "where" => {
-                let (lhs, lit) = parse_where_cond(p)?;
-                Raw::Where(lhs, lit)
+                if p.peek() == Some(&Tok::Ident("resolve".into())) {
+                    Raw::RefType(parse_ref_type_cond(p)?)
+                } else {
+                    let (lhs, lit) = parse_where_cond(p)?;
+                    Raw::Where(lhs, lit)
+                }
             }
             other => {
                 return Err(ParseError(format!(
@@ -277,6 +309,7 @@ fn reconcile(steps: &mut Vec<Step>, raw: Raw) -> Result<(), ParseError> {
         Raw::Member(m) => steps.push(Step::Member(m)),
         Raw::Extension(u) => steps.push(Step::Extension(u)),
         Raw::Where(lhs, lit) => steps.push(Step::Where(lhs, lit)),
+        Raw::RefType(types) => steps.push(Step::RefType(types)),
         Raw::OfType(ty) => match steps.pop() {
             Some(Step::Member(base)) => steps.push(Step::Choice(base, ty)),
             _ => {
@@ -331,6 +364,35 @@ fn parse_where_cond(p: &mut Parser) -> Result<(Vec<Step>, String), ParseError> {
         }
     };
     Ok((lhs, lit))
+}
+
+/// `resolve() is A (or resolve() is B)*` inside `where(...)`.
+fn parse_ref_type_cond(p: &mut Parser) -> Result<Vec<String>, ParseError> {
+    let mut types = Vec::new();
+    loop {
+        let resolve = parse_ident(p)?;
+        if resolve != "resolve" {
+            return Err(ParseError(format!(
+                "where() reference filter must be `resolve() is Type`, found '{resolve}'"
+            )));
+        }
+        p.expect(Tok::LParen)?;
+        p.expect(Tok::RParen)?;
+        match p.bump() {
+            Some(Tok::Ident(kw)) if kw == "is" => {}
+            other => {
+                return Err(ParseError(format!(
+                    "only `resolve() is Type` is supported, found {other:?} after resolve()"
+                )));
+            }
+        }
+        types.push(parse_ident(p)?);
+        if p.peek() == Some(&Tok::Ident("or".into())) {
+            p.pos += 1;
+        } else {
+            return Ok(types);
+        }
+    }
 }
 
 fn parse_ident(p: &mut Parser) -> Result<String, ParseError> {
@@ -402,8 +464,31 @@ fn apply<'a>(step: &Step, nodes: &[&'a Value], anchor: bool) -> Vec<&'a Value> {
                 }
             }
         }
+        Step::Index(i) => out.extend(nodes.get(*i).copied()),
+        Step::RefType(types) => {
+            for n in nodes {
+                let target = n
+                    .get("reference")
+                    .and_then(Value::as_str)
+                    .and_then(reference_target_type);
+                if target.is_some_and(|t| types.iter().any(|ty| ty == t)) {
+                    out.push(*n);
+                }
+            }
+        }
     }
     out
+}
+
+/// The resource type a reference string points at: the segment before the id
+/// in `Type/id`, `Type/id/_history/v` or an absolute `.../Type/id`. `None` for
+/// contained (`#id`), urn:uuid or otherwise typeless references.
+fn reference_target_type(reference: &str) -> Option<&str> {
+    let trimmed = reference.split("/_history/").next()?;
+    let mut segs = trimmed.rsplit('/');
+    let _id = segs.next()?;
+    let ty = segs.next()?;
+    ty.chars().next().is_some_and(char::is_uppercase).then_some(ty)
 }
 
 fn navigate<'a>(node: &'a Value, field: &str, out: &mut Vec<&'a Value>) {
@@ -525,19 +610,94 @@ mod tests {
     }
 
     #[test]
+    fn where_resolve_is_filters_reference_target_type() {
+        let obs = json!({
+            "resourceType": "Observation",
+            "performer": [
+                {"reference": "Practitioner/pr1"},
+                {"reference": "Organization/o1"},
+                {"reference": "http://example.org/fhir/Practitioner/pr2/_history/3"},
+                {"reference": "#contained-1"},
+                {"display": "no reference"}
+            ]
+        });
+        let e = parse("Observation.performer.where(resolve() is Practitioner)").unwrap();
+        let refs: Vec<&str> = evaluate(&e, &obs)
+            .iter()
+            .map(|n| n["reference"].as_str().unwrap())
+            .collect();
+        assert_eq!(refs, vec!["Practitioner/pr1", "http://example.org/fhir/Practitioner/pr2/_history/3"]);
+
+        let e = parse("Observation.performer.where(resolve() is Practitioner or resolve() is Organization)").unwrap();
+        assert_eq!(evaluate(&e, &obs).len(), 3);
+    }
+
+    #[test]
+    fn indexer_picks_nth_item() {
+        let b = json!({"resourceType": "Bundle", "entry": [
+            {"resource": {"resourceType": "Composition", "id": "c"}},
+            {"resource": {"resourceType": "Patient", "id": "p"}}
+        ]});
+        let ids = |x: &str| -> Vec<String> {
+            evaluate(&parse(x).unwrap(), &b).iter().map(|n| n["id"].as_str().unwrap().to_string()).collect()
+        };
+        assert_eq!(ids("Bundle.entry[0].resource"), vec!["c"]);
+        assert_eq!(ids("Bundle.entry[1].resource"), vec!["p"]);
+        assert!(ids("Bundle.entry[5].resource").is_empty());
+    }
+
+    #[test]
+    fn reference_target_type_forms() {
+        assert_eq!(reference_target_type("Patient/1"), Some("Patient"));
+        assert_eq!(reference_target_type("Patient/1/_history/2"), Some("Patient"));
+        assert_eq!(reference_target_type("https://x.org/fhir/Patient/1"), Some("Patient"));
+        assert_eq!(reference_target_type("#c1"), None);
+        assert_eq!(reference_target_type("urn:uuid:1234"), None);
+    }
+
+    #[test]
     fn rejects_constructs_outside_the_subset() {
         // Representatives of every rejected family in the real corpus.
         let rejects = [
-            "Observation.subject.where(resolve() is Patient)", // resolve() — the dominant boundary
+            "Observation.subject.where(resolve().name = 'x')", // resolve() navigation
+            "Observation.subject.where(resolve() as Patient)", // only `is` is supported
             "Patient.deceased.exists() and Patient.deceased != false", // exists()/and/!=
             "Patient.name.where(extension('http://hl7.org/fhir/StructureDefinition/iso21090-EN-representation').value.ofType(code)='SYL' and use='usual').text", // bool in where
             "Observation.value.resolve()",   // resolve()
-            "Patient.name[0].given",         // indexer
+            "Patient.name[first].given",     // non-literal indexer
             "%resource.id",                  // env var
             "Patient.active = true",         // bare boolean compare, no path step
         ];
         for r in rejects {
             assert!(parse(r).is_err(), "should reject: {r}");
         }
+    }
+}
+
+/// Corpus check, run on demand:
+/// `FHIRPATH_CORPUS=expressions.tsv cargo test -p sazare-core corpus -- --ignored --nocapture`
+/// where each line is `source<TAB>id<TAB>expression` (e.g. extracted from the
+/// R4 `search-parameters.json` and an IG package). Prints the acceptance rate
+/// and every rejected expression with its reason.
+#[cfg(test)]
+mod corpus {
+    #[test]
+    #[ignore]
+    fn corpus_acceptance() {
+        let path = std::env::var("FHIRPATH_CORPUS").expect("set FHIRPATH_CORPUS");
+        let text = std::fs::read_to_string(path).unwrap();
+        let (mut ok, mut total) = (0, 0);
+        for line in text.lines() {
+            let mut cols = line.splitn(3, '\t');
+            let (Some(src), Some(id), Some(expr)) = (cols.next(), cols.next(), cols.next()) else {
+                continue;
+            };
+            total += 1;
+            match super::parse(expr) {
+                Ok(_) => ok += 1,
+                Err(e) => println!("REJECT {src}/{id}: {e}\n    {expr}"),
+            }
+        }
+        println!("accepted {ok}/{total} ({:.1}%)", 100.0 * ok as f64 / total as f64);
     }
 }

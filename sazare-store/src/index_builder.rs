@@ -103,6 +103,14 @@ impl IndexBuilder {
     /// Evaluate a FHIRPath expression and index its result nodes according to
     /// the parameter's type — the runtime counterpart of the hardcoded
     /// extractors above, used by search params loaded from `searchparameters/`.
+    ///
+    /// Result nodes are shaped per FHIR's search-type rules, matching what the
+    /// hardcoded extractors store for the same datatypes:
+    /// - string: a primitive, or every text part of a HumanName / Address
+    /// - date: a primitive date/dateTime/instant, or a Period as `start/end`
+    /// - reference: the reference string plus its bare id
+    /// - token: CodeableConcept / Coding / Identifier / ContactPoint, or a
+    ///   code / boolean primitive
     fn extract_fhirpath(
         resource: &Value,
         expr: &sazare_core::fhirpath::Expr,
@@ -112,16 +120,30 @@ impl IndexBuilder {
     ) {
         use sazare_core::SearchParamType;
         let name = &def.name;
+        // Rows for every shape except token objects, which push_token_node
+        // writes straight into `indices`.
+        let mut rows: Vec<(String, Option<String>)> = Vec::new();
+        let mut push = |value: String, system: Option<String>| rows.push((value, system));
         for node in sazare_core::fhirpath::evaluate(expr, resource) {
             match def.param_type {
                 SearchParamType::String => {
-                    if let Some(s) = node.as_str() {
-                        indices.push((name.clone(), param_type.to_string(), s.to_lowercase(), None));
+                    let mut parts = Vec::new();
+                    string_parts(node, &mut parts);
+                    for s in parts {
+                        push(s.to_lowercase(), None);
                     }
                 }
                 SearchParamType::Date => {
                     if let Some(s) = node.as_str() {
-                        indices.push((name.clone(), param_type.to_string(), s.to_string(), None));
+                        push(s.to_string(), None);
+                    } else if node.is_object() {
+                        // Period → "start/end" (either side may be open), the
+                        // same encoding PeriodRange uses.
+                        let start = node.get("start").and_then(|v| v.as_str());
+                        let end = node.get("end").and_then(|v| v.as_str());
+                        if start.is_some() || end.is_some() {
+                            push(format!("{}/{}", start.unwrap_or(""), end.unwrap_or("")), None);
+                        }
                     }
                 }
                 SearchParamType::Reference => {
@@ -130,13 +152,30 @@ impl IndexBuilder {
                         .and_then(|v| v.as_str())
                         .or_else(|| node.as_str());
                     if let Some(r) = r {
-                        indices.push((name.clone(), param_type.to_string(), r.to_string(), None));
+                        push(r.to_string(), None);
+                        // Bare id too (ignoring /_history/..), so `?param=123`
+                        // matches "Patient/123" as with built-in references.
+                        let trimmed = r.split("/_history/").next().unwrap_or(r);
+                        let bare = trimmed.rsplit('/').next().unwrap_or("");
+                        if !bare.is_empty() && bare != r {
+                            push(bare.to_string(), None);
+                        }
                     }
                 }
-                SearchParamType::Token => Self::push_token_node(node, name, param_type, indices),
+                SearchParamType::Token => {
+                    if let Some(b) = node.as_bool() {
+                        push(b.to_string(), None);
+                    } else {
+                        Self::push_token_node(node, name, param_type, indices);
+                    }
+                }
                 SearchParamType::Number => {}
             }
         }
+        indices.extend(
+            rows.into_iter()
+                .map(|(v, sys)| (name.clone(), param_type.to_string(), v, sys)),
+        );
     }
 
     /// Shape a FHIRPath result node into token index rows: CodeableConcept,
@@ -689,6 +728,32 @@ impl IndexBuilder {
     }
 }
 
+/// Text parts a string search parameter indexes for a FHIRPath result node:
+/// the string itself, or each text component of a HumanName (family, given,
+/// prefix, suffix, text) or Address (line, city, district, state, postalCode,
+/// country, text). Other complex types contribute nothing.
+fn string_parts<'a>(node: &'a Value, out: &mut Vec<&'a str>) {
+    const PARTS: &[&str] = &[
+        "family", "given", "prefix", "suffix", "text",
+        "line", "city", "district", "state", "postalCode", "country",
+    ];
+    match node {
+        Value::String(s) => out.push(s),
+        Value::Object(obj) => {
+            for key in PARTS {
+                match obj.get(*key) {
+                    Some(Value::String(s)) => out.push(s),
+                    Some(Value::Array(items)) => {
+                        out.extend(items.iter().filter_map(|v| v.as_str()));
+                    }
+                    _ => {}
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -728,13 +793,90 @@ mod tests {
         assert_eq!(kana, vec![&"ヤマダ タロウ".to_lowercase()]);
     }
 
+    /// Register one custom SearchParameter and return the `(value, system)`
+    /// rows it produced for `resource`.
+    fn custom_rows(
+        code: &str,
+        ty: &str,
+        expression: &str,
+        resource: &Value,
+    ) -> Vec<(String, Option<String>)> {
+        let mut reg = SearchParamRegistry::new();
+        let rt = resource["resourceType"].as_str().unwrap();
+        reg.register_search_parameter(&json!({
+            "resourceType": "SearchParameter", "code": code, "base": [rt],
+            "type": ty, "expression": expression
+        }))
+        .unwrap();
+        let mut rows: Vec<(String, Option<String>)> =
+            IndexBuilder::extract_indices_with_registry(&reg, rt, resource)
+                .into_iter()
+                .filter(|(n, _, _, _)| n == code)
+                .map(|(_, _, v, s)| (v, s))
+                .collect();
+        rows.sort();
+        rows
+    }
+
+    fn vals(rows: &[(String, Option<String>)]) -> Vec<&str> {
+        rows.iter().map(|(v, _)| v.as_str()).collect()
+    }
+
+    #[test]
+    fn test_fhirpath_string_on_humanname_and_address() {
+        let p = json!({"resourceType": "Patient",
+            "name": [{"family": "Yamada", "given": ["Taro", "T"], "text": "Yamada Taro"}],
+            "address": [{"line": ["1-2-3 Chiyoda"], "city": "Tokyo", "postalCode": "100-0001"}]});
+        assert_eq!(
+            vals(&custom_rows("x-name", "string", "Patient.name", &p)),
+            vec!["t", "taro", "yamada", "yamada taro"]
+        );
+        assert_eq!(
+            vals(&custom_rows("x-addr", "string", "Patient.address", &p)),
+            vec!["1-2-3 chiyoda", "100-0001", "tokyo"]
+        );
+    }
+
+    #[test]
+    fn test_fhirpath_date_on_period_and_choice() {
+        let o = json!({"resourceType": "Observation",
+            "effectivePeriod": {"start": "2024-01-01", "end": "2024-01-31"}});
+        let expr = "(Observation.effective as dateTime) | (Observation.effective as Period)";
+        assert_eq!(vals(&custom_rows("x-date", "date", expr, &o)), vec!["2024-01-01/2024-01-31"]);
+        let o = json!({"resourceType": "Observation", "effectiveDateTime": "2024-02-03"});
+        assert_eq!(vals(&custom_rows("x-date", "date", expr, &o)), vec!["2024-02-03"]);
+        let open = json!({"resourceType": "Observation", "effectivePeriod": {"start": "2024-01-01"}});
+        assert_eq!(vals(&custom_rows("x-date", "date", expr, &open)), vec!["2024-01-01/"]);
+    }
+
+    #[test]
+    fn test_fhirpath_reference_indexes_bare_id() {
+        let o = json!({"resourceType": "Observation",
+            "subject": {"reference": "Patient/p1/_history/2"}});
+        assert_eq!(
+            vals(&custom_rows("x-subj", "reference", "Observation.subject", &o)),
+            vec!["Patient/p1/_history/2", "p1"]
+        );
+    }
+
+    #[test]
+    fn test_fhirpath_token_on_boolean_and_contactpoint() {
+        let p = json!({"resourceType": "Patient", "active": true,
+            "telecom": [{"system": "phone", "value": "03-1234"}]});
+        assert_eq!(vals(&custom_rows("x-active", "token", "Patient.active", &p)), vec!["true"]);
+        assert_eq!(
+            custom_rows("x-tel", "token", "Patient.telecom", &p),
+            vec![("03-1234".to_string(), Some("phone".to_string()))]
+        );
+    }
+
     #[test]
     fn test_register_rejects_out_of_subset_expression() {
         let mut reg = SearchParamRegistry::new();
         let sp = json!({
             "resourceType": "SearchParameter",
             "code": "bad", "base": ["Patient"], "type": "reference",
-            "expression": "Patient.link.other.where(resolve() is Patient)"
+            "expression": "Patient.link.other.where(resolve().active = 'true')"
         });
         assert!(reg.register_search_parameter(&sp).is_err());
     }

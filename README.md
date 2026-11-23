@@ -333,8 +333,14 @@ search alongside its profiles in `profiles/`, with nothing baked into the core.
 curl "http://localhost:8080/Patient?name-kana=ヤマダ"
 ```
 
-Expressions outside the supported FHIRPath subset (e.g. `resolve()`, boolean
-logic) are rejected at load — never silently mis-evaluated into wrong results.
+The evaluator covers path navigation, `|` unions, choice types (`as` /
+`ofType`), `extension('url')`, `where(field = 'literal')`, reference type
+filters (`where(resolve() is Patient)`) and `[n]` indexers — 1479 of the 1480
+expressions in base R4 plus US Core 8.0.0. Results are indexed by type the
+same way as built-in parameters (HumanName/Address parts for string, Period
+ranges for date, bare ids for reference, booleans for token). Expressions
+outside the subset (e.g. `resolve()` navigation, boolean logic) are rejected at
+load — never silently mis-evaluated into wrong results.
 
 ### Conditional Create
 
