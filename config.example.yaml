@@ -4,6 +4,9 @@
 server:
   host: "0.0.0.0"
   port: 8080
+  # Maximum request body size in MiB (transaction Bundles, $import NDJSON).
+  # Larger requests are rejected with 413.
+  max_request_mb: 64
 
 auth:
   # Set enabled to true to require authentication

@@ -193,6 +193,7 @@ cp config.example.yaml config.yaml
 server:
   host: "0.0.0.0"
   port: 8080
+  max_request_mb: 64      # Max request body (Bundles, $import NDJSON); 413 above it
 
 auth:
   enabled: false          # Set true to require authentication

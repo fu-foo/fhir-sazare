@@ -1519,3 +1519,51 @@ async fn test_metadata_mode_terminology() {
     assert!(term.get("validateCode").is_none());
     assert!(term.get("expansion").is_none());
 }
+
+/// Bodies above axum's 2MB extractor default must be accepted up to the
+/// configured `server.max_request_mb` (default 64MB), and rejected with 413
+/// beyond it.
+#[tokio::test]
+async fn test_large_request_bodies() {
+    let (base_url, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+
+    // ~5MB NDJSON $import: 5000 Patients padded with a long text narrative.
+    let pad = "x".repeat(1000);
+    let ndjson: String = (0..5000)
+        .map(|i| {
+            json!({"resourceType": "Patient", "id": format!("big{i}"),
+                   "name": [{"family": format!("Big{i}")}],
+                   "text": {"status": "generated", "div": format!("<div xmlns=\"http://www.w3.org/1999/xhtml\">{pad}</div>")}})
+            .to_string()
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(ndjson.len() > 4 * 1024 * 1024);
+    let resp = client
+        .post(format!("{}/$import", base_url))
+        .header("Content-Type", "application/fhir+ndjson")
+        .body(ndjson)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "5MB $import should be accepted");
+    let resp = client
+        .get(format!("{}/Patient?_summary=count", base_url))
+        .send()
+        .await
+        .unwrap();
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["total"], 5000);
+
+    // Beyond the limit → 413.
+    let huge = "x".repeat(65 * 1024 * 1024);
+    let resp = client
+        .post(format!("{}/$import", base_url))
+        .header("Content-Type", "application/fhir+ndjson")
+        .body(huge)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 413, "bodies over max_request_mb are rejected");
+}

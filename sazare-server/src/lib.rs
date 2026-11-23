@@ -102,6 +102,7 @@ pub async fn conditional_create_check(
 
 /// Build the application router with all routes and middleware
 pub fn build_router(state: Arc<AppState>) -> Router {
+    let max_request_bytes = state.config.server.max_request_mb.saturating_mul(1024 * 1024);
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods([
@@ -188,7 +189,12 @@ pub fn build_router(state: Arc<AppState>) -> Router {
             state.clone(),
             auth::auth_middleware,
         ))
-        .layer(RequestBodyLimitLayer::new(16 * 1024 * 1024)) // 16MB
+        // One configurable cap for every request body. axum's extractors also
+        // enforce their own 2MB default, which silently overrode this layer
+        // (Synthea bundles and $import NDJSON routinely exceed 2MB), so that
+        // default is disabled in favour of the explicit limit.
+        .layer(RequestBodyLimitLayer::new(max_request_bytes))
+        .layer(axum::extract::DefaultBodyLimit::disable())
         .layer(cors)
         .layer(TraceLayer::new_for_http())
         .with_state(state)

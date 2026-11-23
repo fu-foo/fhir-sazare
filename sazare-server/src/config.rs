@@ -19,6 +19,9 @@ pub struct ServerSettings {
     pub host: String,
     pub port: u16,
     pub tls: Option<TlsSettings>,
+    /// Maximum request body size in MiB (bundles, `$import` NDJSON, ...).
+    /// Larger requests are rejected with 413.
+    pub max_request_mb: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -133,6 +136,7 @@ impl Default for ServerSettings {
             host: "0.0.0.0".to_string(),
             port: 8080,
             tls: None,
+            max_request_mb: 64,
         }
     }
 }
