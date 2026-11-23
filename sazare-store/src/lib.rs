@@ -1,3 +1,4 @@
+pub mod backup;
 pub mod error;
 mod migrate;
 pub mod sqlite_store;
@@ -6,6 +7,7 @@ pub mod sqlite_audit;
 pub mod search_executor;
 pub mod index_builder;
 
+pub use backup::backup_database;
 pub use error::{Result, StoreError};
 pub use sqlite_store::SqliteStore;
 pub use sqlite_index::SearchIndex;

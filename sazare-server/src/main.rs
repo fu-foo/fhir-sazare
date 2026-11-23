@@ -63,6 +63,16 @@ async fn main() {
         }),
     };
 
+    // `--backup <dir>`: snapshot the databases and exit (works while another
+    // instance is serving the same data_dir).
+    if let Some(i) = args.iter().position(|a| a == "--backup") {
+        let Some(dir) = args.get(i + 1) else {
+            eprintln!("--backup requires a target directory");
+            std::process::exit(2);
+        };
+        std::process::exit(run_backup(&config, std::path::Path::new(dir)));
+    }
+
     // Create data directory
     if let Err(e) = std::fs::create_dir_all(&config.storage.data_dir) {
         tracing::error!("Failed to create data directory: {}", e);
@@ -325,4 +335,38 @@ async fn shutdown_signal() {
         _ = ctrl_c => tracing::info!("Received Ctrl+C, shutting down..."),
         _ = terminate => tracing::info!("Received SIGTERM, shutting down..."),
     }
+}
+
+/// Back up every database under `data_dir` into `dir` (created if missing;
+/// existing backup files are never overwritten). Returns the process exit code.
+fn run_backup(config: &ServerConfig, dir: &std::path::Path) -> i32 {
+    if let Err(e) = std::fs::create_dir_all(dir) {
+        eprintln!("Cannot create backup directory {}: {e}", dir.display());
+        return 1;
+    }
+    let dbs = [
+        config.resources_db_path(),
+        config.search_index_db_path(),
+        config.audit_db_path(),
+    ];
+    for src in &dbs {
+        let Some(name) = src.file_name() else { continue };
+        let dest = dir.join(name);
+        if !src.exists() {
+            eprintln!("skip {} (not found)", src.display());
+            continue;
+        }
+        if dest.exists() {
+            eprintln!("Refusing to overwrite existing {}", dest.display());
+            return 1;
+        }
+        match sazare_store::backup_database(src, &dest) {
+            Ok(()) => println!("{} -> {}", src.display(), dest.display()),
+            Err(e) => {
+                eprintln!("Backup of {} failed: {e}", src.display());
+                return 1;
+            }
+        }
+    }
+    0
 }

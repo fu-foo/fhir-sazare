@@ -530,6 +530,23 @@ Three separate SQLite databases for clean separation of concerns:
 - **`search_index.sqlite`** — Search parameter index
 - **`audit.sqlite`** — Audit log entries
 
+### Backup and restore
+
+`--backup <dir>` writes a consistent copy of all three databases into `<dir>`
+and exits. It is safe to run while the server is serving the same `data_dir`
+(it uses SQLite `VACUUM INTO`, so the copy includes not-yet-checkpointed WAL
+data and never tears). Existing files in `<dir>` are never overwritten.
+
+```bash
+sazare-server --config config.yaml --backup backups/$(date +%Y%m%d-%H%M%S)
+```
+
+To restore, stop the server and copy `resources.sqlite` and `audit.sqlite`
+back into `data_dir`. Leave `search_index.sqlite` out (delete the old one): it
+is derived data, and the server rebuilds it from the resources on startup, so
+the index is guaranteed to match the restored resources even if the backup was
+taken mid-write.
+
 ---
 
 ## Development
@@ -717,7 +734,17 @@ cargo build --release
 
 ### 設定
 
-`config.example.yaml` を `config.yaml` にコピーして編集してください。設定ファイルがない場合はデフォルト設定（ポート 8080、認証なし）で起動します。
+`config.example.yaml` を `config.yaml` にコピーして編集してください。別の場所のファイルは `--config <path>` で指定できます。設定ファイルがない場合はデフォルト設定（ポート 8080、認証なし）で起動します。
+
+### バックアップと復元
+
+`--backup <dir>` で3つの DB の一貫したコピーを `<dir>` に書き出して終了します。サーバー稼働中でも安全に実行できます（SQLite の `VACUUM INTO` を使用）。既存ファイルは上書きしません。
+
+```bash
+sazare-server --config config.yaml --backup backups/$(date +%Y%m%d-%H%M%S)
+```
+
+復元はサーバーを止めて `resources.sqlite` と `audit.sqlite` を `data_dir` に戻します。`search_index.sqlite` は戻さず（古いものは削除）、起動時にリソースから自動再構築させてください。書き込み中に取ったバックアップでも、索引とリソースの整合が保証されます。
 
 ### 使用例
 
