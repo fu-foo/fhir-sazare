@@ -1,0 +1,16 @@
+# One search per line, relative to the server base URL. Lines starting with # are ignored.
+Patient/p123
+Patient?_count=20
+Patient?family=Sato&_count=20
+Patient?identifier=urn:bench|MRN4242
+Patient?gender=female&_count=20
+Patient?gender=female&birthdate=ge1980&_count=20
+Observation?subject=Patient/p42
+Observation?patient=p42&code=http://loinc.org|8867-4
+Observation?code=http://loinc.org|8867-4&_count=20
+Observation?code=8867-4&date=ge2020-01-01&_count=20
+Observation?category=vital-signs&status=final&_count=20
+Observation?subject:Patient.family=Sato&_count=20
+Patient?_has:Observation:subject:code=8867-4&_count=20
+Patient?family=Sato&_revinclude=Observation:subject&_count=20
+Observation?_count=20&_offset=40000

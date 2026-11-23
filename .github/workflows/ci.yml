@@ -15,3 +15,17 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --all
       - run: cargo clippy --all -- -D warnings
+
+  # Search benchmark on a 60k-resource synthetic dataset. Timings vary between
+  # runners, so the gate is deliberately loose (500ms per query): it exists to
+  # catch algorithmic regressions (full scans, O(n*m) joins), which show up as
+  # seconds, not as small drifts. The table is published to the job summary.
+  bench:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release
+      - name: Search benchmark
+        run: MAX_MS=500 bench/run.sh 10000 5 | tee -a "$GITHUB_STEP_SUMMARY"

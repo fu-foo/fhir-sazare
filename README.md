@@ -545,6 +545,22 @@ RUST_LOG=debug cargo run
 cargo run -- --config path/to/config.yaml
 ```
 
+### Benchmark
+
+`bench/run.sh` starts a throwaway server, `$import`s a synthetic dataset and
+prints the median latency of a fixed set of searches (`bench/queries.txt`) as a
+Markdown table. CI runs it on every push and fails if any query exceeds 500ms.
+
+```bash
+cargo build --release
+bench/run.sh 10000 5          # 10k Patients, 50k Observations
+MAX_MS=500 bench/run.sh       # exit non-zero if a query is slower than 500ms
+```
+
+Reference numbers (10k Patients / 50k Observations, one desktop CPU): import
+~2,200 resources/s; single-resource lookups and selective searches under 3ms;
+the broadest searches (50k matches, `_has` over 5k sources) about 30ms.
+
 ---
 
 ## Roadmap
