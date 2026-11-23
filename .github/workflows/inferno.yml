@@ -59,19 +59,23 @@ jobs:
             curl -sf http://localhost/hl7validatorapi/validator/version && break; sleep 5
           done
 
-      - name: Describe suite (inputs)
+      # Group 1 is SMART App Launch (needs a browser; not runnable from the
+      # CLI). Group 2 is the US Core FHIR API group this job targets.
+      - name: Run us_core_v800 (US Core FHIR API group)
         working-directory: ${{ runner.temp }}/us-core-test-kit
         run: |
-          bundle exec inferno suites | grep -i us_core || true
-          bundle exec inferno suite describe us_core_v800 || true
-          bundle exec inferno suite input_template us_core_v800 || true
-
-      - name: Run us_core_v800
-        working-directory: ${{ runner.temp }}/us-core-test-kit
-        run: |
-          bundle exec inferno execute --suite us_core_v800 \
+          status=0
+          bundle exec inferno execute --suite us_core_v800 --groups 2 \
             --inputs url:http://localhost:18080 patient_ids:patient-example \
-              "smart_credentials:{\"access_token\":\"unused\"}"
+            > "$RUNNER_TEMP/inferno.txt" 2>&1 || status=$?
+          cat "$RUNNER_TEMP/inferno.txt"
+          {
+            echo '### Inferno us_core_v800 — US Core FHIR API'
+            echo '```'
+            grep -vE '^(W|I), \[|warning:' "$RUNNER_TEMP/inferno.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit $status
 
       - name: Server log
         if: always()
