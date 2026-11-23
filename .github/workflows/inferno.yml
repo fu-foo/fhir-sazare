@@ -1,0 +1,75 @@
+name: Inferno US Core
+
+# Runs the Inferno US Core Test Kit against a freshly seeded sazare server.
+# Slow (Inferno + HL7 validator containers), so it runs on PRs/main and on demand.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  us-core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      # The TLS test needs an HTTPS deployment; sazare is served over plain HTTP here.
+      INFERNO_DISABLE_TLS_TEST: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release
+
+      - name: Start sazare and load the US Core v8 seed
+        run: |
+          mkdir -p "$RUNNER_TEMP/sazare"
+          cat > "$RUNNER_TEMP/sazare/config.yaml" <<YAML
+          server:
+            host: "0.0.0.0"
+            port: 18080
+          auth:
+            enabled: false
+          storage:
+            data_dir: "$RUNNER_TEMP/sazare/data"
+          YAML
+          nohup target/release/sazare-server --config "$RUNNER_TEMP/sazare/config.yaml" \
+            > "$RUNNER_TEMP/sazare/server.log" 2>&1 &
+          for _ in $(seq 100); do curl -sf http://localhost:18080/health && break; sleep 0.2; done
+          SAZARE_URL=http://localhost:18080 bash examples/10_us_core_v8_seed.sh | tail -5
+
+      - name: Fetch US Core Test Kit
+        run: git clone --depth 1 https://github.com/inferno-framework/us-core-test-kit.git "$RUNNER_TEMP/us-core-test-kit"
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          working-directory: ${{ runner.temp }}/us-core-test-kit
+          bundler-cache: true
+
+      - name: Start Inferno services
+        working-directory: ${{ runner.temp }}/us-core-test-kit
+        run: |
+          bundle exec inferno migrate
+          bundle exec inferno services start
+          for _ in $(seq 120); do
+            curl -sf http://localhost/hl7validatorapi/validator/version && break; sleep 5
+          done
+
+      - name: Describe suite (inputs)
+        working-directory: ${{ runner.temp }}/us-core-test-kit
+        run: |
+          bundle exec inferno suites | grep -i us_core || true
+          bundle exec inferno suite describe us_core_v800 || true
+          bundle exec inferno suite input_template us_core_v800 || true
+
+      - name: Run us_core_v800
+        working-directory: ${{ runner.temp }}/us-core-test-kit
+        run: |
+          bundle exec inferno execute --suite us_core_v800 \
+            --inputs url:http://localhost:18080 patient_ids:patient-example \
+              "smart_credentials:{\"access_token\":\"unused\"}"
+
+      - name: Server log
+        if: always()
+        run: tail -100 "$RUNNER_TEMP/sazare/server.log" || true
