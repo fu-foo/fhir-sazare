@@ -59,13 +59,15 @@ jobs:
             curl -sf http://localhost/hl7validatorapi/validator/version && break; sleep 5
           done
 
-      # Group 1 is SMART App Launch (needs a browser; not runnable from the
-      # CLI). Group 2 is the US Core FHIR API group this job targets.
+      # With smart_app_launch_version pinned, the suite has exactly one SMART
+      # App Launch group (1, needs a browser — not runnable from the CLI) and
+      # then the US Core FHIR API group (2), which is what this job runs.
       - name: Run us_core_v800 (US Core FHIR API group)
         working-directory: ${{ runner.temp }}/us-core-test-kit
         run: |
           status=0
-          bundle exec inferno execute --suite us_core_v800 --groups 2 \
+          bundle exec inferno execute --suite us_core_v800 \
+            --suite-options smart_app_launch_version:smart_app_launch_2 --groups 2 \
             --inputs url:http://localhost:18080 patient_ids:patient-example \
               'smart_auth_info:{"access_token":"unused-auth-disabled"}' \
             > "$RUNNER_TEMP/inferno.txt" 2>&1 || status=$?
@@ -76,6 +78,11 @@ jobs:
             grep -vE '^(W|I), \[|warning:' "$RUNNER_TEMP/inferno.txt"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+          # Guard against group renumbering silently testing the wrong group.
+          if ! grep -q '^2 US Core FHIR API' "$RUNNER_TEMP/inferno.txt"; then
+            echo "::error::group 2 is not 'US Core FHIR API' — check the suite's group order"
+            exit 1
+          fi
           exit $status
 
       - name: Server log
