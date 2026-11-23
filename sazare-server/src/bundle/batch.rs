@@ -10,7 +10,6 @@ use axum::{
     Json,
 };
 use sazare_core::validation::validate_resource_all_phases;
-use sazare_store::IndexBuilder;
 use serde_json::{json, Value};
 use std::sync::Arc;
 
@@ -131,16 +130,14 @@ async fn process_batch_entry(
             {
                 Ok(()) => {
                     // Index
-                    let indices = IndexBuilder::extract_indices_with_registry(&state.search_param_registry, &entry.resource_type, resource);
-                    let idx = state.index.lock().await;
-                    for (param_name, param_type, value, system) in indices {
-                        let _ = idx.add_index(
+                    {
+                        let idx = state.index.lock().await;
+                        crate::handlers::update_search_index(
+                            &idx,
+                            &state.search_param_registry,
                             &entry.resource_type,
                             &id,
-                            &param_name,
-                            &param_type,
-                            Some(&value),
-                            system.as_deref(),
+                            resource,
                         );
                     }
 
@@ -222,17 +219,14 @@ async fn process_batch_entry(
             {
                 Ok(()) => {
                     // Re-index
-                    let indices = IndexBuilder::extract_indices_with_registry(&state.search_param_registry, &entry.resource_type, resource);
-                    let idx = state.index.lock().await;
-                    let _ = idx.remove_index(&entry.resource_type, &id);
-                    for (param_name, param_type, value, system) in indices {
-                        let _ = idx.add_index(
+                    {
+                        let idx = state.index.lock().await;
+                        crate::handlers::update_search_index(
+                            &idx,
+                            &state.search_param_registry,
                             &entry.resource_type,
                             &id,
-                            &param_name,
-                            &param_type,
-                            Some(&value),
-                            system.as_deref(),
+                            resource,
                         );
                     }
 

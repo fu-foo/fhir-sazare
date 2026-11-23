@@ -127,16 +127,8 @@ pub fn update_search_index(
     id: &str,
     resource: &Value,
 ) {
-    let _ = index.remove_index(resource_type, id);
     let indices = IndexBuilder::extract_indices_with_registry(registry, resource_type, resource);
-    for (param_name, param_type, value, system) in indices {
-        let _ = index.add_index(
-            resource_type,
-            id,
-            &param_name,
-            &param_type,
-            Some(&value),
-            system.as_deref(),
-        );
+    if let Err(e) = index.replace_resource_index(resource_type, id, &indices) {
+        tracing::warn!("search index update failed for {resource_type}/{id}: {e}");
     }
 }

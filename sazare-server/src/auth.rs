@@ -141,6 +141,8 @@ struct JwtClaims {
 }
 
 /// Authentication middleware
+// Both arms are full HTTP responses by design (axum middleware convention).
+#[allow(clippy::result_large_err)]
 pub async fn auth_middleware(
     State(state): State<Arc<AppState>>,
     mut request: Request<Body>,

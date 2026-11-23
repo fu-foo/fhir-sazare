@@ -2,6 +2,7 @@ use crate::sqlite_index::StringMatch;
 use crate::{SearchIndex, SqliteStore};
 use sazare_core::{ChainParameter, HasParameter, SearchParameter, SearchParamType, SearchQuery};
 use serde_json::Value;
+use std::collections::HashSet;
 
 /// Execute FHIR search queries
 pub struct SearchExecutor<'a> {
@@ -20,177 +21,82 @@ impl<'a> SearchExecutor<'a> {
         resource_type: &str,
         query: &SearchQuery,
     ) -> Result<Vec<String>, String> {
-        let mut result_ids: Option<Vec<String>> = None;
-
-        // Process each search parameter
-        for param in &query.parameters {
-            let param_results = self.search_parameter(resource_type, param)?;
-
-            // Intersect with existing results (AND logic)
-            result_ids = match result_ids {
-                None => Some(param_results),
-                Some(existing) => {
-                    let intersection: Vec<String> = existing
-                        .into_iter()
-                        .filter(|id| param_results.contains(id))
-                        .collect();
-                    Some(intersection)
-                }
-            };
-
-            // Early exit if no results
-            if let Some(ref ids) = result_ids
-                && ids.is_empty()
-            {
-                break;
-            }
-        }
-
-        // Process chain parameters (e.g. subject:Patient.name=Doe)
-        for chain in &query.chain_parameters {
-            let chain_results = self.search_chain(resource_type, chain)?;
-
-            result_ids = match result_ids {
-                None => Some(chain_results),
-                Some(existing) => {
-                    let intersection: Vec<String> = existing
-                        .into_iter()
-                        .filter(|id| chain_results.contains(id))
-                        .collect();
-                    Some(intersection)
-                }
-            };
-
-            if let Some(ref ids) = result_ids
-                && ids.is_empty()
-            {
-                break;
-            }
-        }
-
-        // Process reverse-chain (_has) parameters.
-        for has in &query.has_parameters {
-            let has_results = self.search_has(resource_type, has)?;
-
-            result_ids = match result_ids {
-                None => Some(has_results),
-                Some(existing) => Some(
-                    existing
-                        .into_iter()
-                        .filter(|id| has_results.contains(id))
-                        .collect(),
-                ),
-            };
-
-            if let Some(ref ids) = result_ids
-                && ids.is_empty()
-            {
-                break;
-            }
-        }
-
-        // If no search parameters were given, return all resources of this type
-        let mut ids = match result_ids {
-            Some(ids) => ids,
-            None => {
-                // No parameters: list all resource IDs (id column only — don't
-                // load every resource body just to drop it).
-                self.store.list_ids(resource_type).map_err(|e| e.to_string())?
-            }
-        };
-
-        // Apply pagination
-        if let Some(offset) = query.offset {
-            ids = ids.into_iter().skip(offset).collect();
-        }
-        if let Some(count) = query.count {
-            ids.truncate(count);
-        }
-
-        Ok(ids)
+        self.search_with_total(resource_type, query).map(|(ids, _)| ids)
     }
 
     /// Execute a search query and return matching resource IDs with total count.
     /// Returns (paginated_ids, total_before_pagination).
+    ///
+    /// Ids are returned sorted, so paging is stable across requests and matches
+    /// the parameterless listing (which is `ORDER BY id`).
     pub fn search_with_total(
         &self,
         resource_type: &str,
         query: &SearchQuery,
     ) -> Result<(Vec<String>, usize), String> {
-        let mut result_ids: Option<Vec<String>> = None;
-
-        for param in &query.parameters {
-            let param_results = self.search_parameter(resource_type, param)?;
-            result_ids = match result_ids {
-                None => Some(param_results),
-                Some(existing) => {
-                    let intersection: Vec<String> = existing
-                        .into_iter()
-                        .filter(|id| param_results.contains(id))
-                        .collect();
-                    Some(intersection)
-                }
-            };
-            if let Some(ref ids) = result_ids
-                && ids.is_empty()
-            {
-                break;
-            }
-        }
-
-        for chain in &query.chain_parameters {
-            let chain_results = self.search_chain(resource_type, chain)?;
-            result_ids = match result_ids {
-                None => Some(chain_results),
-                Some(existing) => {
-                    let intersection: Vec<String> = existing
-                        .into_iter()
-                        .filter(|id| chain_results.contains(id))
-                        .collect();
-                    Some(intersection)
-                }
-            };
-            if let Some(ref ids) = result_ids
-                && ids.is_empty()
-            {
-                break;
-            }
-        }
-
-        for has in &query.has_parameters {
-            let has_results = self.search_has(resource_type, has)?;
-            result_ids = match result_ids {
-                None => Some(has_results),
-                Some(existing) => Some(
-                    existing
-                        .into_iter()
-                        .filter(|id| has_results.contains(id))
-                        .collect(),
-                ),
-            };
-            if let Some(ref ids) = result_ids
-                && ids.is_empty()
-            {
-                break;
-            }
-        }
-
-        let mut ids = match result_ids {
-            Some(ids) => ids,
-            None => self.store.list_ids(resource_type).map_err(|e| e.to_string())?,
-        };
-
+        let mut ids = self.matching_ids(resource_type, query)?;
         let total = ids.len();
 
         // Apply pagination
-        if let Some(offset) = query.offset {
-            ids = ids.into_iter().skip(offset).collect();
-        }
+        let offset = query.offset.unwrap_or(0).min(ids.len());
+        ids.drain(..offset);
         if let Some(count) = query.count {
             ids.truncate(count);
         }
 
         Ok((ids, total))
+    }
+
+    /// All ids matching every parameter of `query` (AND across parameters,
+    /// chains and `_has`), sorted, before pagination.
+    fn matching_ids(
+        &self,
+        resource_type: &str,
+        query: &SearchQuery,
+    ) -> Result<Vec<String>, String> {
+        let mut result: Option<Vec<String>> = None;
+
+        // Each criterion narrows the running result (AND). The membership test
+        // goes through a HashSet: a Vec::contains here is O(n*m) and took
+        // seconds once both sides held tens of thousands of ids.
+        let mut narrow = |ids: Vec<String>| {
+            result = Some(match result.take() {
+                None => ids,
+                Some(existing) => {
+                    let keep: HashSet<String> = ids.into_iter().collect();
+                    existing.into_iter().filter(|id| keep.contains(id)).collect()
+                }
+            });
+            result.as_ref().is_some_and(|ids| ids.is_empty())
+        };
+
+        'criteria: {
+            for param in &query.parameters {
+                if narrow(self.search_parameter(resource_type, param)?) {
+                    break 'criteria;
+                }
+            }
+            for chain in &query.chain_parameters {
+                if narrow(self.search_chain(resource_type, chain)?) {
+                    break 'criteria;
+                }
+            }
+            for has in &query.has_parameters {
+                if narrow(self.search_has(resource_type, has)?) {
+                    break 'criteria;
+                }
+            }
+        }
+
+        match result {
+            Some(mut ids) => {
+                ids.sort_unstable();
+                Ok(ids)
+            }
+            // No parameters: list all resource IDs (id column only — don't load
+            // every resource body just to drop it). Already ORDER BY id.
+            None => self.store.list_ids(resource_type).map_err(|e| e.to_string()),
+        }
     }
 
     /// Search for a single parameter
@@ -362,20 +268,14 @@ impl<'a> SearchExecutor<'a> {
                 &chain.links[i - 1].target_type
             };
 
-            let mut next_ids: Vec<String> = Vec::new();
-            for cid in &current_ids {
-                let reference = format!("{}/{}", link.target_type, cid);
-                let ids = self
-                    .index
-                    .search_reference(source_type, &link.reference_param, &reference)
-                    .map_err(|e| e.to_string())?;
-                for id in ids {
-                    if !next_ids.contains(&id) {
-                        next_ids.push(id);
-                    }
-                }
-            }
-            current_ids = next_ids;
+            let references: Vec<String> = current_ids
+                .iter()
+                .map(|cid| format!("{}/{}", link.target_type, cid))
+                .collect();
+            current_ids = self
+                .index
+                .search_reference_any(source_type, &link.reference_param, &references)
+                .map_err(|e| e.to_string())?;
         }
 
         Ok(current_ids)
@@ -452,7 +352,14 @@ impl<'a> SearchExecutor<'a> {
         revincludes: &[String],
     ) -> Result<Vec<Value>, String> {
         let mut included = Vec::new();
-        let mut seen_ids: Vec<String> = Vec::new();
+        let mut seen_ids: HashSet<String> = HashSet::new();
+
+        let references: Vec<String> = resources
+            .iter()
+            .filter_map(|r| r.get("id").and_then(|v| v.as_str()))
+            .filter(|id| !id.is_empty())
+            .map(|id| format!("{resource_type}/{id}"))
+            .collect();
 
         for revinclude_spec in revincludes {
             let parts: Vec<&str> = revinclude_spec.split(':').collect();
@@ -461,30 +368,20 @@ impl<'a> SearchExecutor<'a> {
             }
             let (target_type, search_param) = (parts[0], parts[1]);
 
-            for resource in resources {
-                let id = resource.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                if id.is_empty() {
+            let mut matching_ids = self
+                .index
+                .search_reference_any(target_type, search_param, &references)
+                .map_err(|e| e.to_string())?;
+            matching_ids.sort_unstable();
+
+            for mid in &matching_ids {
+                if !seen_ids.insert(format!("{target_type}/{mid}")) {
                     continue;
                 }
-                let reference = format!("{}/{}", resource_type, id);
-
-                let matching_ids = self
-                    .index
-                    .search_reference(target_type, search_param, &reference)
-                    .map_err(|e| e.to_string())?;
-
-                for mid in &matching_ids {
-                    let key = format!("{}/{}", target_type, mid);
-                    if seen_ids.contains(&key) {
-                        continue;
-                    }
-                    seen_ids.push(key);
-
-                    if let Ok(Some(data)) = self.store.get(target_type, mid)
-                        && let Ok(val) = serde_json::from_slice::<Value>(&data)
-                    {
-                        included.push(val);
-                    }
+                if let Ok(Some(data)) = self.store.get(target_type, mid)
+                    && let Ok(val) = serde_json::from_slice::<Value>(&data)
+                {
+                    included.push(val);
                 }
             }
         }

@@ -86,6 +86,31 @@ fn escape_like(s: &str) -> String {
     out
 }
 
+/// Run a `SELECT resource_id ...` statement and return the ids de-duplicated,
+/// in first-seen order.
+///
+/// The search queries deliberately omit SQL `DISTINCT`: with it, SQLite's
+/// planner prefers `idx_resource (resource_type, resource_id)` to get rows in
+/// id order for free, which degenerates into a scan of every index row of the
+/// resource type (tens of ms per lookup at ~50k resources) instead of seeking
+/// the `(resource_type, param_name, value...)` indexes. De-duplicating here
+/// keeps the plan on the selective index without depending on ANALYZE stats.
+fn collect_distinct_ids<P: rusqlite::Params>(
+    stmt: &mut rusqlite::Statement<'_>,
+    params: P,
+) -> Result<Vec<String>> {
+    let mut seen = std::collections::HashSet::new();
+    let mut ids = Vec::new();
+    let rows = stmt.query_map(params, |row| row.get::<_, String>(0))?;
+    for row in rows {
+        let id = row?;
+        if seen.insert(id.clone()) {
+            ids.push(id);
+        }
+    }
+    Ok(ids)
+}
+
 /// SQLite-backed search index
 pub struct SearchIndex {
     conn: Connection,
@@ -119,6 +144,25 @@ impl SearchIndex {
         CREATE INDEX IF NOT EXISTS idx_resource
             ON search_index(resource_type, resource_id);
         "#,
+        // v2 — covering lookup indexes. Every search selects `resource_id`; the
+        // v1 indexes lacked it, so without ANALYZE stats the planner preferred
+        // the covering UNIQUE autoindex and scanned all rows of the resource
+        // type. Ending each index with `resource_id` makes the selective index
+        // also covering. `idx_sp_lower` serves string (prefix/exact) searches,
+        // which match on `value_string_lower` and had no index at all.
+        r#"
+        DROP INDEX IF EXISTS idx_type_param_string;
+        DROP INDEX IF EXISTS idx_type_param_token;
+        DROP INDEX IF EXISTS idx_type_param_date;
+        CREATE INDEX IF NOT EXISTS idx_sp_string
+            ON search_index(resource_type, param_name, value_string, resource_id);
+        CREATE INDEX IF NOT EXISTS idx_sp_token
+            ON search_index(resource_type, param_name, value_system, value_string, resource_id);
+        CREATE INDEX IF NOT EXISTS idx_sp_lower
+            ON search_index(resource_type, param_name, value_string_lower, resource_id);
+        CREATE INDEX IF NOT EXISTS idx_sp_date
+            ON search_index(resource_type, param_name, value_date_start, value_date_end, resource_id);
+        "#,
     ];
 
     /// Open the index (create if not exists)
@@ -126,6 +170,9 @@ impl SearchIndex {
         let mut conn = Connection::open(path)?;
         conn.execute_batch("PRAGMA journal_mode=WAL;")?;
         crate::migrate::run_migrations(&mut conn, Self::MIGRATIONS)?;
+        // Refresh planner statistics where they are missing or stale. Bounded by
+        // analysis_limit so startup stays fast on large indexes.
+        conn.execute_batch("PRAGMA analysis_limit=1000; PRAGMA optimize=0x10002;")?;
         Ok(Self { conn })
     }
 
@@ -192,6 +239,34 @@ impl SearchIndex {
         Ok(())
     }
 
+    /// Replace every index entry of one resource with `entries`
+    /// (`(param_name, param_type, value, system)`, as produced by
+    /// `IndexBuilder`) in a single transaction.
+    ///
+    /// One commit per resource instead of one per entry: each autocommitted
+    /// statement is its own WAL commit, which dominated write/import cost.
+    pub fn replace_resource_index(
+        &self,
+        resource_type: &str,
+        resource_id: &str,
+        entries: &[(String, String, String, Option<String>)],
+    ) -> Result<()> {
+        let tx = self.conn.unchecked_transaction()?;
+        self.remove_index(resource_type, resource_id)?;
+        for (param_name, param_type, value, system) in entries {
+            self.add_index(
+                resource_type,
+                resource_id,
+                param_name,
+                param_type,
+                Some(value),
+                system.as_deref(),
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
     /// Count total entries in the search index (for reindex decisions)
     pub fn row_count(&self) -> Result<usize> {
         let count: i64 = self.conn.query_row(
@@ -225,42 +300,28 @@ impl SearchIndex {
         system: Option<&str>,
         code: &str,
     ) -> Result<Vec<String>> {
-        let mut ids = Vec::new();
-
         if let Some(sys) = system {
             let mut stmt = self.conn.prepare(
                 r#"
-                SELECT DISTINCT resource_id FROM search_index
+                SELECT resource_id FROM search_index
                 WHERE resource_type = ?1
                   AND param_name = ?2
                   AND value_system = ?3
                   AND value_string = ?4
                 "#,
             )?;
-            let rows = stmt.query_map(params![resource_type, param_name, sys, code], |row| {
-                row.get(0)
-            })?;
-            for row in rows {
-                ids.push(row?);
-            }
+            collect_distinct_ids(&mut stmt, params![resource_type, param_name, sys, code])
         } else {
             let mut stmt = self.conn.prepare(
                 r#"
-                SELECT DISTINCT resource_id FROM search_index
+                SELECT resource_id FROM search_index
                 WHERE resource_type = ?1
                   AND param_name = ?2
                   AND value_string = ?3
                 "#,
             )?;
-            let rows = stmt.query_map(params![resource_type, param_name, code], |row| {
-                row.get(0)
-            })?;
-            for row in rows {
-                ids.push(row?);
-            }
+            collect_distinct_ids(&mut stmt, params![resource_type, param_name, code])
         }
-
-        Ok(ids)
     }
 
     /// String search (name, etc.) honoring the `:exact` / `:contains` modifiers.
@@ -272,20 +333,33 @@ impl SearchIndex {
         mode: StringMatch,
     ) -> Result<Vec<String>> {
         let lower = value.to_lowercase();
+        if mode == StringMatch::Prefix {
+            // A LIKE 'abc%' pattern can't seek an index (SQLite's LIKE
+            // optimization needs case_sensitive_like or a NOCASE column), so
+            // bound the scan with the equivalent range [abc, abc\u{10FFFF}) on
+            // idx_sp_lower and keep the LIKE as an exact residual filter.
+            let mut stmt = self.conn.prepare(
+                "SELECT resource_id FROM search_index \
+                 WHERE resource_type = ?1 AND param_name = ?2 \
+                   AND value_string_lower >= ?3 AND value_string_lower < ?4 \
+                   AND value_string_lower LIKE ?5 ESCAPE '\\'",
+            )?;
+            let upper = format!("{lower}\u{10FFFF}");
+            let pattern = format!("{}%", escape_like(&lower));
+            return collect_distinct_ids(
+                &mut stmt,
+                params![resource_type, param_name, lower, upper, pattern],
+            );
+        }
         let (sql, bound): (&str, String) = match mode {
             StringMatch::Exact => (
-                "SELECT DISTINCT resource_id FROM search_index \
+                "SELECT resource_id FROM search_index \
                  WHERE resource_type = ?1 AND param_name = ?2 AND value_string_lower = ?3",
                 lower,
             ),
-            StringMatch::Prefix => (
-                "SELECT DISTINCT resource_id FROM search_index \
-                 WHERE resource_type = ?1 AND param_name = ?2 \
-                   AND value_string_lower LIKE ?3 ESCAPE '\\'",
-                format!("{}%", escape_like(&lower)),
-            ),
+            StringMatch::Prefix => unreachable!("handled above"),
             StringMatch::Contains => (
-                "SELECT DISTINCT resource_id FROM search_index \
+                "SELECT resource_id FROM search_index \
                  WHERE resource_type = ?1 AND param_name = ?2 \
                    AND value_string_lower LIKE ?3 ESCAPE '\\'",
                 format!("%{}%", escape_like(&lower)),
@@ -293,13 +367,7 @@ impl SearchIndex {
         };
 
         let mut stmt = self.conn.prepare(sql)?;
-        let rows = stmt.query_map(params![resource_type, param_name, bound], |row| row.get(0))?;
-
-        let mut ids = Vec::new();
-        for row in rows {
-            ids.push(row?);
-        }
-        Ok(ids)
+        collect_distinct_ids(&mut stmt, params![resource_type, param_name, bound])
     }
 
     /// Token search with NO system (`|code`): the resource's value must carry
@@ -311,16 +379,11 @@ impl SearchIndex {
         code: &str,
     ) -> Result<Vec<String>> {
         let mut stmt = self.conn.prepare(
-            "SELECT DISTINCT resource_id FROM search_index \
+            "SELECT resource_id FROM search_index \
              WHERE resource_type = ?1 AND param_name = ?2 \
                AND value_string = ?3 AND value_system IS NULL",
         )?;
-        let rows = stmt.query_map(params![resource_type, param_name, code], |row| row.get(0))?;
-        let mut ids = Vec::new();
-        for row in rows {
-            ids.push(row?);
-        }
-        Ok(ids)
+        collect_distinct_ids(&mut stmt, params![resource_type, param_name, code])
     }
 
     /// Token search by system only (`system|`): any code within the system.
@@ -331,30 +394,20 @@ impl SearchIndex {
         system: &str,
     ) -> Result<Vec<String>> {
         let mut stmt = self.conn.prepare(
-            "SELECT DISTINCT resource_id FROM search_index \
+            "SELECT resource_id FROM search_index \
              WHERE resource_type = ?1 AND param_name = ?2 AND value_system = ?3",
         )?;
-        let rows = stmt.query_map(params![resource_type, param_name, system], |row| row.get(0))?;
-        let mut ids = Vec::new();
-        for row in rows {
-            ids.push(row?);
-        }
-        Ok(ids)
+        collect_distinct_ids(&mut stmt, params![resource_type, param_name, system])
     }
 
     /// Distinct resource ids that have at least one index entry for `param_name`
     /// (used to implement the `:missing` and `:not` modifiers).
     pub fn ids_with_param(&self, resource_type: &str, param_name: &str) -> Result<Vec<String>> {
         let mut stmt = self.conn.prepare(
-            "SELECT DISTINCT resource_id FROM search_index \
+            "SELECT resource_id FROM search_index \
              WHERE resource_type = ?1 AND param_name = ?2",
         )?;
-        let rows = stmt.query_map(params![resource_type, param_name], |row| row.get(0))?;
-        let mut ids = Vec::new();
-        for row in rows {
-            ids.push(row?);
-        }
-        Ok(ids)
+        collect_distinct_ids(&mut stmt, params![resource_type, param_name])
     }
 
     /// Reference search (subject, patient, etc.)
@@ -366,22 +419,50 @@ impl SearchIndex {
     ) -> Result<Vec<String>> {
         let mut stmt = self.conn.prepare(
             r#"
-            SELECT DISTINCT resource_id FROM search_index
+            SELECT resource_id FROM search_index
             WHERE resource_type = ?1
               AND param_name = ?2
               AND value_string = ?3
               AND param_type = 'reference'
             "#,
         )?;
-        let rows = stmt.query_map(params![resource_type, param_name, reference], |row| {
-            row.get(0)
-        })?;
+        collect_distinct_ids(&mut stmt, params![resource_type, param_name, reference])
+    }
 
+    /// Reference search against many targets at once: ids of `resource_type`
+    /// resources whose `param_name` references any of `references`
+    /// (e.g. `["Patient/p1", "Patient/p2"]`), de-duplicated. Used by chained
+    /// search and `_revinclude`, which would otherwise issue one query per
+    /// target.
+    pub fn search_reference_any(
+        &self,
+        resource_type: &str,
+        param_name: &str,
+        references: &[String],
+    ) -> Result<Vec<String>> {
+        let mut seen = std::collections::HashSet::new();
         let mut ids = Vec::new();
-        for row in rows {
-            ids.push(row?);
+        // Chunk the IN list to stay clear of SQLite's bound-variable limit.
+        for chunk in references.chunks(500) {
+            let placeholders = std::iter::repeat_n("?", chunk.len())
+                .collect::<Vec<_>>()
+                .join(",");
+            let sql = format!(
+                "SELECT resource_id FROM search_index \
+                 WHERE resource_type = ? AND param_name = ? \
+                 AND value_string IN ({placeholders}) AND param_type = 'reference'"
+            );
+            let mut stmt = self.conn.prepare(&sql)?;
+            let mut args: Vec<&str> = Vec::with_capacity(chunk.len() + 2);
+            args.push(resource_type);
+            args.push(param_name);
+            args.extend(chunk.iter().map(|s| s.as_str()));
+            for id in collect_distinct_ids(&mut stmt, rusqlite::params_from_iter(args))? {
+                if seen.insert(id.clone()) {
+                    ids.push(id);
+                }
+            }
         }
-
         Ok(ids)
     }
 
@@ -411,8 +492,9 @@ impl SearchIndex {
             let placeholders = std::iter::repeat_n("?", chunk.len())
                 .collect::<Vec<_>>()
                 .join(",");
+            // No SQL DISTINCT (deduped via `seen`): see `collect_distinct_ids`.
             let sql = format!(
-                "SELECT DISTINCT value_string FROM search_index \
+                "SELECT value_string FROM search_index \
                  WHERE resource_type = ? AND param_name = ? AND param_type = 'reference' \
                  AND resource_id IN ({placeholders})"
             );
@@ -475,21 +557,12 @@ impl SearchIndex {
             _ => "value_date_start >= ?3 AND value_date_end <= ?4",
         };
         let query = format!(
-            "SELECT DISTINCT resource_id FROM search_index
+            "SELECT resource_id FROM search_index
              WHERE resource_type = ?1 AND param_name = ?2
                AND value_date_start IS NOT NULL AND ({cond})"
         );
         let mut stmt = self.conn.prepare(&query)?;
-        let rows = stmt.query_map(params![resource_type, param_name, qs, qe], |row| {
-            row.get(0)
-        })?;
-
-        let mut ids = Vec::new();
-        for row in rows {
-            ids.push(row?);
-        }
-
-        Ok(ids)
+        collect_distinct_ids(&mut stmt, params![resource_type, param_name, qs, qe])
     }
 }
 
@@ -708,5 +781,80 @@ mod tests {
             .search_date_with_prefix("Observation", "_lastUpdated", "eq", "2026-05-30T09:49:12.133164+00:00")
             .unwrap();
         assert_eq!(eq, vec!["b"]);
+    }
+
+    #[test]
+    fn test_string_prefix_is_case_insensitive_and_literal() {
+        let index = SearchIndex::open(":memory:").unwrap();
+        for (id, v) in [("1", "Doe"), ("2", "DOE-Smith"), ("3", "Do_e"), ("4", "Dzoe")] {
+            index.add_index("Patient", id, "family", "string", Some(v), None).unwrap();
+        }
+        let mut r = index.search_string("Patient", "family", "dO", StringMatch::Prefix).unwrap();
+        r.sort();
+        assert_eq!(r, vec!["1", "2", "3"]);
+        // `_` is literal, not a LIKE wildcard.
+        let r = index.search_string("Patient", "family", "do_", StringMatch::Prefix).unwrap();
+        assert_eq!(r, vec!["3"]);
+    }
+
+    #[test]
+    fn test_results_are_deduplicated() {
+        let index = SearchIndex::open(":memory:").unwrap();
+        // Two given names on one resource → two index rows, one result.
+        index.add_index("Patient", "1", "given", "string", Some("Anna"), None).unwrap();
+        index.add_index("Patient", "1", "given", "string", Some("Annabel"), None).unwrap();
+        let r = index.search_string("Patient", "given", "ann", StringMatch::Prefix).unwrap();
+        assert_eq!(r, vec!["1"]);
+    }
+
+    #[test]
+    fn test_replace_resource_index() {
+        let index = SearchIndex::open(":memory:").unwrap();
+        let entry = |v: &str| ("status".to_string(), "token".to_string(), v.to_string(), None);
+        index.replace_resource_index("Observation", "o1", &[entry("preliminary")]).unwrap();
+        index.replace_resource_index("Observation", "o1", &[entry("final")]).unwrap();
+        assert!(index.search_token("Observation", "status", None, "preliminary").unwrap().is_empty());
+        assert_eq!(index.search_token("Observation", "status", None, "final").unwrap(), vec!["o1"]);
+    }
+
+    #[test]
+    fn test_search_reference_any() {
+        let index = SearchIndex::open(":memory:").unwrap();
+        for (id, r) in [("o1", "Patient/a"), ("o2", "Patient/b"), ("o3", "Patient/c")] {
+            index.add_index("Observation", id, "subject", "reference", Some(r), None).unwrap();
+        }
+        let refs: Vec<String> = ["Patient/a", "Patient/c", "Patient/zz"].map(String::from).to_vec();
+        let mut r = index.search_reference_any("Observation", "subject", &refs).unwrap();
+        r.sort();
+        assert_eq!(r, vec!["o1", "o3"]);
+    }
+
+    /// Without ANALYZE stats (a fresh database), each lookup must still seek
+    /// its selective covering index rather than scan every row of the resource
+    /// type via idx_resource / the UNIQUE autoindex — the regression that made
+    /// single-patient lookups cost tens of ms at ~50k resources.
+    #[test]
+    fn test_lookups_use_selective_index_without_stats() {
+        let index = SearchIndex::open(":memory:").unwrap();
+        let plan = |sql: &str| -> String {
+            let mut stmt = index.conn.prepare(&format!("EXPLAIN QUERY PLAN {sql}")).unwrap();
+            let rows = stmt
+                .query_map([], |r| r.get::<_, String>(3))
+                .unwrap()
+                .map(|r| r.unwrap())
+                .collect::<Vec<_>>();
+            rows.join(" | ")
+        };
+        let cases = [
+            ("idx_sp_string", "SELECT resource_id FROM search_index WHERE resource_type='Observation' AND param_name='subject' AND value_string='Patient/1' AND param_type='reference'"),
+            ("idx_sp_token", "SELECT resource_id FROM search_index WHERE resource_type='Observation' AND param_name='code' AND value_system='http://loinc.org' AND value_string='1'"),
+            ("idx_sp_string", "SELECT resource_id FROM search_index WHERE resource_type='Observation' AND param_name='code' AND value_string='1'"),
+            ("idx_sp_lower", "SELECT resource_id FROM search_index WHERE resource_type='Patient' AND param_name='family' AND value_string_lower >= 'do' AND value_string_lower < 'do\u{10FFFF}' AND value_string_lower LIKE 'do%' ESCAPE '\\'"),
+            ("idx_sp_date", "SELECT resource_id FROM search_index WHERE resource_type='Observation' AND param_name='date' AND value_date_start IS NOT NULL AND value_date_end > 0"),
+        ];
+        for (want, sql) in cases {
+            let p = plan(sql);
+            assert!(p.contains(want), "expected {want} in plan for {sql}\n got: {p}");
+        }
     }
 }

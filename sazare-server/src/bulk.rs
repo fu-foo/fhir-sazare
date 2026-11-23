@@ -15,7 +15,6 @@ use axum::{
     response::IntoResponse,
 };
 use sazare_core::validation::validate_resource_all_phases;
-use sazare_store::IndexBuilder;
 use serde_json::{json, Value};
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -133,20 +132,16 @@ pub async fn import(
         {
             Ok(()) => {
                 // Index
-                let indices = IndexBuilder::extract_indices_with_registry(&state.search_param_registry, &resource_type, &resource);
-                let index = state.index.lock().await;
-                let _ = index.remove_index(&resource_type, &id);
-                for (param_name, param_type, value, system) in indices {
-                    let _ = index.add_index(
+                {
+                    let index = state.index.lock().await;
+                    crate::handlers::update_search_index(
+                        &index,
+                        &state.search_param_registry,
                         &resource_type,
                         &id,
-                        &param_name,
-                        &param_type,
-                        Some(&value),
-                        system.as_deref(),
+                        &resource,
                     );
                 }
-                drop(index);
                 // Fire subscriptions/webhooks for imported resources too.
                 state.webhook.maybe_task_completed(&resource);
                 {

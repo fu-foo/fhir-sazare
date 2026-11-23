@@ -10,7 +10,6 @@ use std::sync::Arc;
 
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 use sazare_core::validation::validate_resource_all_phases;
-use sazare_store::IndexBuilder;
 use serde_json::{json, Value};
 
 use crate::AppState;
@@ -210,13 +209,16 @@ async fn load_resources_into(state: &AppState, resources: &[Value]) -> (usize, V
             continue;
         }
 
-        let indices = IndexBuilder::extract_indices_with_registry(&state.search_param_registry, &rt, &stored);
-        let index = state.index.lock().await;
-        let _ = index.remove_index(&rt, &id);
-        for (param_name, param_type, value, system) in indices {
-            let _ = index.add_index(&rt, &id, &param_name, &param_type, Some(&value), system.as_deref());
+        {
+            let index = state.index.lock().await;
+            crate::handlers::update_search_index(
+                &index,
+                &state.search_param_registry,
+                &rt,
+                &id,
+                &stored,
+            );
         }
-        drop(index);
         loaded += 1;
     }
 

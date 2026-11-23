@@ -14,7 +14,6 @@ use sazare_core::{
     validation::validate_resource_all_phases,
     OperationOutcome,
 };
-use sazare_store::IndexBuilder;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -309,11 +308,13 @@ pub(super) async fn process_transaction(
             let _ = index.remove_index(resource_type, id);
         }
         for (resource_type, id, resource) in &resources_for_index {
-            let _ = index.remove_index(resource_type, id);
-            let indices = IndexBuilder::extract_indices_with_registry(&state.search_param_registry, resource_type, resource);
-            for (param_name, param_type, value, system) in indices {
-                let _ = index.add_index(resource_type, id, &param_name, &param_type, Some(&value), system.as_deref());
-            }
+            crate::handlers::update_search_index(
+                &index,
+                &state.search_param_registry,
+                resource_type,
+                id,
+                resource,
+            );
         }
     }
 
