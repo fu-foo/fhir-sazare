@@ -1644,3 +1644,55 @@ async fn test_sort_and_default_page_size() {
     assert_eq!(b["total"], 123);
     assert!(!b["link"].as_array().unwrap().iter().any(|l| l["relation"] == "next"));
 }
+
+#[tokio::test]
+async fn test_full_text_search_and_total_none() {
+    let (base_url, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    create(&client, &base_url, "Condition", &json!({
+        "resourceType": "Condition",
+        "subject": {"reference": "Patient/p1"},
+        "code": {"coding": [{"system": "http://hl7.org/fhir/sid/icd-10", "code": "E11"}], "text": "2型糖尿病"},
+        "text": {"status": "generated",
+                 "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\">山田さん: HbA1c 8.2%</div>"}
+    }))
+    .await;
+    // Imported resources are indexed too (batched writes).
+    let ndjson = "{\"resourceType\":\"Condition\",\"id\":\"c2\",\"subject\":{\"reference\":\"Patient/p2\"},\"code\":{\"text\":\"Essential hypertension\"}}\n";
+    let resp = client.post(format!("{}/$import", base_url))
+        .header("Content-Type", "application/fhir+ndjson").body(ndjson).send().await.unwrap();
+    assert!(resp.status().is_success());
+
+    let total = |q: &'static str| {
+        let client = client.clone();
+        let url = format!("{}/Condition?{}", base_url, q);
+        async move {
+            let b: Value = client.get(url).send().await.unwrap().json().await.unwrap();
+            b["total"].as_u64().unwrap()
+        }
+    };
+    assert_eq!(total("_content=%E7%B3%96%E5%B0%BF%E7%97%85").await, 1); // 糖尿病
+    assert_eq!(total("_content=E11").await, 1);
+    assert_eq!(total("_content=HYPERTENSION").await, 1);
+    assert_eq!(total("_content=essential%20hypertension").await, 1);
+    assert_eq!(total("_content=hypertension%20diabetes").await, 0);
+    assert_eq!(total("_content=hypertension,E11").await, 2); // comma = OR
+    assert_eq!(total("_text=%E5%B1%B1%E7%94%B0").await, 1); // 山田 (two characters)
+    assert_eq!(total("_text=E11").await, 0); // _text is the narrative only
+
+    // Updates replace the text; deletes remove it.
+    let resp = client.put(format!("{}/Condition/c2", base_url))
+        .header("Content-Type", "application/fhir+json")
+        .json(&json!({"resourceType": "Condition", "id": "c2", "subject": {"reference": "Patient/p2"}, "code": {"text": "Asthma"}}))
+        .send().await.unwrap();
+    assert!(resp.status().is_success());
+    assert_eq!(total("_content=hypertension").await, 0);
+    assert_eq!(total("_content=asthma").await, 1);
+    client.delete(format!("{}/Condition/c2", base_url)).send().await.unwrap();
+    assert_eq!(total("_content=asthma").await, 0);
+
+    // _total=none leaves Bundle.total out.
+    let b: Value = client.get(format!("{}/Condition?_total=none", base_url)).send().await.unwrap().json().await.unwrap();
+    assert!(b.get("total").is_none());
+    assert_eq!(b["entry"].as_array().unwrap().len(), 1);
+}

@@ -166,12 +166,18 @@ async fn main() {
 
     // Auto-reindex if the search index is empty (fresh deploy, or after an index wipe
     // following a schema change like added common params _id/_profile/_tag/etc.)
+    // Also rebuild once when the full-text table is empty but the index
+    // isn't — an index built before `_text`/`_content` existed.
+    let text_missing = index.text_row_count().map(|n| n == 0).unwrap_or(false);
     match index.row_count() {
-        Ok(0) => {
+        Ok(n) if n == 0 || text_missing => {
             // An existence check, not a full load of every resource.
             let store_has_data = store.has_any().unwrap_or(false);
             if store_has_data {
-                tracing::info!("Search index is empty; rebuilding from resource store...");
+                tracing::info!(
+                    "Search index {}; rebuilding from resource store...",
+                    if n == 0 { "is empty" } else { "has no full text yet (_text/_content)" }
+                );
                 match perform_reindex(&store, &index, &search_param_registry) {
                     Ok(s) => tracing::info!(
                         "Auto-reindex complete: {} resources, {} entries",

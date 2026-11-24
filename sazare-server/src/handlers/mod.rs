@@ -119,6 +119,22 @@ pub fn fhir_json(status: StatusCode, body: Value) -> Response {
     (status, headers, Json(body)).into_response()
 }
 
+/// Index rows for one resource, to write later in a batch
+/// ([`SearchIndex::replace_many`]).
+pub fn index_update(
+    registry: &SearchParamRegistry,
+    resource_type: &str,
+    id: &str,
+    resource: &Value,
+) -> sazare_store::IndexUpdate {
+    sazare_store::IndexUpdate {
+        resource_type: resource_type.to_string(),
+        resource_id: id.to_string(),
+        entries: IndexBuilder::extract_indices_with_registry(registry, resource_type, resource),
+        text: sazare_store::resource_text(resource),
+    }
+}
+
 /// Update search index for a resource (synchronous — must not be async)
 pub fn update_search_index(
     index: &SearchIndex,
@@ -128,7 +144,8 @@ pub fn update_search_index(
     resource: &Value,
 ) {
     let indices = IndexBuilder::extract_indices_with_registry(registry, resource_type, resource);
-    if let Err(e) = index.replace_resource_index(resource_type, id, &indices) {
+    let text = sazare_store::resource_text(resource);
+    if let Err(e) = index.replace_resource_index(resource_type, id, &indices, &text) {
         tracing::warn!("search index update failed for {resource_type}/{id}: {e}");
     }
 }

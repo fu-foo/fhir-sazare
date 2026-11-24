@@ -4,7 +4,7 @@
 
 use crate::error::Result;
 use chrono::{DateTime, NaiveDate, TimeZone, Utc};
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use std::path::Path;
 
 /// Parse a FHIR date/dateTime string into a half-open epoch-**microsecond**
@@ -86,6 +86,46 @@ fn escape_like(s: &str) -> String {
     out
 }
 
+/// One resource's index rows for [`SearchIndex::replace_many`].
+#[derive(Debug, Clone)]
+pub struct IndexUpdate {
+    pub resource_type: String,
+    pub resource_id: String,
+    pub entries: Vec<(String, String, String, Option<String>)>,
+    pub text: ResourceText,
+}
+
+/// Full text of one resource for `_text` / `_content`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ResourceText {
+    /// The narrative (`text.div`) as plain text.
+    pub narrative: String,
+    /// Every string value in the resource (narrative as plain text).
+    pub content: String,
+}
+
+/// Split a `_text`/`_content` value into terms: whitespace-separated, with
+/// "double-quoted phrases" kept whole.
+fn split_text_terms(query: &str) -> Vec<String> {
+    let mut terms = Vec::new();
+    let mut rest = query.trim();
+    while !rest.is_empty() {
+        if let Some(after) = rest.strip_prefix('"') {
+            let end = after.find('"').unwrap_or(after.len());
+            let phrase = after[..end].trim();
+            if !phrase.is_empty() {
+                terms.push(phrase.to_string());
+            }
+            rest = after.get(end + 1..).unwrap_or("").trim_start();
+        } else {
+            let end = rest.find(char::is_whitespace).unwrap_or(rest.len());
+            terms.push(rest[..end].to_string());
+            rest = rest[end..].trim_start();
+        }
+    }
+    terms
+}
+
 /// `(resource_id, numeric key, text key)` — see [`SearchIndex::sort_values`].
 pub type SortValue = (String, Option<f64>, Option<String>);
 
@@ -117,6 +157,12 @@ fn collect_distinct_ids<P: rusqlite::Params>(
 /// SQLite-backed search index
 pub struct SearchIndex {
     conn: Connection,
+    /// Full text (`_text` / `_content`) lives in its own database file. FTS5
+    /// commits in a file shared with the large `search_index` table cost
+    /// ~10 ms each (measured: 0.2 ms in a file of its own), which made every
+    /// single-resource write ten times slower. It is derived data: a missing
+    /// or stale file is rebuilt from the resources.
+    text: Connection,
 }
 
 #[allow(clippy::result_large_err)]
@@ -175,15 +221,45 @@ impl SearchIndex {
         "#,
     ];
 
-    /// Open the index (create if not exists)
+    /// Schema of the full-text database (see [`SearchIndex::text`]).
+    /// `resource_text_key` maps a resource to its FTS rowid: FTS5 can't index
+    /// ordinary columns, so deleting by (type, id) inside the FTS table would
+    /// scan it on every write. The trigram tokenizer matches substrings,
+    /// which Japanese (no spaces between words) needs; it is case-insensitive.
+    const TEXT_MIGRATIONS: &'static [&'static str] = &[r#"
+        CREATE TABLE IF NOT EXISTS resource_text_key (
+            id INTEGER PRIMARY KEY,
+            resource_type TEXT NOT NULL,
+            resource_id TEXT NOT NULL,
+            UNIQUE(resource_type, resource_id)
+        );
+        CREATE VIRTUAL TABLE IF NOT EXISTS resource_text USING fts5(
+            narrative,
+            content,
+            tokenize = 'trigram'
+        );
+        "#];
+
+    /// Open the index (create if not exists). The full text goes next to it:
+    /// `search_index.sqlite` → `search_index.fts.sqlite` (`:memory:` stays in
+    /// memory).
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
+        let path = path.as_ref();
+        let text_path = if path.as_os_str() == ":memory:" {
+            path.to_path_buf()
+        } else {
+            path.with_extension("fts.sqlite")
+        };
+        let mut text = Connection::open(&text_path)?;
+        text.execute_batch("PRAGMA journal_mode=WAL;")?;
+        crate::migrate::run_migrations(&mut text, Self::TEXT_MIGRATIONS)?;
         let mut conn = Connection::open(path)?;
         conn.execute_batch("PRAGMA journal_mode=WAL;")?;
         crate::migrate::run_migrations(&mut conn, Self::MIGRATIONS)?;
         // Refresh planner statistics where they are missing or stale. Bounded by
         // analysis_limit so startup stays fast on large indexes.
         conn.execute_batch("PRAGMA analysis_limit=1000; PRAGMA optimize=0x10002;")?;
-        Ok(Self { conn })
+        Ok(Self { conn, text })
     }
 
     /// Add an index entry
@@ -266,9 +342,77 @@ impl SearchIndex {
         resource_type: &str,
         resource_id: &str,
         entries: &[(String, String, String, Option<String>)],
+        text: &ResourceText,
     ) -> Result<()> {
         let tx = self.conn.unchecked_transaction()?;
-        self.remove_index(resource_type, resource_id)?;
+        self.write_resource_index(resource_type, resource_id, entries)?;
+        tx.commit()?;
+        let tx = self.text.unchecked_transaction()?;
+        self.write_text(resource_type, resource_id, text)?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// [`Self::replace_resource_index`] for many resources in one transaction
+    /// per database (bulk import): far fewer commits than one per resource.
+    pub fn replace_many(&self, items: &[IndexUpdate]) -> Result<()> {
+        let tx = self.conn.unchecked_transaction()?;
+        for u in items {
+            self.write_resource_index(&u.resource_type, &u.resource_id, &u.entries)?;
+        }
+        tx.commit()?;
+        let tx = self.text.unchecked_transaction()?;
+        for u in items {
+            self.write_text(&u.resource_type, &u.resource_id, &u.text)?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Replace one resource's full-text row (caller holds the transaction).
+    /// Always one row per resource, even with no text, so an empty table
+    /// reliably means "built before full-text search existed".
+    fn write_text(&self, resource_type: &str, resource_id: &str, text: &ResourceText) -> Result<()> {
+        self.remove_text(resource_type, resource_id)?;
+        self.text.execute(
+            "INSERT INTO resource_text_key (resource_type, resource_id) VALUES (?1, ?2)",
+            params![resource_type, resource_id],
+        )?;
+        let key = self.text.last_insert_rowid();
+        self.text.execute(
+            "INSERT INTO resource_text (rowid, narrative, content) VALUES (?1, ?2, ?3)",
+            params![key, text.narrative, text.content],
+        )?;
+        Ok(())
+    }
+
+    fn remove_text(&self, resource_type: &str, resource_id: &str) -> Result<()> {
+        let key: Option<i64> = self
+            .text
+            .query_row(
+                "SELECT id FROM resource_text_key WHERE resource_type = ?1 AND resource_id = ?2",
+                params![resource_type, resource_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if let Some(key) = key {
+            self.text.execute("DELETE FROM resource_text WHERE rowid = ?1", params![key])?;
+            self.text.execute("DELETE FROM resource_text_key WHERE id = ?1", params![key])?;
+        }
+        Ok(())
+    }
+
+    /// Replace one resource's search entries (caller holds the transaction).
+    fn write_resource_index(
+        &self,
+        resource_type: &str,
+        resource_id: &str,
+        entries: &[(String, String, String, Option<String>)],
+    ) -> Result<()> {
+        self.conn.execute(
+            "DELETE FROM search_index WHERE resource_type = ?1 AND resource_id = ?2",
+            params![resource_type, resource_id],
+        )?;
         for (param_name, param_type, value, system) in entries {
             self.add_index(
                 resource_type,
@@ -279,7 +423,6 @@ impl SearchIndex {
                 system.as_deref(),
             )?;
         }
-        tx.commit()?;
         Ok(())
     }
 
@@ -293,19 +436,75 @@ impl SearchIndex {
         Ok(count as usize)
     }
 
-    /// Drop all entries from the search index
+    /// Number of resources with full text indexed (to detect an index built
+    /// before full-text search existed).
+    pub fn text_row_count(&self) -> Result<usize> {
+        let count: i64 = self
+            .text
+            .query_row("SELECT COUNT(*) FROM resource_text_key", [], |row| row.get(0))?;
+        Ok(count as usize)
+    }
+
+    /// Drop all entries from the search index (and the full text)
     pub fn clear_all(&self) -> Result<()> {
         self.conn.execute("DELETE FROM search_index", [])?;
+        self.text.execute("DELETE FROM resource_text", [])?;
+        self.text.execute("DELETE FROM resource_text_key", [])?;
         Ok(())
     }
 
-    /// Remove all index entries for a resource
+    /// Remove all index entries (and the full text) for a resource
     pub fn remove_index(&self, resource_type: &str, resource_id: &str) -> Result<()> {
         self.conn.execute(
             "DELETE FROM search_index WHERE resource_type = ?1 AND resource_id = ?2",
             params![resource_type, resource_id],
         )?;
+        self.remove_text(resource_type, resource_id)?;
         Ok(())
+    }
+
+    /// `_text` / `_content` search: every whitespace-separated term (or
+    /// "quoted phrase") must occur, case-insensitively, as a substring of the
+    /// resource's narrative (`column = "narrative"`) or whole text
+    /// (`"content"`). Terms of 3+ characters use the trigram index; shorter
+    /// ones (e.g. a two-character Japanese surname) fall back to LIKE, which
+    /// the trigram tokenizer can't serve from the index but still answers
+    /// correctly.
+    pub fn search_text(&self, resource_type: &str, column: &str, query: &str) -> Result<Vec<String>> {
+        let column = match column {
+            "narrative" => "narrative",
+            _ => "content",
+        };
+        let terms = split_text_terms(query);
+        if terms.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut match_terms: Vec<String> = Vec::new();
+        let mut like_terms: Vec<String> = Vec::new();
+        for t in terms {
+            if t.chars().count() >= 3 {
+                match_terms.push(format!("\"{}\"", t.replace('"', "\"\"")));
+            } else {
+                like_terms.push(format!("%{}%", escape_like(&t)));
+            }
+        }
+
+        let mut sql = String::from(
+            "SELECT k.resource_id FROM resource_text
+             JOIN resource_text_key k ON k.id = resource_text.rowid
+             WHERE k.resource_type = ?1",
+        );
+        let mut bind: Vec<String> = vec![resource_type.to_string()];
+        if !match_terms.is_empty() {
+            bind.push(format!("{column} : ({})", match_terms.join(" AND ")));
+            sql.push_str(&format!(" AND resource_text MATCH ?{}", bind.len()));
+        }
+        for like in like_terms {
+            bind.push(like);
+            sql.push_str(&format!(" AND resource_text.{column} LIKE ?{} ESCAPE '\\'", bind.len()));
+        }
+        let mut stmt = self.text.prepare(&sql)?;
+        collect_distinct_ids(&mut stmt, rusqlite::params_from_iter(bind.iter()))
     }
 
     /// Token search (code, identifier, etc.)
@@ -585,16 +784,17 @@ impl SearchIndex {
     /// a sort key: `(resource_id, numeric key, text key)`. Dates sort by range
     /// start (epoch seconds), numbers by value, everything else by the
     /// lower-cased string. A resource may appear several times.
+    ///
+    /// With `only`, just those resources are read (by id, in chunks) — much
+    /// cheaper when a search has already narrowed the set; with `None`, the
+    /// whole type is read in one pass.
     pub fn sort_values(
         &self,
         resource_type: &str,
         param_name: &str,
+        only: Option<&[String]>,
     ) -> Result<Vec<SortValue>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT resource_id, param_type, value_date_start, value_number, value_string_lower
-             FROM search_index WHERE resource_type = ?1 AND param_name = ?2",
-        )?;
-        let rows = stmt.query_map(params![resource_type, param_name], |row| {
+        fn shape(row: &rusqlite::Row<'_>) -> rusqlite::Result<SortValue> {
             let id: String = row.get(0)?;
             let ty: String = row.get(1)?;
             let date: Option<i64> = row.get(2)?;
@@ -605,8 +805,32 @@ impl SearchIndex {
                 "number" => (id, number, None),
                 _ => (id, None, text),
             })
-        })?;
-        rows.collect::<std::result::Result<Vec<_>, _>>().map_err(Into::into)
+        }
+        const COLS: &str =
+            "SELECT resource_id, param_type, value_date_start, value_number, value_string_lower FROM search_index";
+
+        let Some(ids) = only else {
+            let mut stmt = self
+                .conn
+                .prepare(&format!("{COLS} WHERE resource_type = ?1 AND param_name = ?2"))?;
+            let rows = stmt.query_map(params![resource_type, param_name], shape)?;
+            return rows.collect::<std::result::Result<Vec<_>, _>>().map_err(Into::into);
+        };
+
+        let mut out = Vec::new();
+        for chunk in ids.chunks(500) {
+            let placeholders = vec!["?"; chunk.len()].join(",");
+            let mut stmt = self.conn.prepare(&format!(
+                "{COLS} WHERE resource_type = ? AND param_name = ? AND resource_id IN ({placeholders})"
+            ))?;
+            let mut bind: Vec<&dyn rusqlite::ToSql> = vec![&resource_type, &param_name];
+            bind.extend(chunk.iter().map(|s| s as &dyn rusqlite::ToSql));
+            let rows = stmt.query_map(bind.as_slice(), shape)?;
+            for r in rows {
+                out.push(r?);
+            }
+        }
+        Ok(out)
     }
 
     /// Number search with FHIR prefixes. `eq` (and `ne`) honour the query's
@@ -925,6 +1149,72 @@ mod tests {
     }
 
     #[test]
+    fn test_sort_values_by_id_matches_full_scan() {
+        let index = SearchIndex::open(":memory:").unwrap();
+        for i in 0..1200 {
+            let id = format!("o{i:04}");
+            index.add_index("Observation", &id, "date", "date", Some(&format!("2024-01-{:02}", i % 28 + 1)), None).unwrap();
+        }
+        let wanted: Vec<String> = (0..1200).step_by(3).map(|i| format!("o{i:04}")).collect();
+        let mut by_id = index.sort_values("Observation", "date", Some(&wanted)).unwrap();
+        let mut full: Vec<_> = index
+            .sort_values("Observation", "date", None)
+            .unwrap()
+            .into_iter()
+            .filter(|(id, _, _)| wanted.contains(id))
+            .collect();
+        by_id.sort_by(|a, b| a.0.cmp(&b.0));
+        full.sort_by(|a, b| a.0.cmp(&b.0));
+        assert_eq!(by_id.len(), 400);
+        assert_eq!(by_id, full);
+    }
+
+    fn put_text(index: &SearchIndex, id: &str, narrative: &str, content: &str) {
+        let text = ResourceText { narrative: narrative.into(), content: content.into() };
+        index.replace_resource_index("Condition", id, &[], &text).unwrap();
+    }
+
+    #[test]
+    fn test_search_text_japanese_phrases_and_columns() {
+        let index = SearchIndex::open(":memory:").unwrap();
+        put_text(&index, "c1", "山田太郎 2型糖尿病 HbA1c 8.2%", "2型糖尿病 E11 山田太郎 2型糖尿病 HbA1c 8.2%");
+        put_text(&index, "c2", "高血圧症", "高血圧症 I10 Hypertension");
+        put_text(&index, "c3", "", "Type 2 diabetes mellitus");
+        let q = |col: &str, v: &str| {
+            let mut ids = index.search_text("Condition", col, v).unwrap();
+            ids.sort();
+            ids
+        };
+        assert_eq!(q("content", "糖尿病"), vec!["c1"]); // 3+ chars: trigram index
+        assert_eq!(q("content", "山田"), vec!["c1"]); // 2 chars: LIKE fallback
+        assert_eq!(q("content", "hba1c"), vec!["c1"]); // case-insensitive
+        assert_eq!(q("content", "diabetes mellitus"), vec!["c3"]); // all terms
+        assert_eq!(q("content", "\"type 2 diabetes\""), vec!["c3"]); // phrase
+        assert!(q("content", "\"2 type\"").is_empty());
+        assert!(q("content", "糖尿病 高血圧").is_empty()); // AND across terms
+        assert_eq!(q("content", "I10"), vec!["c2"]);
+        // _text looks at the narrative only.
+        assert!(q("narrative", "E11").is_empty());
+        assert!(q("narrative", "diabetes").is_empty());
+        assert_eq!(q("narrative", "高血圧"), vec!["c2"]);
+        // LIKE metacharacters are literal: "2%" is in c1 ("8.2%"), "_1" nowhere.
+        assert_eq!(q("content", "2%"), vec!["c1"]);
+        assert!(q("content", "_1").is_empty());
+        // Deleting the resource removes its text.
+        index.remove_index("Condition", "c1").unwrap();
+        assert!(q("content", "糖尿病").is_empty());
+        assert_eq!(index.text_row_count().unwrap(), 2);
+    }
+
+    #[test]
+    fn test_split_text_terms() {
+        assert_eq!(split_text_terms("  a  b "), vec!["a", "b"]);
+        assert_eq!(split_text_terms("\"x y\" z"), vec!["x y", "z"]);
+        assert_eq!(split_text_terms("\"open"), vec!["open"]);
+        assert!(split_text_terms("   ").is_empty());
+    }
+
+    #[test]
     fn test_number_with_precision() {
         assert_eq!(number_with_precision("100"), Some((100.0, 0.5)));
         assert_eq!(number_with_precision("-2.50"), Some((-2.5, 0.005)));
@@ -936,8 +1226,9 @@ mod tests {
     fn test_replace_resource_index() {
         let index = SearchIndex::open(":memory:").unwrap();
         let entry = |v: &str| ("status".to_string(), "token".to_string(), v.to_string(), None);
-        index.replace_resource_index("Observation", "o1", &[entry("preliminary")]).unwrap();
-        index.replace_resource_index("Observation", "o1", &[entry("final")]).unwrap();
+        let none = ResourceText::default();
+        index.replace_resource_index("Observation", "o1", &[entry("preliminary")], &none).unwrap();
+        index.replace_resource_index("Observation", "o1", &[entry("final")], &none).unwrap();
         assert!(index.search_token("Observation", "status", None, "preliminary").unwrap().is_empty());
         assert_eq!(index.search_token("Observation", "status", None, "final").unwrap(), vec!["o1"]);
     }

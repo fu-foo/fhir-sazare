@@ -33,17 +33,12 @@ pub fn perform_reindex(
             }
         };
         let indices = IndexBuilder::extract_indices_with_registry(registry, &resource_type, &resource);
-        for (param_name, param_type, value, system) in &indices {
-            if let Err(e) = index.add_index(
-                &resource_type,
-                &id,
-                param_name,
-                param_type,
-                Some(value),
-                system.as_deref(),
-            ) {
-                tracing::warn!("add_index {}/{} {}: {}", resource_type, id, param_name, e);
-            }
+        // One transaction per resource (search entries + full text), not one
+        // autocommit per entry.
+        let text = sazare_store::resource_text(&resource);
+        if let Err(e) = index.replace_resource_index(&resource_type, &id, &indices, &text) {
+            tracing::warn!("reindex {}/{}: {}", resource_type, id, e);
+            continue;
         }
         entries_written += indices.len();
         resources_indexed += 1;

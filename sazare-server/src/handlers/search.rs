@@ -384,5 +384,10 @@ async fn do_search(
     if !entries.is_empty() {
         bundle["entry"] = json!(entries);
     }
+    if query.omit_total
+        && let Some(obj) = bundle.as_object_mut()
+    {
+        obj.remove("total");
+    }
     Ok(super::fhir_json(StatusCode::OK, bundle))
 }

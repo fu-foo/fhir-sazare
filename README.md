@@ -15,7 +15,7 @@
 - **Full CRUD** — Create, Read, Update, Delete for all resource types
 - **Version history** — `vread` and `_history` support
 - **Bundle** — Transaction (all-or-nothing) and Batch processing with `urn:uuid:` reference resolution
-- **Search** — Parameter-based search, chain search (`subject:Patient.name=...`), reverse chain (`_has:Observation:subject:code=...`), `_include`, `_revinclude`, `_sort`
+- **Search** — Parameter-based search, chain search (`subject:Patient.name=...`), reverse chain (`_has:Observation:subject:code=...`), `_include`, `_revinclude`, `_sort`, full text (`_content`, `_text` — Japanese included)
 - **Conditional operations** — Conditional create (`If-None-Exist`), update, and delete
 - **Resource filtering** — `_summary` (5 modes) and `_elements` support
 - **Validation** — Multi-phase validation against US Core profiles; load any other IG by dropping its profiles in a `profiles/` directory
@@ -318,6 +318,9 @@ curl "http://localhost:8080/Patient?_count=10&_offset=0"
 curl "http://localhost:8080/Observation?patient=123&_sort=-date"
 curl "http://localhost:8080/Patient?_sort=family,birthdate"
 
+# Leave Bundle.total out
+curl "http://localhost:8080/Observation?patient=123&_total=none"
+
 # Summary and elements
 curl "http://localhost:8080/Patient?_summary=true"
 curl "http://localhost:8080/Patient?_elements=name,gender"
@@ -327,6 +330,24 @@ curl "http://localhost:8080/Patient?_elements=name,gender"
 resource type (built-in or custom). A resource with several values sorts by
 its lowest value ascending and its highest descending; resources without a
 value come last; ties fall back to the id, so paging is stable.
+
+### Full-text search
+
+```bash
+# _content: anywhere in the resource; _text: the narrative only
+curl "http://localhost:8080/Condition?_content=糖尿病"
+curl "http://localhost:8080/Observation?_content=heart%20rate"        # every term must occur
+curl "http://localhost:8080/Observation?_content=%22heart%20rate%22"   # "quoted" = phrase
+curl "http://localhost:8080/Patient?_text=山田"
+```
+
+Matching is case-insensitive **substring** matching (SQLite FTS5 with the
+trigram tokenizer), so it works for Japanese and other text without spaces
+between words — and `MRN42` also matches `MRN420`. Whitespace-separated
+terms must all occur; commas separate alternatives (OR), as for any
+parameter. Terms of three or more characters use the index; shorter ones
+(e.g. a two-character surname) are still found, by a scan. An index built by
+an older version gets its full text on the first start.
 
 ### Chain Search
 
@@ -587,6 +608,7 @@ Three separate SQLite databases for clean separation of concerns:
 
 - **`resources.sqlite`** — Resource data with version history
 - **`search_index.sqlite`** — Search parameter index
+- **`search_index.fts.sqlite`** — Full text for `_text` / `_content` (derived data, like the index; kept in its own file because FTS writes in the shared file made every write ~10× slower)
 - **`audit.sqlite`** — Audit log entries
 
 ### Backup and restore
@@ -601,9 +623,9 @@ sazare-server --config config.yaml --backup backups/$(date +%Y%m%d-%H%M%S)
 ```
 
 To restore, stop the server and copy `resources.sqlite` and `audit.sqlite`
-back into `data_dir`. Leave `search_index.sqlite` out (delete the old one): it
-is derived data, and the server rebuilds it from the resources on startup, so
-the index is guaranteed to match the restored resources even if the backup was
+back into `data_dir`. Leave `search_index.sqlite` and `search_index.fts.sqlite`
+out (delete the old ones): they are derived data, and the server rebuilds them
+from the resources on startup, so the index is guaranteed to match the restored resources even if the backup was
 taken mid-write.
 
 ---
@@ -682,7 +704,7 @@ CC0-1.0 — see [NOTICE.md](NOTICE.md) for provenance and attribution.
 - バージョン履歴（vread / _history）
 - Bundle 処理（transaction: all-or-nothing / batch: 各エントリ独立）
 - `urn:uuid:` 参照の自動解決（transaction 内）
-- 検索パラメータ、チェーンサーチ（`subject:Patient.name=テスト姓`）、逆方向チェーン（`_has:Observation:subject:code=...`）、`_include` / `_revinclude`、`_sort` による並べ替え（`_sort=-date`）
+- 検索パラメータ、チェーンサーチ（`subject:Patient.name=テスト姓`）、逆方向チェーン（`_has:Observation:subject:code=...`）、`_include` / `_revinclude`、`_sort` による並べ替え（`_sort=-date`）、全文検索（`_content=糖尿病`、`_text`。日本語の部分一致に対応）
 - 条件付き操作（作成 / 更新 / 削除）
 - JSON Patch (RFC 6902)
 - Patient `$everything` オペレーション
@@ -819,7 +841,7 @@ Docker での使い方、既存データへの `$reindex`、検索パラメー�
 sazare-server --config config.yaml --backup backups/$(date +%Y%m%d-%H%M%S)
 ```
 
-復元はサーバーを止めて `resources.sqlite` と `audit.sqlite` を `data_dir` に戻します。`search_index.sqlite` は戻さず（古いものは削除）、起動時にリソースから自動再構築させてください。書き込み中に取ったバックアップでも、索引とリソースの整合が保証されます。
+復元はサーバーを止めて `resources.sqlite` と `audit.sqlite` を `data_dir` に戻します。`search_index.sqlite` と `search_index.fts.sqlite` は戻さず（古いものは削除）、起動時にリソースから自動再構築させてください。書き込み中に取ったバックアップでも、索引とリソースの整合が保証されます。
 
 ### 使用例
 

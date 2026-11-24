@@ -35,6 +35,30 @@ pub async fn import(
 
     let mut created: usize = 0;
     let mut errors: Vec<Value> = Vec::new();
+    // Index writes are batched: one transaction per BATCH resources instead
+    // of one per resource.
+    const BATCH: usize = 1000;
+    // Subscription criteria are evaluated by searching, so notifications go
+    // out only after their batch is indexed.
+    let mut pending: Vec<(sazare_store::IndexUpdate, Value)> = Vec::new();
+    async fn flush(state: &Arc<AppState>, pending: &mut Vec<(sazare_store::IndexUpdate, Value)>) {
+        if pending.is_empty() {
+            return;
+        }
+        {
+            let updates: Vec<sazare_store::IndexUpdate> = pending.iter().map(|(u, _)| u.clone()).collect();
+            let index = state.index.lock().await;
+            if let Err(e) = index.replace_many(&updates) {
+                tracing::warn!("search index update failed for an $import batch: {e}");
+            }
+        }
+        for (u, resource) in pending.drain(..) {
+            let state = state.clone();
+            tokio::spawn(async move {
+                crate::subscription::SubscriptionManager::notify(&state, &u.resource_type, &u.resource_id, &resource).await;
+            });
+        }
+    }
 
     for (line_num, line) in body.lines().enumerate() {
         let line = line.trim();
@@ -131,27 +155,19 @@ pub async fn import(
             .put_with_version(&resource_type, &id, &version_id, &data)
         {
             Ok(()) => {
-                // Index
-                {
-                    let index = state.index.lock().await;
-                    crate::handlers::update_search_index(
-                        &index,
-                        &state.search_param_registry,
-                        &resource_type,
-                        &id,
-                        &resource,
-                    );
-                }
-                // Fire subscriptions/webhooks for imported resources too.
+                // Fire webhooks for imported resources too; subscriptions
+                // are notified once the batch is indexed (see `flush`).
                 state.webhook.maybe_task_completed(&resource);
-                {
-                    let state = state.clone();
-                    let rt = resource_type.clone();
-                    let rid = id.clone();
-                    let rv = resource.clone();
-                    tokio::spawn(async move {
-                        crate::subscription::SubscriptionManager::notify(&state, &rt, &rid, &rv).await;
-                    });
+                // Index (batched)
+                let update = crate::handlers::index_update(
+                    &state.search_param_registry,
+                    &resource_type,
+                    &id,
+                    &resource,
+                );
+                pending.push((update, resource));
+                if pending.len() >= BATCH {
+                    flush(&state, &mut pending).await;
                 }
                 created += 1;
             }
@@ -165,6 +181,7 @@ pub async fn import(
             }
         }
     }
+    flush(&state, &mut pending).await;
 
     audit::log_operation_success(
         &audit_ctx,

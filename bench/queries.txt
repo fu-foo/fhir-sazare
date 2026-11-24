@@ -18,3 +18,6 @@ Observation?_sort=-date&_count=20
 Patient?_sort=family,birthdate&_count=20
 Observation?code=8867-4&_sort=-date&_count=20
 Observation?_count=20
+Observation?patient=p42&_sort=-date
+Observation?_content=8867-4&_count=20
+Patient?_content=Sato&_count=20

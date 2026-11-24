@@ -14,6 +14,9 @@ pub struct SearchQuery {
     pub elements: Vec<String>,
     /// `_sort` keys in priority order.
     pub sort: Vec<SortKey>,
+    /// `_total=none` — leave `Bundle.total` out (`estimate`/`accurate` and
+    /// absence all include it).
+    pub omit_total: bool,
 }
 
 /// One `_sort` key: a search parameter name (or `_id` / `_lastUpdated`),
@@ -132,6 +135,7 @@ impl SearchQuery {
         let mut summary = None;
         let mut elements = Vec::new();
         let mut sort = Vec::new();
+        let mut omit_total = false;
 
         if query_string.is_empty() {
             return Ok(Self {
@@ -145,6 +149,7 @@ impl SearchQuery {
                 summary,
                 elements,
                 sort,
+                omit_total,
             });
         }
 
@@ -204,6 +209,11 @@ impl SearchQuery {
                 continue;
             }
 
+            if key == "_total" {
+                omit_total = value.trim() == "none";
+                continue;
+            }
+
             if key == "_sort" {
                 for k in value.split(',').map(str::trim).filter(|k| !k.is_empty()) {
                     let (name, descending) = match k.strip_prefix('-') {
@@ -225,7 +235,7 @@ impl SearchQuery {
             // These are not search filters and should be ignored if unsupported.
             // Allowlist underscore-prefixed params that ARE search filters.
             const UNDERSCORE_SEARCH_PARAMS: &[&str] =
-                &["_id", "_lastUpdated", "_profile", "_tag", "_security"];
+                &["_id", "_lastUpdated", "_profile", "_tag", "_security", "_text", "_content"];
             if key.starts_with('_') && !UNDERSCORE_SEARCH_PARAMS.contains(&key.as_ref()) {
                 continue;
             }
@@ -288,6 +298,7 @@ impl SearchQuery {
             summary,
             elements,
             sort,
+            omit_total,
         })
     }
 
@@ -686,8 +697,10 @@ mod tests {
 
     #[test]
     fn test_parse_unknown_underscore_param_skipped() {
-        let query = SearchQuery::parse("_total=accurate").unwrap();
+        let query = SearchQuery::parse("_contained=true").unwrap();
         assert_eq!(query.parameters.len(), 0);
+        assert!(SearchQuery::parse("_total=none").unwrap().omit_total);
+        assert!(!SearchQuery::parse("_total=accurate").unwrap().omit_total);
     }
 
     #[test]

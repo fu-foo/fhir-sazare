@@ -47,6 +47,7 @@ echo "### sazare search benchmark"
 echo
 echo "$PATIENTS Patients, $((PATIENTS * OBS_PER)) Observations."
 printf 'Import: %d resources in %.1fs (%.0f/s)\n\n' "$TOTAL" "$import_s" "$(echo "$TOTAL / $import_s" | bc -l)"
+printf 'Data dir: %s\n\n' "$(du -sh "$WORK/data" | cut -f1)"
 echo "| median ms | total | query |"
 echo "|---:|---:|---|"
 

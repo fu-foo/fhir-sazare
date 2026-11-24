@@ -737,6 +737,77 @@ impl IndexBuilder {
 /// the string itself, or each text component of a HumanName (family, given,
 /// prefix, suffix, text) or Address (line, city, district, state, postalCode,
 /// country, text). Other complex types contribute nothing.
+/// Full text of a resource for `_text` / `_content`: the narrative as plain
+/// text, and every string value (narrative markup replaced by its text).
+pub fn resource_text(resource: &Value) -> crate::ResourceText {
+    let narrative = resource
+        .get("text")
+        .and_then(|t| t.get("div"))
+        .and_then(|d| d.as_str())
+        .map(xhtml_to_text)
+        .unwrap_or_default();
+    let mut parts: Vec<&str> = Vec::new();
+    fn walk<'a>(v: &'a Value, key: Option<&str>, parent: Option<&str>, out: &mut Vec<&'a str>) {
+        match v {
+            // The narrative is added once, as text, below; ids/urls/meta are
+            // identifiers, not prose.
+            Value::String(s) => {
+                let skip = matches!(key, Some("div") if parent == Some("text"))
+                    || matches!(key, Some("resourceType" | "id" | "url" | "reference" | "fullUrl"));
+                if !skip && !s.is_empty() {
+                    out.push(s);
+                }
+            }
+            Value::Array(items) => items.iter().for_each(|i| walk(i, key, parent, out)),
+            Value::Object(map) => {
+                for (k, child) in map {
+                    if k == "meta" {
+                        continue;
+                    }
+                    walk(child, Some(k), key, out);
+                }
+            }
+            _ => {}
+        }
+    }
+    walk(resource, None, None, &mut parts);
+    let mut content = parts.join("\n");
+    if !narrative.is_empty() {
+        if !content.is_empty() {
+            content.push('\n');
+        }
+        content.push_str(&narrative);
+    }
+    crate::ResourceText { narrative, content }
+}
+
+/// XHTML narrative → plain text: tags dropped (block tags become line
+/// breaks), common entities decoded, whitespace collapsed.
+fn xhtml_to_text(div: &str) -> String {
+    let mut out = String::with_capacity(div.len());
+    let mut in_tag = false;
+    for c in div.chars() {
+        match c {
+            '<' => {
+                in_tag = true;
+                out.push(' ');
+            }
+            '>' => in_tag = false,
+            _ if !in_tag => out.push(c),
+            _ => {}
+        }
+    }
+    let decoded = out
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&apos;", "'")
+        .replace("&nbsp;", " ")
+        .replace("&amp;", "&");
+    decoded.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 fn string_parts<'a>(node: &'a Value, out: &mut Vec<&'a str>) {
     const PARTS: &[&str] = &[
         "family", "given", "prefix", "suffix", "text",
@@ -1505,5 +1576,28 @@ mod tests {
 
         let indices = IndexBuilder::extract_indices("Condition", &cond);
         assert!(indices.iter().any(|(n, t, v, _)| n == "asserted-date" && t == "date" && v == "2020-05-15"));
+    }
+
+    #[test]
+    fn test_resource_text_narrative_and_content() {
+        let r = json!({
+            "resourceType": "Condition",
+            "id": "c1",
+            "meta": {"versionId": "3", "profile": ["http://example.org/p"]},
+            "text": {"status": "generated",
+                     "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>2型糖尿病 &amp; 高血圧</p><p>HbA1c&nbsp;8.2</p></div>"},
+            "code": {"coding": [{"system": "http://hl7.org/fhir/sid/icd-10", "code": "E11", "display": "2型糖尿病"}]},
+            "subject": {"reference": "Patient/p1", "display": "山田 太郎"}
+        });
+        let t = resource_text(&r);
+        assert_eq!(t.narrative, "2型糖尿病 & 高血圧 HbA1c 8.2");
+        for want in ["E11", "2型糖尿病", "山田 太郎", "generated", "2型糖尿病 & 高血圧"] {
+            assert!(t.content.contains(want), "{want} missing from {:?}", t.content);
+        }
+        // Markup, ids, references and meta are not content.
+        for not in ["<p>", "xhtml", "Patient/p1", "example.org/p", "Condition"] {
+            assert!(!t.content.contains(not), "{not} should not be in {:?}", t.content);
+        }
+        assert!(resource_text(&json!({"resourceType": "Patient"})).narrative.is_empty());
     }
 }
