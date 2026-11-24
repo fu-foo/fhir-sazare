@@ -15,7 +15,8 @@ pub use operation_outcome::{
 };
 pub use resource::{Meta, Resource};
 pub use search_param::{
-    ChainParameter, HasParameter, SearchParamType, SearchParameter, SearchQuery, SummaryMode,
+    ChainParameter, HasParameter, SearchParamType, SearchParameter, SearchQuery, SortKey,
+    SummaryMode,
 };
 pub use search_param_registry::{ExtractionMode, SearchParamDef, SearchParamRegistry};
 pub use compartment::CompartmentDef;

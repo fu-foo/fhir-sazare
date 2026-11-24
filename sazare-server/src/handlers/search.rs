@@ -19,6 +19,8 @@ use crate::AppState;
 
 /// Default page size per FHIR spec
 const DEFAULT_COUNT: usize = 100;
+/// Upper bound for `_count`, so one request can't load the whole store.
+const MAX_COUNT: usize = 1000;
 
 /// Reconstruct the externally-visible base URL (scheme + authority).
 /// Honors `X-Forwarded-Proto` and `X-Forwarded-Host` so reverse-proxied deploys
@@ -126,7 +128,7 @@ async fn do_search(
     audit_ctx: AuditContext,
     base_url: String,
 ) -> Result<Response, (StatusCode, Json<Value>)> {
-    let query = SearchQuery::parse_with_registry(&raw_query, Some(&resource_type), &state.search_param_registry).map_err(|e| {
+    let mut query = SearchQuery::parse_with_registry(&raw_query, Some(&resource_type), &state.search_param_registry).map_err(|e| {
         (
             StatusCode::BAD_REQUEST,
             Json(json!(OperationOutcome::error(IssueType::Invalid, e))),
@@ -164,6 +166,30 @@ async fn do_search(
         }
     }
 
+    // `_sort` keys must be sortable: `_id`, `_lastUpdated`, or a search
+    // parameter of this type (an unknown key would silently not sort).
+    for key in &query.sort {
+        let known = key.name == "_id"
+            || key.name == "_lastUpdated"
+            || state
+                .search_param_registry
+                .lookup_param_type(&resource_type, &key.name)
+                .is_some();
+        if !known {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(json!(OperationOutcome::error(
+                    IssueType::NotSupported,
+                    format!(
+                        "Cannot _sort by '{}': not a search parameter of {}. \
+                         Use _id, _lastUpdated or a search parameter listed in GET /metadata.",
+                        key.name, resource_type
+                    )
+                ))),
+            ));
+        }
+    }
+
     // If _summary=count, return only the count
     if query.summary == Some(sazare_core::SummaryMode::Count) {
         let index = state.index.lock().await;
@@ -197,6 +223,10 @@ async fn do_search(
             "total": ids.len()
         })));
     }
+
+    // Page size: the default applies when _count is absent (the links always
+    // advertised it, but every match used to be returned), capped at MAX_COUNT.
+    query.count = Some(query.count.unwrap_or(DEFAULT_COUNT).min(MAX_COUNT));
 
     let index = state.index.lock().await;
     let executor = SearchExecutor::new(&state.store, &index);
@@ -319,8 +349,8 @@ async fn do_search(
         "url": format!("{}&_offset={}", base, offset)
     }));
 
-    // next link
-    if offset + count < total {
+    // next link (none for `_count=0`, which asks only for the total)
+    if count > 0 && offset + count < total {
         links.push(json!({
             "relation": "next",
             "url": format!("{}&_offset={}", base, offset + count)

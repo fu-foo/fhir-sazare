@@ -12,6 +12,16 @@ pub struct SearchQuery {
     pub offset: Option<usize>,
     pub summary: Option<SummaryMode>,
     pub elements: Vec<String>,
+    /// `_sort` keys in priority order.
+    pub sort: Vec<SortKey>,
+}
+
+/// One `_sort` key: a search parameter name (or `_id` / `_lastUpdated`),
+/// descending when written with a leading `-`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SortKey {
+    pub name: String,
+    pub descending: bool,
 }
 
 /// A reverse-chained `_has` search parameter (one level).
@@ -121,6 +131,7 @@ impl SearchQuery {
         let mut offset = None;
         let mut summary = None;
         let mut elements = Vec::new();
+        let mut sort = Vec::new();
 
         if query_string.is_empty() {
             return Ok(Self {
@@ -133,6 +144,7 @@ impl SearchQuery {
                 offset,
                 summary,
                 elements,
+                sort,
             });
         }
 
@@ -189,6 +201,17 @@ impl SearchQuery {
                     "data" => Some(SummaryMode::Data),
                     _ => None,
                 };
+                continue;
+            }
+
+            if key == "_sort" {
+                for k in value.split(',').map(str::trim).filter(|k| !k.is_empty()) {
+                    let (name, descending) = match k.strip_prefix('-') {
+                        Some(rest) => (rest, true),
+                        None => (k, false),
+                    };
+                    sort.push(SortKey { name: name.to_string(), descending });
+                }
                 continue;
             }
 
@@ -264,6 +287,7 @@ impl SearchQuery {
             offset,
             summary,
             elements,
+            sort,
         })
     }
 
@@ -662,8 +686,22 @@ mod tests {
 
     #[test]
     fn test_parse_unknown_underscore_param_skipped() {
-        let query = SearchQuery::parse("_sort=name").unwrap();
+        let query = SearchQuery::parse("_total=accurate").unwrap();
         assert_eq!(query.parameters.len(), 0);
+    }
+
+    #[test]
+    fn test_parse_sort_keys() {
+        let query = SearchQuery::parse("_sort=-date,status,_id").unwrap();
+        assert_eq!(query.parameters.len(), 0);
+        assert_eq!(
+            query.sort,
+            vec![
+                SortKey { name: "date".into(), descending: true },
+                SortKey { name: "status".into(), descending: false },
+                SortKey { name: "_id".into(), descending: false },
+            ]
+        );
     }
 
     #[test]

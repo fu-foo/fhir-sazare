@@ -15,7 +15,7 @@
 - **Full CRUD** — Create, Read, Update, Delete for all resource types
 - **Version history** — `vread` and `_history` support
 - **Bundle** — Transaction (all-or-nothing) and Batch processing with `urn:uuid:` reference resolution
-- **Search** — Parameter-based search, chain search (`subject:Patient.name=...`), reverse chain (`_has:Observation:subject:code=...`), `_include`, `_revinclude`
+- **Search** — Parameter-based search, chain search (`subject:Patient.name=...`), reverse chain (`_has:Observation:subject:code=...`), `_include`, `_revinclude`, `_sort`
 - **Conditional operations** — Conditional create (`If-None-Exist`), update, and delete
 - **Resource filtering** — `_summary` (5 modes) and `_elements` support
 - **Validation** — Multi-phase validation against US Core profiles; load any other IG by dropping its profiles in a `profiles/` directory
@@ -311,13 +311,22 @@ If no `config.yaml` is found, the server runs with sensible defaults (port 8080,
 # Search by parameter
 curl "http://localhost:8080/Patient?name=Doe"
 
-# With pagination
+# With pagination (default page size 100, max 1000; follow the Bundle's next link)
 curl "http://localhost:8080/Patient?_count=10&_offset=0"
+
+# Sorting: comma-separated keys, '-' for descending
+curl "http://localhost:8080/Observation?patient=123&_sort=-date"
+curl "http://localhost:8080/Patient?_sort=family,birthdate"
 
 # Summary and elements
 curl "http://localhost:8080/Patient?_summary=true"
 curl "http://localhost:8080/Patient?_elements=name,gender"
 ```
+
+`_sort` accepts `_id`, `_lastUpdated` and any search parameter of the
+resource type (built-in or custom). A resource with several values sorts by
+its lowest value ascending and its highest descending; resources without a
+value come last; ties fall back to the id, so paging is stable.
 
 ### Chain Search
 
@@ -673,7 +682,7 @@ CC0-1.0 — see [NOTICE.md](NOTICE.md) for provenance and attribution.
 - バージョン履歴（vread / _history）
 - Bundle 処理（transaction: all-or-nothing / batch: 各エントリ独立）
 - `urn:uuid:` 参照の自動解決（transaction 内）
-- 検索パラメータ、チェーンサーチ（`subject:Patient.name=テスト姓`）、逆方向チェーン（`_has:Observation:subject:code=...`）、`_include` / `_revinclude`
+- 検索パラメータ、チェーンサーチ（`subject:Patient.name=テスト姓`）、逆方向チェーン（`_has:Observation:subject:code=...`）、`_include` / `_revinclude`、`_sort` による並べ替え（`_sort=-date`）
 - 条件付き操作（作成 / 更新 / 削除）
 - JSON Patch (RFC 6902)
 - Patient `$everything` オペレーション

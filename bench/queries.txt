@@ -14,3 +14,7 @@ Observation?subject:Patient.family=Sato&_count=20
 Patient?_has:Observation:subject:code=8867-4&_count=20
 Patient?family=Sato&_revinclude=Observation:subject&_count=20
 Observation?_count=20&_offset=40000
+Observation?_sort=-date&_count=20
+Patient?_sort=family,birthdate&_count=20
+Observation?code=8867-4&_sort=-date&_count=20
+Observation?_count=20

@@ -86,6 +86,9 @@ fn escape_like(s: &str) -> String {
     out
 }
 
+/// `(resource_id, numeric key, text key)` — see [`SearchIndex::sort_values`].
+pub type SortValue = (String, Option<f64>, Option<String>);
+
 /// Run a `SELECT resource_id ...` statement and return the ids de-duplicated,
 /// in first-seen order.
 ///
@@ -576,6 +579,34 @@ impl SearchIndex {
         );
         let mut stmt = self.conn.prepare(&query)?;
         collect_distinct_ids(&mut stmt, params![resource_type, param_name, qs, qe])
+    }
+
+    /// Every indexed value of one parameter across a resource type, shaped as
+    /// a sort key: `(resource_id, numeric key, text key)`. Dates sort by range
+    /// start (epoch seconds), numbers by value, everything else by the
+    /// lower-cased string. A resource may appear several times.
+    pub fn sort_values(
+        &self,
+        resource_type: &str,
+        param_name: &str,
+    ) -> Result<Vec<SortValue>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT resource_id, param_type, value_date_start, value_number, value_string_lower
+             FROM search_index WHERE resource_type = ?1 AND param_name = ?2",
+        )?;
+        let rows = stmt.query_map(params![resource_type, param_name], |row| {
+            let id: String = row.get(0)?;
+            let ty: String = row.get(1)?;
+            let date: Option<i64> = row.get(2)?;
+            let number: Option<f64> = row.get(3)?;
+            let text: Option<String> = row.get(4)?;
+            Ok(match ty.as_str() {
+                "date" => (id, date.map(|d| d as f64), None),
+                "number" => (id, number, None),
+                _ => (id, None, text),
+            })
+        })?;
+        rows.collect::<std::result::Result<Vec<_>, _>>().map_err(Into::into)
     }
 
     /// Number search with FHIR prefixes. `eq` (and `ne`) honour the query's

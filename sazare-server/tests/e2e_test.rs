@@ -1588,3 +1588,59 @@ async fn test_large_request_bodies() {
         .unwrap();
     assert_eq!(resp.status(), 413, "bodies over max_request_mb are rejected");
 }
+
+#[tokio::test]
+async fn test_sort_and_default_page_size() {
+    let (base_url, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    for (family, birth) in [("Suzuki", "1990-03-01"), ("Abe", "1960-07-07"), ("Tanaka", "1975-12-31")] {
+        create(&client, &base_url, "Patient", &json!({
+            "resourceType": "Patient", "name": [{"family": family}], "birthDate": birth
+        }))
+        .await;
+    }
+    let families = |b: &Value| -> Vec<String> {
+        b["entry"].as_array().unwrap().iter()
+            .map(|e| e["resource"]["name"][0]["family"].as_str().unwrap().to_string())
+            .collect()
+    };
+    let get = |q: &str| {
+        let url = format!("{}/Patient?{}", base_url, q);
+        let client = client.clone();
+        async move { client.get(url).send().await.unwrap() }
+    };
+
+    let b: Value = get("_sort=-birthdate").await.json().await.unwrap();
+    assert_eq!(families(&b), vec!["Suzuki", "Tanaka", "Abe"]);
+    let b: Value = get("_sort=family").await.json().await.unwrap();
+    assert_eq!(families(&b), vec!["Abe", "Suzuki", "Tanaka"]);
+    // The page boundary follows the sort order, and links keep _sort.
+    let b: Value = get("_sort=birthdate&_count=1&_offset=1").await.json().await.unwrap();
+    assert_eq!(families(&b), vec!["Tanaka"]);
+    let next = b["link"].as_array().unwrap().iter()
+        .find(|l| l["relation"] == "next").unwrap()["url"].as_str().unwrap().to_string();
+    assert!(next.contains("_sort=birthdate") && next.contains("_offset=2"), "{next}");
+
+    // Unknown sort key is a 400, not a silently unsorted result.
+    assert_eq!(get("_sort=nope").await.status(), 400);
+
+    // Without _count, the advertised default page size (100) is applied.
+    let ndjson: String = (0..120)
+        .map(|i| format!("{{\"resourceType\":\"Patient\",\"id\":\"bulk{i:03}\"}}\n"))
+        .collect();
+    let resp = client.post(format!("{}/$import", base_url))
+        .header("Content-Type", "application/fhir+ndjson")
+        .body(ndjson).send().await.unwrap();
+    assert!(resp.status().is_success());
+    let b: Value = get("").await.json().await.unwrap();
+    assert_eq!(b["total"], 123);
+    assert_eq!(b["entry"].as_array().unwrap().len(), 100);
+    assert!(b["link"].as_array().unwrap().iter().any(|l| l["relation"] == "next"));
+    // _count is capped.
+    let b: Value = get("_count=5000").await.json().await.unwrap();
+    assert_eq!(b["entry"].as_array().unwrap().len(), 123);
+    // _count=0: total only, no endless next link.
+    let b: Value = get("_count=0").await.json().await.unwrap();
+    assert_eq!(b["total"], 123);
+    assert!(!b["link"].as_array().unwrap().iter().any(|l| l["relation"] == "next"));
+}

@@ -48,6 +48,9 @@ impl<'a> SearchExecutor<'a> {
     ) -> Result<(Vec<String>, usize), String> {
         let mut ids = self.matching_ids(resource_type, query)?;
         let total = ids.len();
+        if !query.sort.is_empty() {
+            self.sort_ids(resource_type, &query.sort, &mut ids)?;
+        }
 
         // Apply pagination
         let offset = query.offset.unwrap_or(0).min(ids.len());
@@ -57,6 +60,89 @@ impl<'a> SearchExecutor<'a> {
         }
 
         Ok((ids, total))
+    }
+
+    /// Order `ids` by `_sort` keys (before pagination). Per key, a resource
+    /// with several values sorts by its lowest (ascending) or highest
+    /// (descending) one; resources without a value go last either way. Ties
+    /// fall through to the next key, then to the id, so paging is stable.
+    fn sort_ids(
+        &self,
+        resource_type: &str,
+        keys: &[sazare_core::SortKey],
+        ids: &mut [String],
+    ) -> Result<(), String> {
+        use std::cmp::Ordering;
+        use std::collections::HashMap;
+
+        #[derive(Clone, PartialEq, PartialOrd)]
+        enum Val {
+            Num(f64),
+            Text(String),
+        }
+        fn cmp_val(a: &Val, b: &Val) -> Ordering {
+            match (a, b) {
+                (Val::Num(x), Val::Num(y)) => x.total_cmp(y),
+                (Val::Text(x), Val::Text(y)) => x.cmp(y),
+                (Val::Num(_), Val::Text(_)) => Ordering::Less,
+                (Val::Text(_), Val::Num(_)) => Ordering::Greater,
+            }
+        }
+
+        // One map per key: id -> its representative value for that direction.
+        let mut maps: Vec<(HashMap<String, Val>, bool)> = Vec::new();
+        for key in keys {
+            let mut map: HashMap<String, Val> = HashMap::new();
+            if key.name == "_id" {
+                for id in ids.iter() {
+                    map.insert(id.clone(), Val::Text(id.clone()));
+                }
+            } else {
+                let rows = self
+                    .index
+                    .sort_values(resource_type, &key.name)
+                    .map_err(|e| e.to_string())?;
+                for (id, num, text) in rows {
+                    let v = match (num, text) {
+                        (Some(n), _) => Val::Num(n),
+                        (None, Some(t)) => Val::Text(t),
+                        (None, None) => continue,
+                    };
+                    map.entry(id)
+                        .and_modify(|cur| {
+                            let better = if key.descending {
+                                cmp_val(&v, cur) == Ordering::Greater
+                            } else {
+                                cmp_val(&v, cur) == Ordering::Less
+                            };
+                            if better {
+                                *cur = v.clone();
+                            }
+                        })
+                        .or_insert(v);
+                }
+            }
+            maps.push((map, key.descending));
+        }
+
+        ids.sort_by(|a, b| {
+            for (map, desc) in &maps {
+                let ord = match (map.get(a), map.get(b)) {
+                    (Some(x), Some(y)) => {
+                        let o = cmp_val(x, y);
+                        if *desc { o.reverse() } else { o }
+                    }
+                    (Some(_), None) => Ordering::Less,
+                    (None, Some(_)) => Ordering::Greater,
+                    (None, None) => Ordering::Equal,
+                };
+                if ord != Ordering::Equal {
+                    return ord;
+                }
+            }
+            a.cmp(b)
+        });
+        Ok(())
     }
 
     /// All ids matching every parameter of `query` (AND across parameters,
@@ -635,6 +721,40 @@ mod tests {
         assert_eq!(exec.search("Patient", &q).unwrap(), vec!["p2"]);
         let q = SearchQuery::parse_for_resource("subject:Patient.birthdate=lt1980-01-01", Some("Observation")).unwrap();
         assert_eq!(exec.search("Observation", &q).unwrap(), vec!["o1"]);
+    }
+
+    #[test]
+    fn test_sort_keys_direction_missing_and_ties() {
+        let store = SqliteStore::open(":memory:").unwrap();
+        let index = SearchIndex::open(":memory:").unwrap();
+        for id in ["p1", "p2", "p3", "p4"] {
+            put(&store, "Patient", id, serde_json::json!({"resourceType":"Patient","id":id}));
+        }
+        // p4 has no birthdate; p1 and p3 share one.
+        index.add_index("Patient", "p1", "birthdate", "date", Some("1980-05-01"), None).unwrap();
+        index.add_index("Patient", "p2", "birthdate", "date", Some("1970-01-01"), None).unwrap();
+        index.add_index("Patient", "p3", "birthdate", "date", Some("1980-05-01"), None).unwrap();
+        // Multi-valued string: p1 has "Zed" and "Abe".
+        index.add_index("Patient", "p1", "family", "string", Some("zed"), None).unwrap();
+        index.add_index("Patient", "p1", "family", "string", Some("abe"), None).unwrap();
+        index.add_index("Patient", "p2", "family", "string", Some("moe"), None).unwrap();
+        index.add_index("Patient", "p3", "family", "string", Some("bob"), None).unwrap();
+        let exec = SearchExecutor::new(&store, &index);
+        let run = |q: &str| exec.search("Patient", &SearchQuery::parse_for_resource(q, Some("Patient")).unwrap()).unwrap();
+
+        // Ascending; tie (p1, p3) broken by id; missing (p4) last.
+        assert_eq!(run("_sort=birthdate"), vec!["p2", "p1", "p3", "p4"]);
+        // Descending; missing still last.
+        assert_eq!(run("_sort=-birthdate"), vec!["p1", "p3", "p2", "p4"]);
+        // Second key breaks the tie.
+        assert_eq!(run("_sort=-birthdate,-family"), vec!["p1", "p3", "p2", "p4"]);
+        assert_eq!(run("_sort=-birthdate,family"), vec!["p1", "p3", "p2", "p4"]);
+        // Multi-valued: ascending uses p1's lowest ("abe"), descending its highest ("zed").
+        assert_eq!(run("_sort=family"), vec!["p1", "p3", "p2", "p4"]);
+        assert_eq!(run("_sort=-family"), vec!["p1", "p2", "p3", "p4"]);
+        // Sorting happens before pagination.
+        assert_eq!(run("_sort=-_id&_count=2"), vec!["p4", "p3"]);
+        assert_eq!(run("_sort=-_id&_count=2&_offset=2"), vec!["p2", "p1"]);
     }
 
     #[test]
