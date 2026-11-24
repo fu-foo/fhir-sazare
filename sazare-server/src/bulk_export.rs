@@ -177,9 +177,11 @@ pub fn build_export_files(
     type_filter: &Option<Vec<String>>,
     since: &Option<String>,
 ) -> Result<Vec<(String, String)>, String> {
+    // Query decoding turns an unencoded `+` (`...T10:00:00+09:00`) into a
+    // space; an instant never contains one, so put the `+` back.
     let since_dt = since
         .as_deref()
-        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok());
+        .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s.replace(' ', "+")).ok());
 
     let rows = state
         .store

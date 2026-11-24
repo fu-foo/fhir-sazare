@@ -143,14 +143,17 @@ impl SearchQuery {
                 continue;
             }
 
-            let key = urlencoding::decode(parts[0]).map_err(|e| e.to_string())?;
-            let value = urlencoding::decode(parts[1]).map_err(|e| e.to_string())?;
+            let key = decode_query_value(parts[0], false)?;
+            // Kept raw so date values can be decoded with a literal `+`
+            // once the parameter type is known (see `decode_query_value`).
+            let raw_value = parts[1];
+            let value = decode_query_value(raw_value, false)?;
 
             // Reverse chain: `_has:Type:reference-param:search-param=value`.
             // Parsed before the generic `_`-prefixed skip below so it isn't
             // dropped as an unsupported result parameter.
             if key.starts_with("_has:") {
-                if let Some(has) = parse_has(&key, &value, registry) {
+                if let Some(has) = parse_has(&key, raw_value, registry) {
                     has_parameters.push(has);
                 }
                 continue;
@@ -216,7 +219,7 @@ impl SearchQuery {
             // or multi-level "Patient.organization:Organization.name").
             if let Some(ref mod_str) = modifier
                 && mod_str.contains('.')
-                && let Some(chain) = parse_chain(&param_name, mod_str, &value, registry)
+                && let Some(chain) = parse_chain(&param_name, mod_str, raw_value, registry)
             {
                 chain_parameters.push(chain);
                 continue;
@@ -227,7 +230,7 @@ impl SearchQuery {
 
             // Parse date prefix (ge, le, gt, lt, eq)
             let (prefix, actual_value) = if param_type == SearchParamType::Date {
-                parse_date_prefix(&value)
+                parse_date_prefix(&decode_query_value(raw_value, true)?)
             } else {
                 (None, value.to_string())
             };
@@ -269,7 +272,7 @@ impl SearchQuery {
 fn parse_chain(
     reference_param: &str,
     modifier: &str,
-    value: &str,
+    raw_value: &str,
     registry: &SearchParamRegistry,
 ) -> Option<ChainParameter> {
     let mut links = Vec::new();
@@ -311,11 +314,13 @@ fn parse_chain(
         let target_param_type = registry
             .lookup_param_type(&target_type, terminal_name)
             .unwrap_or_else(|| infer_param_type(after));
+        let value =
+            decode_query_value(raw_value, target_param_type == SearchParamType::Date).ok()?;
         links.push(ChainLink { reference_param: current_ref, target_type });
         return Some(ChainParameter {
             links,
             target_param: after.to_string(),
-            value: value.to_string(),
+            value,
             target_param_type,
         });
     }
@@ -326,7 +331,7 @@ fn parse_chain(
 ///
 /// Nested reverse chains (`_has:…:_has:…`) are not yet supported and return
 /// `None` so the parameter is ignored rather than mis-parsed.
-fn parse_has(key: &str, value: &str, registry: &SearchParamRegistry) -> Option<HasParameter> {
+fn parse_has(key: &str, raw_value: &str, registry: &SearchParamRegistry) -> Option<HasParameter> {
     // key == "_has:Observation:patient:code"
     let rest = key.strip_prefix("_has:")?;
     let parts: Vec<&str> = rest.split(':').collect();
@@ -343,13 +348,33 @@ fn parse_has(key: &str, value: &str, registry: &SearchParamRegistry) -> Option<H
     if target_param == "_has" {
         return None;
     }
+    let target_param_type = infer_with_registry(registry, Some(source_type), target_param);
+    let value = decode_query_value(raw_value, target_param_type == SearchParamType::Date).ok()?;
     Some(HasParameter {
         source_type: source_type.to_string(),
         reference_param: reference_param.to_string(),
         target_param: target_param.to_string(),
-        value: value.to_string(),
-        target_param_type: infer_with_registry(registry, Some(source_type), target_param),
+        value,
+        target_param_type,
     })
+}
+
+/// Percent-decode one query-string key or value. Per
+/// `application/x-www-form-urlencoded` (what HTML forms, `curl
+/// --data-urlencode` and POST `_search` bodies produce), `+` means a space.
+///
+/// Date values are the exception: they never contain spaces, but clients
+/// often send a timezone offset unencoded (`2024-01-01T10:00:00+09:00`), so
+/// for them a `+` is kept literal. `%2B` always decodes to `+`.
+fn decode_query_value(raw: &str, plus_is_literal: bool) -> Result<String, String> {
+    let spaced;
+    let input = if plus_is_literal {
+        raw
+    } else {
+        spaced = raw.replace('+', " ");
+        &spaced
+    };
+    urlencoding::decode(input).map(|s| s.into_owned()).map_err(|e| e.to_string())
 }
 
 /// Parse date prefix from value (ge2020-01-01 -> (Some("ge"), "2020-01-01")).
@@ -634,6 +659,29 @@ mod tests {
         let (prefix, val) = parse_date_prefix("2024-01-01");
         assert_eq!(prefix.as_deref(), Some("eq"));
         assert_eq!(val, "2024-01-01");
+    }
+
+    #[test]
+    fn test_plus_decodes_as_space_except_in_dates() {
+        // Form encoding: `+` is a space (curl --data-urlencode, HTML forms).
+        let q = SearchQuery::parse_for_resource("family:exact=van+Dyke", Some("Patient")).unwrap();
+        assert_eq!(q.parameters[0].value, "van Dyke");
+        // An encoded plus stays a plus.
+        let q = SearchQuery::parse_for_resource("code=A%2BB", Some("Observation")).unwrap();
+        assert_eq!(q.parameters[0].value, "A+B");
+        // Dates keep a literal `+` (unencoded timezone offset).
+        let q = SearchQuery::parse_for_resource("date=ge2024-01-01T10:00:00+09:00", Some("Observation")).unwrap();
+        assert_eq!(q.parameters[0].prefix.as_deref(), Some("ge"));
+        assert_eq!(q.parameters[0].value, "2024-01-01T10:00:00+09:00");
+        // Same rules for chain and _has targets.
+        let q = SearchQuery::parse_for_resource("subject:Patient.name=van+Dyke", Some("Observation")).unwrap();
+        assert_eq!(q.chain_parameters[0].value, "van Dyke");
+        let q = SearchQuery::parse_for_resource(
+            "_has:Observation:subject:date=ge2024-01-01T10:00:00+09:00", Some("Patient"),
+        ).unwrap();
+        assert_eq!(q.has_parameters[0].value, "ge2024-01-01T10:00:00+09:00");
+        let q = SearchQuery::parse_for_resource("_has:Observation:subject:code=a+b", Some("Patient")).unwrap();
+        assert_eq!(q.has_parameters[0].value, "a b");
     }
 
     #[test]
