@@ -56,7 +56,7 @@ pub fn validate_subscription(
 
     // Validate search parameters in criteria
     if !criteria_query.is_empty() {
-        let query = SearchQuery::parse(criteria_query)
+        let query = SearchQuery::parse_with_registry(criteria_query, Some(criteria_type), registry)
             .map_err(|e| format!("Invalid criteria query: {}", e))?;
 
         for param in &query.parameters {
@@ -200,7 +200,8 @@ impl SubscriptionManager {
 
         // If there are query params, check if the resource matches
         if !criteria_query.is_empty() {
-            let query = SearchQuery::parse(criteria_query).map_err(|e| e.to_string())?;
+            let query = SearchQuery::parse_with_registry(criteria_query, Some(criteria_type), &state.search_param_registry)
+                .map_err(|e| e.to_string())?;
 
             let index = state.index.lock().await;
             let executor = SearchExecutor::new(&state.store, &index);

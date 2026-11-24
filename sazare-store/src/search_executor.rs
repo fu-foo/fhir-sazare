@@ -4,6 +4,16 @@ use sazare_core::{ChainParameter, HasParameter, SearchParameter, SearchParamType
 use serde_json::Value;
 use std::collections::HashSet;
 
+/// Split a chained / reverse-chained value into (prefix, value): date params
+/// carry a comparator prefix (`ge2020-01-01`) just like top-level ones.
+fn split_prefix(param_type: &SearchParamType, value: &str) -> (Option<String>, String) {
+    if *param_type == SearchParamType::Date {
+        sazare_core::search_param::parse_date_prefix(value)
+    } else {
+        (None, value.to_string())
+    }
+}
+
 /// Execute FHIR search queries
 pub struct SearchExecutor<'a> {
     store: &'a SqliteStore,
@@ -242,15 +252,12 @@ impl<'a> SearchExecutor<'a> {
         };
 
         // Search the final target type by the terminal parameter.
+        let (prefix, value) = split_prefix(&chain.target_param_type, &chain.value);
         let terminal = SearchParameter {
             name: chain.target_param.clone(),
-            value: chain.value.clone(),
+            value,
             modifier: None,
-            prefix: if chain.target_param_type == SearchParamType::Date {
-                Some("eq".to_string())
-            } else {
-                None
-            },
+            prefix,
             param_type: chain.target_param_type.clone(),
         };
         let mut current_ids = self.search_parameter(&last.target_type, &terminal)?;
@@ -293,15 +300,12 @@ impl<'a> SearchExecutor<'a> {
         resource_type: &str,
         has: &HasParameter,
     ) -> Result<Vec<String>, String> {
+        let (prefix, value) = split_prefix(&has.target_param_type, &has.value);
         let inner = SearchParameter {
             name: has.target_param.clone(),
-            value: has.value.clone(),
+            value,
             modifier: None,
-            prefix: if has.target_param_type == SearchParamType::Date {
-                Some("eq".to_string())
-            } else {
-                None
-            },
+            prefix,
             param_type: has.target_param_type.clone(),
         };
         let source_ids = self.search_parameter(&has.source_type, &inner)?;
@@ -603,6 +607,28 @@ mod tests {
         let exec = SearchExecutor::new(&store, &index);
         // date=ge2024-01-01 AND date=le2024-12-31 → only o1
         let q = SearchQuery::parse_for_resource("date=ge2024-01-01&date=le2024-12-31", Some("Observation")).unwrap();
+        assert_eq!(exec.search("Observation", &q).unwrap(), vec!["o1"]);
+    }
+
+    #[test]
+    fn test_date_prefix_in_chain_and_has() {
+        let store = SqliteStore::open(":memory:").unwrap();
+        let index = SearchIndex::open(":memory:").unwrap();
+        put(&store, "Patient", "p1", serde_json::json!({"resourceType":"Patient","id":"p1"}));
+        put(&store, "Patient", "p2", serde_json::json!({"resourceType":"Patient","id":"p2"}));
+        put(&store, "Observation", "o1", serde_json::json!({"resourceType":"Observation","id":"o1"}));
+        put(&store, "Observation", "o2", serde_json::json!({"resourceType":"Observation","id":"o2"}));
+        index.add_index("Patient", "p1", "birthdate", "date", Some("1970-01-01"), None).unwrap();
+        index.add_index("Patient", "p2", "birthdate", "date", Some("2000-01-01"), None).unwrap();
+        index.add_index("Observation", "o1", "subject", "reference", Some("Patient/p1"), None).unwrap();
+        index.add_index("Observation", "o2", "subject", "reference", Some("Patient/p2"), None).unwrap();
+        index.add_index("Observation", "o1", "date", "date", Some("2019-06-01"), None).unwrap();
+        index.add_index("Observation", "o2", "date", "date", Some("2024-06-01"), None).unwrap();
+        let exec = SearchExecutor::new(&store, &index);
+
+        let q = SearchQuery::parse_for_resource("_has:Observation:subject:date=ge2020-01-01", Some("Patient")).unwrap();
+        assert_eq!(exec.search("Patient", &q).unwrap(), vec!["p2"]);
+        let q = SearchQuery::parse_for_resource("subject:Patient.birthdate=lt1980-01-01", Some("Observation")).unwrap();
         assert_eq!(exec.search("Observation", &q).unwrap(), vec!["o1"]);
     }
 

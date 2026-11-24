@@ -64,7 +64,7 @@ pub async fn conditional_update(
         ));
     }
 
-    let query = SearchQuery::parse_for_resource(&query_string, Some(&resource_type)).map_err(|e| {
+    let query = SearchQuery::parse_with_registry(&query_string, Some(&resource_type), &state.search_param_registry).map_err(|e| {
         (
             StatusCode::BAD_REQUEST,
             Json(json!(OperationOutcome::error(IssueType::Invalid, e))),
@@ -247,7 +247,7 @@ pub async fn conditional_delete(
         ));
     }
 
-    let query = SearchQuery::parse_for_resource(&query_string, Some(&resource_type)).map_err(|e| {
+    let query = SearchQuery::parse_with_registry(&query_string, Some(&resource_type), &state.search_param_registry).map_err(|e| {
         (
             StatusCode::BAD_REQUEST,
             Json(json!(OperationOutcome::error(IssueType::Invalid, e))),

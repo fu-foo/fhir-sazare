@@ -1,3 +1,5 @@
+use crate::search_param_registry::SearchParamRegistry;
+
 /// FHIR search query parsed from HTTP query parameters
 #[derive(Debug, Clone)]
 pub struct SearchQuery {
@@ -98,6 +100,18 @@ impl SearchQuery {
     /// resource-specific param-type inference (e.g. PractitionerRole.specialty
     /// is Token, but the bare-name heuristic returns String).
     pub fn parse_for_resource(query_string: &str, resource_type: Option<&str>) -> Result<Self, String> {
+        Self::parse_with_registry(query_string, resource_type, default_registry())
+    }
+
+    /// Parse against a specific registry — the server's runtime one, which
+    /// also holds custom SearchParameters loaded from `searchparameters/`, so
+    /// their declared type (date, token, …) drives prefix parsing and the
+    /// index lookup instead of the name heuristic.
+    pub fn parse_with_registry(
+        query_string: &str,
+        resource_type: Option<&str>,
+        registry: &SearchParamRegistry,
+    ) -> Result<Self, String> {
         let mut parameters = Vec::new();
         let mut chain_parameters = Vec::new();
         let mut has_parameters = Vec::new();
@@ -136,7 +150,7 @@ impl SearchQuery {
             // Parsed before the generic `_`-prefixed skip below so it isn't
             // dropped as an unsupported result parameter.
             if key.starts_with("_has:") {
-                if let Some(has) = parse_has(&key, &value) {
+                if let Some(has) = parse_has(&key, &value, registry) {
                     has_parameters.push(has);
                 }
                 continue;
@@ -202,14 +216,14 @@ impl SearchQuery {
             // or multi-level "Patient.organization:Organization.name").
             if let Some(ref mod_str) = modifier
                 && mod_str.contains('.')
-                && let Some(chain) = parse_chain(&param_name, mod_str, &value)
+                && let Some(chain) = parse_chain(&param_name, mod_str, &value, registry)
             {
                 chain_parameters.push(chain);
                 continue;
             }
 
             // Infer parameter type from name (registry-aware when resource_type is provided)
-            let param_type = infer_param_type_for_resource(resource_type, &param_name);
+            let param_type = infer_with_registry(registry, resource_type, &param_name);
 
             // Parse date prefix (ge, le, gt, lt, eq)
             let (prefix, actual_value) = if param_type == SearchParamType::Date {
@@ -252,7 +266,12 @@ impl SearchQuery {
 /// `modifier` is everything after it, e.g. `Patient.organization:Organization.name`.
 /// Each hop has the shape `<TargetType>.<rest>` where `rest` is either another
 /// hop (`<ref>:<Type>.…`) or the terminal search param.
-fn parse_chain(reference_param: &str, modifier: &str, value: &str) -> Option<ChainParameter> {
+fn parse_chain(
+    reference_param: &str,
+    modifier: &str,
+    value: &str,
+    registry: &SearchParamRegistry,
+) -> Option<ChainParameter> {
     let mut links = Vec::new();
     let mut current_ref = reference_param.to_string();
     let mut rest = modifier;
@@ -286,12 +305,18 @@ fn parse_chain(reference_param: &str, modifier: &str, value: &str) -> Option<Cha
         if after.is_empty() {
             return None;
         }
+        // The terminal param belongs to the last hop's target type; look it
+        // up there (without any `:modifier`) so custom params resolve too.
+        let terminal_name = after.split(':').next().unwrap_or(after);
+        let target_param_type = registry
+            .lookup_param_type(&target_type, terminal_name)
+            .unwrap_or_else(|| infer_param_type(after));
         links.push(ChainLink { reference_param: current_ref, target_type });
         return Some(ChainParameter {
             links,
             target_param: after.to_string(),
             value: value.to_string(),
-            target_param_type: infer_param_type(after),
+            target_param_type,
         });
     }
 }
@@ -301,7 +326,7 @@ fn parse_chain(reference_param: &str, modifier: &str, value: &str) -> Option<Cha
 ///
 /// Nested reverse chains (`_has:…:_has:…`) are not yet supported and return
 /// `None` so the parameter is ignored rather than mis-parsed.
-fn parse_has(key: &str, value: &str) -> Option<HasParameter> {
+fn parse_has(key: &str, value: &str, registry: &SearchParamRegistry) -> Option<HasParameter> {
     // key == "_has:Observation:patient:code"
     let rest = key.strip_prefix("_has:")?;
     let parts: Vec<&str> = rest.split(':').collect();
@@ -323,13 +348,13 @@ fn parse_has(key: &str, value: &str) -> Option<HasParameter> {
         reference_param: reference_param.to_string(),
         target_param: target_param.to_string(),
         value: value.to_string(),
-        target_param_type: infer_param_type_for_resource(Some(source_type), target_param),
+        target_param_type: infer_with_registry(registry, Some(source_type), target_param),
     })
 }
 
 /// Parse date prefix from value (ge2020-01-01 -> (Some("ge"), "2020-01-01")).
 /// Recognizes all FHIR comparator prefixes: eq, ne, gt, lt, ge, le, sa, eb, ap.
-fn parse_date_prefix(value: &str) -> (Option<String>, String) {
+pub fn parse_date_prefix(value: &str) -> (Option<String>, String) {
     const PREFIXES: [&str; 9] = ["eq", "ne", "gt", "lt", "ge", "le", "sa", "eb", "ap"];
     // A prefix only counts if what follows looks like a date (starts with a
     // digit), so a literal value that happens to start with these letters isn't
@@ -352,14 +377,25 @@ fn infer_param_type(name: &str) -> SearchParamType {
 /// Infer search parameter type, optionally using resource-specific registry definitions.
 /// Falls back to name-based heuristics if no registry match is found.
 pub fn infer_param_type_for_resource(resource_type: Option<&str>, name: &str) -> SearchParamType {
-    use crate::search_param_registry::SearchParamRegistry;
+    infer_with_registry(default_registry(), resource_type, name)
+}
 
+/// The built-in registry (no custom SearchParameters), for callers without a
+/// runtime registry at hand.
+fn default_registry() -> &'static SearchParamRegistry {
     static DEFAULT_REGISTRY: std::sync::LazyLock<SearchParamRegistry> =
         std::sync::LazyLock::new(SearchParamRegistry::new);
+    &DEFAULT_REGISTRY
+}
 
+fn infer_with_registry(
+    registry: &SearchParamRegistry,
+    resource_type: Option<&str>,
+    name: &str,
+) -> SearchParamType {
     // Try registry lookup if resource_type is provided
     if let Some(rt) = resource_type
-        && let Some(pt) = DEFAULT_REGISTRY.lookup_param_type(rt, name)
+        && let Some(pt) = registry.lookup_param_type(rt, name)
     {
         return pt;
     }
@@ -598,6 +634,49 @@ mod tests {
         let (prefix, val) = parse_date_prefix("2024-01-01");
         assert_eq!(prefix.as_deref(), Some("eq"));
         assert_eq!(val, "2024-01-01");
+    }
+
+    #[test]
+    fn test_parse_with_registry_uses_custom_param_types() {
+        let mut reg = SearchParamRegistry::new();
+        reg.register_search_parameter(&serde_json::json!({
+            "resourceType": "SearchParameter", "code": "jp-medication-start",
+            "base": ["MedicationRequest"], "type": "date",
+            "expression": "MedicationRequest.authoredOn"
+        }))
+        .unwrap();
+        reg.register_search_parameter(&serde_json::json!({
+            "resourceType": "SearchParameter", "code": "jp-insurance-organizationno",
+            "base": ["Organization"], "type": "token",
+            "expression": "Organization.identifier"
+        }))
+        .unwrap();
+
+        let q = SearchQuery::parse_with_registry(
+            "jp-medication-start=ge2020-01-01", Some("MedicationRequest"), &reg,
+        ).unwrap();
+        assert_eq!(q.parameters[0].param_type, SearchParamType::Date);
+        assert_eq!(q.parameters[0].prefix.as_deref(), Some("ge"));
+        assert_eq!(q.parameters[0].value, "2020-01-01");
+
+        let q = SearchQuery::parse_with_registry(
+            "jp-insurance-organizationno=sys|123", Some("Organization"), &reg,
+        ).unwrap();
+        assert_eq!(q.parameters[0].param_type, SearchParamType::Token);
+
+        // Reverse chain and chain resolve the custom type on their target type.
+        let q = SearchQuery::parse_with_registry(
+            "_has:MedicationRequest:subject:jp-medication-start=ge2020-01-01", Some("Patient"), &reg,
+        ).unwrap();
+        assert_eq!(q.has_parameters[0].target_param_type, SearchParamType::Date);
+        let q = SearchQuery::parse_with_registry(
+            "performer:Organization.jp-insurance-organizationno=123", Some("Observation"), &reg,
+        ).unwrap();
+        assert_eq!(q.chain_parameters[0].target_param_type, SearchParamType::Token);
+
+        // Without the runtime registry the name heuristic falls back to string.
+        let q = SearchQuery::parse_for_resource("jp-medication-start=ge2020-01-01", Some("MedicationRequest")).unwrap();
+        assert_eq!(q.parameters[0].param_type, SearchParamType::String);
     }
 
     #[test]

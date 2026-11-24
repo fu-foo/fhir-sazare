@@ -18,7 +18,8 @@
 - **Search** — Parameter-based search, chain search (`subject:Patient.name=...`), reverse chain (`_has:Observation:subject:code=...`), `_include`, `_revinclude`
 - **Conditional operations** — Conditional create (`If-None-Exist`), update, and delete
 - **Resource filtering** — `_summary` (5 modes) and `_elements` support
-- **Validation** — Multi-phase validation against US Core profiles; load any other IG (e.g. JP Core) by dropping its profiles in a `profiles/` directory
+- **Validation** — Multi-phase validation against US Core profiles; load any other IG by dropping its profiles in a `profiles/` directory
+- **JP Core** — One script loads the JP Core 1.2.0 package: its profiles validate, and all 8 of its search parameters (kana name, insured person number, prefecture, …) work — see [`examples/jp-core/`](examples/jp-core/README.md)
 - **US Core conformance** — Passes the Inferno US Core v7 & v8 FHIR API test suites (`examples/us-core-seed.json` for v7, `examples/us-core-v8-seed.json` for v8; the TLS test requires an HTTPS deployment)
 - **Custom search parameters** — Drop FHIR `SearchParameter` resources into a `searchparameters/` directory; their FHIRPath `expression` is compiled by a bounded evaluator (unsupported expressions are rejected at load, never mis-evaluated)
 - **Bulk data** — NDJSON `$import`, and `$export` both synchronous and async (FHIR Bulk Data Access IG: `Prefer: respond-async` kick-off, status poll, manifest, `_type`/`_since`/`_outputFormat`)
@@ -33,6 +34,26 @@
 - **Compartment access control** — Patient-scoped token restricts access to own data
 - **TLS/HTTPS** — Optional TLS via config
 - **Graceful shutdown** — Clean shutdown on SIGTERM / Ctrl+C
+
+---
+
+## Where sazare fits
+
+sazare is for **learning FHIR, prototypes and PoCs, local development, and
+small deployments** — places where a single binary with an embedded database
+beats running a Java application server and an RDBMS. For large production
+workloads, other FHIR versions or full terminology services, use a mature
+server such as [HAPI FHIR](https://hapifhir.io/).
+
+| | sazare | HAPI FHIR (JPA server) |
+|---|---|---|
+| Runtime | Single native binary (~15 MB), or Docker | Java application on the JVM, or Docker |
+| Database | Embedded SQLite, nothing to set up | External RDBMS (e.g. PostgreSQL); H2 for development |
+| FHIR versions | R4 (4.0.1) | DSTU2 – R5 |
+| Search | Common parameters, chain, `_has`, `_include`/`_revinclude`, custom SearchParameters (FHIRPath subset) | Full search, including full FHIRPath and more modifiers |
+| Validation | Declared profiles: cardinality, types, extensions, built-in bindings | Full HL7 validator |
+| Terminology | No `$expand` / `$validate-code` / `$lookup` | Terminology services |
+| Conformance check | Inferno US Core v7/v8 FHIR API suites pass, run in CI | Widely used reference implementation |
 
 ---
 
@@ -342,6 +363,11 @@ ranges for date, bare ids for reference, booleans for token). Expressions
 outside the subset (e.g. `resolve()` navigation, boolean logic) are rejected at
 load — never silently mis-evaluated into wrong results.
 
+**JP Core**: `bash examples/jp-core/setup.sh` downloads the JP Core package into
+`profiles/` and `searchparameters/`; all 8 of its search parameters load. See
+[`examples/jp-core/README.md`](examples/jp-core/README.md) (Japanese) for
+Docker, reindexing existing data and the full parameter list.
+
 ### Conditional Create
 
 Prevent duplicate creation using search criteria:
@@ -636,7 +662,8 @@ CC0-1.0 — see [NOTICE.md](NOTICE.md) for provenance and attribution.
 - Subscription（rest-hook 通知 / WebSocket `/ws` の R4 `bind`・`ping` 通知）
 - Webhook（`BundleCreated`・`TaskCompleted` のライフサイクルイベントを設定エンドポイントへ通知）
 - `_summary` / `_elements` によるリソースフィルタリング
-- US Core プロファイルによるバリデーション（JP Core 等の他 IG は `profiles/` ディレクトリから読み込み）
+- US Core プロファイルによるバリデーション（他の IG は `profiles/` ディレクトリから読み込み）
+- JP Core — スクリプト1本で JP Core 1.2.0 を読み込み、プロファイルでの検証と8つの検索パラメータ（カナ氏名・被保険者番号・都道府県番号など）が使えます（[`examples/jp-core/`](examples/jp-core/README.md)）
 - US Core 適合 — Inferno US Core v7 & v8 の FHIR API テストスイートをパス（v7: `examples/us-core-seed.json` / v8: `examples/us-core-v8-seed.json`。TLS テストは HTTPS デプロイが前提）
 - カスタム検索パラメータ — FHIR `SearchParameter` を `searchparameters/` に置くと、その FHIRPath `expression` を限定評価器がコンパイル（対応外の式はロード時に拒否、誤評価しない）
 - NDJSON 形式での一括エクスポート / インポート
@@ -646,6 +673,10 @@ CC0-1.0 — see [NOTICE.md](NOTICE.md) for provenance and attribution.
 - API キー / Basic 認証 / JWT (HS256/RS256/JWK URL) / SMART on FHIR スコープ
 - コンパートメントベースのアクセス制御
 - TLS/HTTPS 対応
+
+### 位置づけ
+
+sazare は **FHIR の学習、試作・PoC、ローカル開発、小規模な運用**向けです。Java のアプリケーションサーバーと RDBMS を用意するより、データベース内蔵のバイナリ1つで済むことを重視しています。大規模な本番運用、R4 以外のバージョン、本格的なターミノロジーサービスが必要なら、[HAPI FHIR](https://hapifhir.io/) などの成熟したサーバーを使ってください。比較表は英語版の「Where sazare fits」にあります。
 
 ### クイックスタート — 30秒で FHIR サーバーを動かす
 
@@ -741,6 +772,17 @@ cargo build --release
 ### 設定
 
 `config.example.yaml` を `config.yaml` にコピーして編集してください。別の場所のファイルは `--config <path>` で指定できます。設定ファイルがない場合はデフォルト設定（ポート 8080、認証なし）で起動します。
+
+### JP Core を使う
+
+```bash
+bash examples/jp-core/setup.sh          # profiles/ と searchparameters/ に JP Core を展開
+sazare-server                           # 同じディレクトリで起動
+bash examples/jp-core/load_examples.sh  # サンプル76件を投入して JP Core の検索を試す
+curl "http://localhost:8080/Patient?jp-kana-sort=ヤマダ"
+```
+
+Docker での使い方、既存データへの `$reindex`、検索パラメータ一覧は [`examples/jp-core/README.md`](examples/jp-core/README.md) を参照してください。
 
 ### バックアップと復元
 

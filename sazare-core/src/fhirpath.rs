@@ -16,12 +16,14 @@
 //! - choice types:         `Observation.value.ofType(Quantity)` / `... as Quantity`
 //! - extension sugar:      `Coverage.extension('url').value.ofType(string)`
 //! - simple slice filter:  `Patient.telecom.where(system='phone').value`
+//!   (conditions may be `and`-ed: `where(a = 'x' and b = 'y')`)
 //! - reference type filter: `Observation.subject.where(resolve() is Patient)`
 //!   (also `resolve() is A or resolve() is B`) — decided from the reference
 //!   string's type segment, without resolving anything
 //! - integer indexer:      `Bundle.entry[0].resource`
 //!
-//! Anything else (`resolve()` navigation, `exists()`, `%vars`, boolean logic,
+//! Anything else (`resolve()` navigation, `exists()`, `%vars`, `or`/`not`
+//! and other boolean logic outside `where(... and ...)`,
 //! arithmetic, non-string comparison) is a parse error.
 //!
 //! Design invariants that keep this growable to a fuller FHIRPath later without
@@ -259,7 +261,9 @@ fn parse_steps(p: &mut Parser) -> Result<Vec<Step>, ParseError> {
 enum Raw {
     Member(String),
     Extension(String),
-    Where(Vec<Step>, String),
+    /// One or more `and`-ed equality conditions; each becomes its own
+    /// `Step::Where`, since `where(a and b)` ≡ `where(a).where(b)`.
+    Where(Vec<(Vec<Step>, String)>),
     RefType(Vec<String>),
     OfType(String),
 }
@@ -286,8 +290,12 @@ fn parse_raw(p: &mut Parser) -> Result<Raw, ParseError> {
                 if p.peek() == Some(&Tok::Ident("resolve".into())) {
                     Raw::RefType(parse_ref_type_cond(p)?)
                 } else {
-                    let (lhs, lit) = parse_where_cond(p)?;
-                    Raw::Where(lhs, lit)
+                    let mut conds = vec![parse_where_cond(p)?];
+                    while p.peek() == Some(&Tok::Ident("and".into())) {
+                        p.pos += 1;
+                        conds.push(parse_where_cond(p)?);
+                    }
+                    Raw::Where(conds)
                 }
             }
             other => {
@@ -308,7 +316,9 @@ fn reconcile(steps: &mut Vec<Step>, raw: Raw) -> Result<(), ParseError> {
     match raw {
         Raw::Member(m) => steps.push(Step::Member(m)),
         Raw::Extension(u) => steps.push(Step::Extension(u)),
-        Raw::Where(lhs, lit) => steps.push(Step::Where(lhs, lit)),
+        Raw::Where(conds) => {
+            steps.extend(conds.into_iter().map(|(lhs, lit)| Step::Where(lhs, lit)))
+        }
         Raw::RefType(types) => steps.push(Step::RefType(types)),
         Raw::OfType(ty) => match steps.pop() {
             Some(Step::Member(base)) => steps.push(Step::Choice(base, ty)),
@@ -322,8 +332,8 @@ fn reconcile(steps: &mut Vec<Step>, raw: Raw) -> Result<(), ParseError> {
     Ok(())
 }
 
-/// `where(<relative pipeline> = 'literal')`. Boolean logic / non-string compares
-/// are rejected (they fall outside the supported subset).
+/// One `path = 'literal'` condition of `where(...)` (the caller handles
+/// `and`). `or` and non-string compares are rejected (outside the subset).
 fn parse_where_cond(p: &mut Parser) -> Result<(Vec<Step>, String), ParseError> {
     let mut lhs = Vec::new();
     reconcile(&mut lhs, parse_raw(p)?)?;
@@ -349,7 +359,7 @@ fn parse_where_cond(p: &mut Parser) -> Result<(Vec<Step>, String), ParseError> {
             Some(Tok::Eq) => break,
             other => {
                 return Err(ParseError(format!(
-                    "where() condition must be `path = 'literal'`, found {other:?}"
+                    "where() condition must be `path = 'literal'` (optionally `and`-ed), found {other:?}"
                 )));
             }
         }
@@ -610,6 +620,24 @@ mod tests {
     }
 
     #[test]
+    fn real_jp_core_kana_and_in_where() {
+        // jp-kana-sort, verbatim from JP Core 1.2.0: `and`-ed where conditions.
+        let pat = json!({
+            "resourceType": "Patient",
+            "name": [
+                {"extension": [{"url": "http://hl7.org/fhir/StructureDefinition/iso21090-EN-representation", "valueCode": "IDE"}],
+                 "use": "usual", "text": "山田 太郎"},
+                {"extension": [{"url": "http://hl7.org/fhir/StructureDefinition/iso21090-EN-representation", "valueCode": "SYL"}],
+                 "use": "usual", "text": "ヤマダ タロウ"},
+                {"extension": [{"url": "http://hl7.org/fhir/StructureDefinition/iso21090-EN-representation", "valueCode": "SYL"}],
+                 "use": "old", "text": "スズキ タロウ"}
+            ]
+        });
+        let e = parse("Patient.name.where(extension('http://hl7.org/fhir/StructureDefinition/iso21090-EN-representation').value.ofType(code)='SYL' and use='usual').text").unwrap();
+        assert_eq!(strs(&evaluate(&e, &pat)), vec!["ヤマダ タロウ"]);
+    }
+
+    #[test]
     fn where_resolve_is_filters_reference_target_type() {
         let obs = json!({
             "resourceType": "Observation",
@@ -662,7 +690,7 @@ mod tests {
             "Observation.subject.where(resolve().name = 'x')", // resolve() navigation
             "Observation.subject.where(resolve() as Patient)", // only `is` is supported
             "Patient.deceased.exists() and Patient.deceased != false", // exists()/and/!=
-            "Patient.name.where(extension('http://hl7.org/fhir/StructureDefinition/iso21090-EN-representation').value.ofType(code)='SYL' and use='usual').text", // bool in where
+            "Patient.telecom.where(system='phone' or system='fax').value", // `or` in where
             "Observation.value.resolve()",   // resolve()
             "Patient.name[first].given",     // non-literal indexer
             "%resource.id",                  // env var

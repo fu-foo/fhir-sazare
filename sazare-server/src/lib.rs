@@ -77,7 +77,7 @@ pub async fn conditional_create_check(
     resource_type: &str,
     query_string: &str,
 ) -> ConditionalResult {
-    let query = match SearchQuery::parse(query_string) {
+    let query = match SearchQuery::parse_with_registry(query_string, Some(resource_type), &state.search_param_registry) {
         Ok(q) => q,
         Err(e) => return ConditionalResult::SearchError(e),
     };

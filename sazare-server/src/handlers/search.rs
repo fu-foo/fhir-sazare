@@ -126,7 +126,7 @@ async fn do_search(
     audit_ctx: AuditContext,
     base_url: String,
 ) -> Result<Response, (StatusCode, Json<Value>)> {
-    let query = SearchQuery::parse_for_resource(&raw_query, Some(&resource_type)).map_err(|e| {
+    let query = SearchQuery::parse_with_registry(&raw_query, Some(&resource_type), &state.search_param_registry).map_err(|e| {
         (
             StatusCode::BAD_REQUEST,
             Json(json!(OperationOutcome::error(IssueType::Invalid, e))),

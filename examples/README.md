@@ -22,6 +22,7 @@ cargo run
 | `06_summary_elements.sh` | `_summary` and `_elements` filtering |
 | `07_bulk_ndjson.sh` | NDJSON import and export |
 | `08_validation.sh` | Resource validation (`$validate`) |
+| [`jp-core/`](jp-core/README.md) | Load the JP Core IG (profiles + search parameters) and its examples |
 
 ## Demo data — make search *visible*
 
