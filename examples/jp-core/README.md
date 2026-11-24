@@ -170,9 +170,31 @@ code 'NOPE' is not in code system http://jpfhir.jp/fhir/core/CodeSystem/JP_Proce
 - スライス（`Observation.code.coding:jlac10` など）は、スライスがコード体系を固定していて、
   ValueSet がそのコード体系全体を含む場合だけ検証します。院内コードなど他のシステムのコーディングはそのまま通します。
 
+## プロファイルを宣言していないデータに JP Core を適用する
+
+現場のデータは `meta.profile` を宣言していないことが多く、そのままでは JP Core の検証がかかりません。
+`config.yaml` でリソースの種類ごとに既定のプロファイルを指定すると、宣言のないリソースもそのプロファイルで検証します。
+
+```yaml
+validation:
+  default_profiles:
+    Patient: "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Patient"
+    Procedure: "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Procedure"
+  default_profile_mode: enforce   # または warn
+```
+
+- `enforce`（既定）: プロファイルを宣言した場合と同じように、違反していれば 400 で拒否します。
+  理由の最後に「既定のプロファイルで検証した」旨の information が付きます。
+- `warn`: 保存は受け付け、違反は `$validate` の warning とサーバーログに出します。既存データを移行するときに、
+  まず違反の数を把握したい場合に使います。
+- 検証はコピーに対して行い、保存するリソースに `meta.profile` を書き足すことはしません。
+- 別のプロファイル（US Core など）を宣言しているリソースは、宣言したほうだけで検証します。
+- 指定したプロファイルが読み込まれていない（`profiles/` にない、URL の誤記など）ときは、起動時にエラーで止まります。
+  検証が黙って無効になるのを防ぐためです。
+
 ## 制限事項
 
-- 検証の対象は、`meta.profile` でプロファイルを宣言したリソースだけです。宣言のないリソースに JP Core を当てはめることはしません。
+- 検証の対象は、`meta.profile` でプロファイルを宣言したリソースと、`validation.default_profiles` で既定のプロファイルを指定した種類のリソースです。
 - コード値の検証は `--terminology` を付けたときだけです。付けても、拡張（Extension）の中のコード
   （例: 都道府県番号）と、展開しきれない ValueSet へのバインディングは検証しません。
 - `content: complete` と宣言されたコード体系は、そこにないコードを誤りとして扱います。実運用のコードがまだ

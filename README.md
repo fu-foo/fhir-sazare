@@ -236,7 +236,21 @@ webhook:
   endpoints:
     - url: "https://example.com/webhook"
       events: ["BundleCreated", "TaskCompleted"]
+
+validation:
+  default_profiles:       # for resources that declare no meta.profile
+    Patient: "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Patient"
+  default_profile_mode: enforce   # or warn: accept, report violations
 ```
+
+`validation.default_profiles` validates resources that don't declare a
+`meta.profile` against a profile per resource type — real-world data often
+declares none, so declared-profile validation alone never runs on it. The
+check runs on a copy; the stored resource is not modified. `enforce` rejects
+violations exactly as if the profile were declared; `warn` accepts the
+resource and reports the violations (`$validate` and the server log), which
+helps while migrating existing data. A resource that declares its own
+profile is validated against that one only.
 
 If no `config.yaml` is found, the server runs with sensible defaults (port 8080, auth disabled).
 

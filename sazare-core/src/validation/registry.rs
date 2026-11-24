@@ -1,17 +1,60 @@
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 
+/// What happens when a resource fails its *default* profile (one applied
+/// because the resource declares no `meta.profile`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DefaultProfileMode {
+    /// Reject, exactly as if the resource had declared the profile.
+    Enforce,
+    /// Accept; report the violations as warnings (`$validate`, server log).
+    Warn,
+}
+
 /// Registry for FHIR profiles (StructureDefinitions)
 #[derive(Debug, Clone)]
 pub struct ProfileRegistry {
     profiles: HashMap<String, Value>,
+    /// resource type → (default profile url, mode)
+    defaults: HashMap<String, (String, DefaultProfileMode)>,
 }
 
 impl ProfileRegistry {
     pub fn new() -> Self {
         Self {
             profiles: HashMap::new(),
+            defaults: HashMap::new(),
         }
+    }
+
+    /// Validate resources of `resource_type` that declare no `meta.profile`
+    /// against `profile_url`. The profile must be loaded and constrain that
+    /// resource type.
+    pub fn set_default_profile(
+        &mut self,
+        resource_type: &str,
+        profile_url: &str,
+        mode: DefaultProfileMode,
+    ) -> Result<(), String> {
+        let profile = self
+            .get_profile(profile_url)
+            .ok_or_else(|| format!("default profile for {resource_type}: '{profile_url}' is not loaded"))?;
+        let ty = profile.get("type").and_then(|t| t.as_str()).unwrap_or("");
+        if ty != resource_type {
+            return Err(format!(
+                "default profile for {resource_type}: '{profile_url}' constrains {ty}, not {resource_type}"
+            ));
+        }
+        self.defaults
+            .insert(resource_type.to_string(), (profile_url.to_string(), mode));
+        Ok(())
+    }
+
+    /// The default profile (and mode) for a resource type, if configured.
+    pub fn default_profile(&self, resource_type: &str) -> Option<(&str, DefaultProfileMode)> {
+        self.defaults
+            .get(resource_type)
+            .map(|(url, mode)| (url.as_str(), *mode))
     }
 
     /// Add a profile to the registry

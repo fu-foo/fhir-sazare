@@ -34,6 +34,16 @@ log:
   # Log level: trace, debug, info, warn, error
   level: "info"
 
+# validation:
+#   # Validate resources that declare no meta.profile against a default profile
+#   # per resource type. The profile must be loaded (embedded US Core, or a
+#   # file in profiles/); an unknown URL stops the server at startup.
+#   default_profiles:
+#     Patient: "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Patient"
+#   # enforce (default): reject non-conforming resources.
+#   # warn: accept them; violations appear in $validate and the server log.
+#   default_profile_mode: enforce
+
 webhook:
   enabled: false
   endpoints:

@@ -11,6 +11,7 @@ pub struct ServerConfig {
     pub log: LogSettings,
     pub webhook: WebhookSettings,
     pub plugins: PluginSettings,
+    pub validation: ValidationSettings,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -122,6 +123,26 @@ pub struct WebhookEndpoint {
     pub events: Vec<String>,
     #[serde(default)]
     pub headers: std::collections::HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ValidationSettings {
+    /// Resource type → profile URL applied to resources of that type that
+    /// declare no `meta.profile` (e.g. `Patient: http://jpfhir.jp/fhir/core/StructureDefinition/JP_Patient`).
+    pub default_profiles: std::collections::BTreeMap<String, String>,
+    /// `enforce` (default): reject non-conforming resources, as if they had
+    /// declared the profile. `warn`: accept them and report the violations as
+    /// warnings (`$validate`, server log) — useful while migrating data.
+    pub default_profile_mode: DefaultProfileModeSetting,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DefaultProfileModeSetting {
+    #[default]
+    Enforce,
+    Warn,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

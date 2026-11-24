@@ -2,7 +2,7 @@
 
 use sazare_core::{
     profile_loader::ProfileLoader,
-    validation::{ProfileRegistry, TerminologyRegistry},
+    validation::{DefaultProfileMode, ProfileRegistry, TerminologyRegistry},
     CompartmentDef, SearchParamRegistry,
 };
 use sazare_store::{AuditLog, SearchIndex, SqliteStore};
@@ -112,6 +112,22 @@ async fn main() {
         Err(e) => {
             tracing::warn!("Failed to load custom profiles: {}", e);
         }
+    }
+
+    // Default profiles: validate resources that declare no meta.profile
+    // against a configured profile (e.g. JP Core's JP_Patient). A profile that
+    // isn't loaded is a configuration error — fail loudly rather than silently
+    // skipping the validation the operator asked for.
+    let mode = match config.validation.default_profile_mode {
+        sazare_server::config::DefaultProfileModeSetting::Enforce => DefaultProfileMode::Enforce,
+        sazare_server::config::DefaultProfileModeSetting::Warn => DefaultProfileMode::Warn,
+    };
+    for (resource_type, url) in &config.validation.default_profiles {
+        if let Err(e) = profile_registry.set_default_profile(resource_type, url, mode) {
+            tracing::error!("Invalid validation.default_profiles: {}", e);
+            std::process::exit(1);
+        }
+        tracing::info!("Default profile for {}: {} ({:?})", resource_type, url, mode);
     }
 
     // Load custom search parameters from searchparameters/ if it exists. Each is
