@@ -133,6 +133,21 @@ async fn main() {
         Err(e) => tracing::warn!("Failed to load custom search parameters: {}", e),
     }
 
+    // Load IG terminology from terminology/ if it exists (CodeSystems and
+    // ValueSets, e.g. JP Core's package plus jpfhir-terminology). Only fully
+    // resolvable ValueSets are registered; bindings to the rest stay unchecked.
+    let mut terminology_registry = TerminologyRegistry::new();
+    match ProfileLoader::load_terminology_directory("terminology", &mut terminology_registry) {
+        Ok(Some(s)) => tracing::info!(
+            "Terminology: {} code systems, {} value sets loaded ({} value sets not fully resolvable, left unchecked)",
+            s.code_systems,
+            s.value_sets,
+            s.value_sets_skipped
+        ),
+        Ok(None) => {}
+        Err(e) => tracing::warn!("Failed to load terminology: {}", e),
+    }
+
     // Auto-reindex if the search index is empty (fresh deploy, or after an index wipe
     // following a schema change like added common params _id/_profile/_tag/etc.)
     match index.row_count() {
@@ -167,7 +182,7 @@ async fn main() {
         audit: Arc::new(Mutex::new(audit_log)),
         config: config.clone(),
         profile_registry,
-        terminology_registry: TerminologyRegistry::new(),
+        terminology_registry,
         search_param_registry,
         compartment_def: CompartmentDef::patient_compartment(),
         jwk_cache: tokio::sync::RwLock::new(sazare_server::auth::JwkCache::new()),

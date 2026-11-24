@@ -21,48 +21,96 @@ impl ProfileLoader {
         dir_path: impl AsRef<Path>,
         resource_type: &str,
     ) -> Result<Vec<Value>, String> {
+        Self::load_resources_of_types(dir_path, &[resource_type])
+    }
+
+    /// Load every JSON resource whose `resourceType` is one of `resource_types`
+    /// from a directory.
+    pub fn load_resources_of_types(
+        dir_path: impl AsRef<Path>,
+        resource_types: &[&str],
+    ) -> Result<Vec<Value>, String> {
         let mut resources = Vec::new();
+        Self::for_each_resource(dir_path, resource_types, |r| resources.push(r))?;
+        Ok(resources)
+    }
+
+    /// Stream every JSON resource whose `resourceType` is one of
+    /// `resource_types` to `f`, one file at a time, so a large package (a
+    /// terminology package is ~85 MB of JSON) is never held in memory whole.
+    /// Returns how many resources were passed to `f`.
+    pub fn for_each_resource(
+        dir_path: impl AsRef<Path>,
+        resource_types: &[&str],
+        mut f: impl FnMut(Value),
+    ) -> Result<usize, String> {
         let dir_path = dir_path.as_ref();
-
         if !dir_path.exists() {
-            return Ok(resources);
+            return Ok(0);
         }
-
         let entries = std::fs::read_dir(dir_path)
             .map_err(|e| format!("Failed to read directory: {}", e))?;
 
+        let mut count = 0;
         for entry in entries {
             let entry = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
             let path = entry.path();
-
-            if path.extension().and_then(|s| s.to_str()) == Some("json") {
-                match std::fs::read_to_string(&path) {
-                    Ok(content) => match serde_json::from_str::<Value>(&content) {
-                        Ok(resource) => {
-                            if resource.get("resourceType").and_then(|v| v.as_str())
-                                == Some(resource_type)
-                            {
-                                resources.push(resource);
-                            }
-                        }
-                        Err(e) => {
-                            tracing::warn!("Failed to parse {:?}: {}", path, e);
-                        }
-                    },
-                    Err(e) => {
-                        tracing::warn!("Failed to read file {:?}: {}", path, e);
+            if path.extension().and_then(|s| s.to_str()) != Some("json") {
+                continue;
+            }
+            let content = match std::fs::read_to_string(&path) {
+                Ok(c) => c,
+                Err(e) => {
+                    tracing::warn!("Failed to read file {:?}: {}", path, e);
+                    continue;
+                }
+            };
+            match serde_json::from_str::<Value>(&content) {
+                Ok(resource) => {
+                    if resource
+                        .get("resourceType")
+                        .and_then(|v| v.as_str())
+                        .is_some_and(|t| resource_types.contains(&t))
+                    {
+                        count += 1;
+                        f(resource);
                     }
                 }
+                Err(e) => tracing::warn!("Failed to parse {:?}: {}", path, e),
             }
         }
 
         tracing::info!(
             "Loaded {} {} resource(s) from {:?}",
-            resources.len(),
-            resource_type,
+            count,
+            resource_types.join("/"),
             dir_path
         );
-        Ok(resources)
+        Ok(count)
+    }
+
+    /// Load a terminology directory (CodeSystems + ValueSets) into `registry`,
+    /// one file at a time and parsing only the fields validation needs.
+    pub fn load_terminology_directory(
+        dir_path: impl AsRef<Path>,
+        registry: &mut crate::validation::TerminologyRegistry,
+    ) -> Result<Option<crate::validation::TerminologyLoadSummary>, String> {
+        let dir_path = dir_path.as_ref();
+        if !dir_path.exists() {
+            return Ok(None);
+        }
+        let mut loader = crate::validation::TerminologyLoader::default();
+        for entry in std::fs::read_dir(dir_path).map_err(|e| format!("Failed to read directory: {}", e))? {
+            let path = entry.map_err(|e| format!("Failed to read entry: {}", e))?.path();
+            if path.extension().and_then(|s| s.to_str()) != Some("json") {
+                continue;
+            }
+            match std::fs::read_to_string(&path) {
+                Ok(content) => loader.add_json(registry, &content),
+                Err(e) => tracing::warn!("Failed to read file {:?}: {}", path, e),
+            }
+        }
+        Ok(Some(loader.finish(registry)))
     }
 
     /// Every embedded US Core StructureDefinition — the full US Core 8.0.0 set,

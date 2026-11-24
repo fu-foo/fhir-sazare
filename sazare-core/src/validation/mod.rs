@@ -10,7 +10,9 @@ pub mod phase2;
 pub mod phase3;
 pub mod registry;
 
-pub use registry::{ProfileRegistry, TerminologyRegistry};
+pub use registry::{
+    ProfileRegistry, TerminologyLoadSummary, TerminologyLoader, TerminologyRegistry,
+};
 
 use crate::operation_outcome::{OperationOutcome, OperationOutcomeIssue};
 use serde_json::Value;

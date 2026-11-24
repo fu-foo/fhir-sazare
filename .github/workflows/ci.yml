@@ -29,3 +29,31 @@ jobs:
       - run: cargo build --release
       - name: Search benchmark
         run: MAX_MS=500 bench/run.sh 10000 5 | tee -a "$GITHUB_STEP_SUMMARY"
+
+  # JP Core end to end: fetch the JP Core package and jpfhir-terminology,
+  # start sazare on them, load the package's 76 examples, and check every
+  # JP Core search parameter plus profile and code-system validation.
+  jp-core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release
+      - name: Fetch JP Core and its terminology
+        run: bash examples/jp-core/setup.sh --terminology "$RUNNER_TEMP/jp"
+      - name: Start sazare on JP Core
+        working-directory: ${{ runner.temp }}/jp
+        run: |
+          SAZARE_PORT=18080 SAZARE_DATA_DIR="$RUNNER_TEMP/jp/data" \
+            "$GITHUB_WORKSPACE/target/release/sazare-server" > server.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -fs http://localhost:18080/health >/dev/null && break
+            sleep 1
+          done
+          grep -E 'custom profiles|SearchParameter|Terminology|Skipping' server.log
+      - name: Load examples and check searches and validation
+        run: SAZARE_URL=http://localhost:18080 bash examples/jp-core/load_examples.sh "$RUNNER_TEMP/jp"
+      - name: Server log
+        if: always()
+        run: tail -50 "$RUNNER_TEMP/jp/server.log" || true

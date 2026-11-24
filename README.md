@@ -19,7 +19,7 @@
 - **Conditional operations** — Conditional create (`If-None-Exist`), update, and delete
 - **Resource filtering** — `_summary` (5 modes) and `_elements` support
 - **Validation** — Multi-phase validation against US Core profiles; load any other IG by dropping its profiles in a `profiles/` directory
-- **JP Core** — One script loads the JP Core 1.2.0 package: its profiles validate, and all 8 of its search parameters (kana name, insured person number, prefecture, …) work — see [`examples/jp-core/`](examples/jp-core/README.md)
+- **JP Core** — One script loads the JP Core 1.2.0 package: its profiles validate, all 8 of its search parameters (kana name, insured person number, prefecture, …) work, and with `--terminology` JP code systems are checked too — see [`examples/jp-core/`](examples/jp-core/README.md)
 - **US Core conformance** — Passes the Inferno US Core v7 & v8 FHIR API test suites (`examples/us-core-seed.json` for v7, `examples/us-core-v8-seed.json` for v8; the TLS test requires an HTTPS deployment)
 - **Custom search parameters** — Drop FHIR `SearchParameter` resources into a `searchparameters/` directory; their FHIRPath `expression` is compiled by a bounded evaluator (unsupported expressions are rejected at load, never mis-evaluated)
 - **Bulk data** — NDJSON `$import`, and `$export` both synchronous and async (FHIR Bulk Data Access IG: `Prefer: respond-async` kick-off, status poll, manifest, `_type`/`_since`/`_outputFormat`)
@@ -51,7 +51,7 @@ server such as [HAPI FHIR](https://hapifhir.io/).
 | Database | Embedded SQLite, nothing to set up | External RDBMS (e.g. PostgreSQL); H2 for development |
 | FHIR versions | R4 (4.0.1) | DSTU2 – R5 |
 | Search | Common parameters, chain, `_has`, `_include`/`_revinclude`, custom SearchParameters (FHIRPath subset) | Full search, including full FHIRPath and more modifiers |
-| Validation | Declared profiles: cardinality, types, extensions, built-in bindings | Full HL7 validator |
+| Validation | Declared profiles: cardinality, types, extensions, required bindings (built-in value sets, plus an IG's complete code systems from `terminology/`) | Full HL7 validator |
 | Terminology | No `$expand` / `$validate-code` / `$lookup` | Terminology services |
 | Conformance check | Inferno US Core v7/v8 FHIR API suites pass, run in CI | Widely used reference implementation |
 
@@ -364,7 +364,9 @@ outside the subset (e.g. `resolve()` navigation, boolean logic) are rejected at
 load — never silently mis-evaluated into wrong results.
 
 **JP Core**: `bash examples/jp-core/setup.sh` downloads the JP Core package into
-`profiles/` and `searchparameters/`; all 8 of its search parameters load. See
+`profiles/` and `searchparameters/`; all 8 of its search parameters load.
+`--terminology` also fills `terminology/` (CodeSystems/ValueSets) so required
+bindings to JP code systems are validated. See
 [`examples/jp-core/README.md`](examples/jp-core/README.md) (Japanese) for
 Docker, reindexing existing data and the full parameter list.
 
@@ -663,7 +665,7 @@ CC0-1.0 — see [NOTICE.md](NOTICE.md) for provenance and attribution.
 - Webhook（`BundleCreated`・`TaskCompleted` のライフサイクルイベントを設定エンドポイントへ通知）
 - `_summary` / `_elements` によるリソースフィルタリング
 - US Core プロファイルによるバリデーション（他の IG は `profiles/` ディレクトリから読み込み）
-- JP Core — スクリプト1本で JP Core 1.2.0 を読み込み、プロファイルでの検証と8つの検索パラメータ（カナ氏名・被保険者番号・都道府県番号など）が使えます（[`examples/jp-core/`](examples/jp-core/README.md)）
+- JP Core — スクリプト1本で JP Core 1.2.0 を読み込み、プロファイルでの検証と8つの検索パラメータ（カナ氏名・被保険者番号・都道府県番号など）が使えます。`--terminology` で JP のコード体系によるコード値の検証も（[`examples/jp-core/`](examples/jp-core/README.md)）
 - US Core 適合 — Inferno US Core v7 & v8 の FHIR API テストスイートをパス（v7: `examples/us-core-seed.json` / v8: `examples/us-core-v8-seed.json`。TLS テストは HTTPS デプロイが前提）
 - カスタム検索パラメータ — FHIR `SearchParameter` を `searchparameters/` に置くと、その FHIRPath `expression` を限定評価器がコンパイル（対応外の式はロード時に拒否、誤評価しない）
 - NDJSON 形式での一括エクスポート / インポート
@@ -776,9 +778,9 @@ cargo build --release
 ### JP Core を使う
 
 ```bash
-bash examples/jp-core/setup.sh          # profiles/ と searchparameters/ に JP Core を展開
+bash examples/jp-core/setup.sh          # profiles/ と searchparameters/ に JP Core を展開（--terminology でコード体系も）
 sazare-server                           # 同じディレクトリで起動
-bash examples/jp-core/load_examples.sh  # サンプル76件を投入して JP Core の検索を試す
+bash examples/jp-core/load_examples.sh  # サンプル76件を投入して JP Core の検索と検証を確認
 curl "http://localhost:8080/Patient?jp-kana-sort=ヤマダ"
 ```
 
