@@ -14,7 +14,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --all
-      - run: cargo clippy --all -- -D warnings
+      - run: cargo clippy --all --all-targets -- -D warnings
 
   # Search benchmark on a 60k-resource synthetic dataset. Timings vary between
   # runners, so the gate is deliberately loose (500ms per query): it exists to

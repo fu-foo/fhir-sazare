@@ -170,6 +170,22 @@ pub enum ExportScope {
     Patients(Vec<String>),
 }
 
+/// Parse `_since` (a FHIR instant). Query decoding turns an unencoded `+`
+/// (`...T10:00:00+09:00`) into a space; an instant never contains one, so the
+/// `+` is put back first.
+fn parse_since(since: &Option<String>) -> Result<Option<chrono::DateTime<chrono::FixedOffset>>, String> {
+    match since.as_deref() {
+        None => Ok(None),
+        Some(s) => chrono::DateTime::parse_from_rfc3339(&s.replace(' ', "+"))
+            .map(Some)
+            .map_err(|_| {
+                format!(
+                    "Invalid _since '{s}': expected a FHIR instant such as 2024-01-01T00:00:00Z or 2024-01-01T09:00:00+09:00"
+                )
+            }),
+    }
+}
+
 /// Build per-type NDJSON for the requested scope, applying `_type` and `_since`.
 pub fn build_export_files(
     state: &AppState,
@@ -177,11 +193,7 @@ pub fn build_export_files(
     type_filter: &Option<Vec<String>>,
     since: &Option<String>,
 ) -> Result<Vec<(String, String)>, String> {
-    // Query decoding turns an unencoded `+` (`...T10:00:00+09:00`) into a
-    // space; an instant never contains one, so put the `+` back.
-    let since_dt = since
-        .as_deref()
-        .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s.replace(' ', "+")).ok());
+    let since_dt = parse_since(since)?;
 
     let rows = state
         .store
@@ -306,6 +318,12 @@ async fn run_export(
             )
                 .into_response();
         }
+    }
+
+    // Reject a malformed _since up front: silently ignoring it would export
+    // everything, which looks like success.
+    if let Err(e) = parse_since(&params._since) {
+        return (StatusCode::BAD_REQUEST, Json(op_outcome("invalid", e))).into_response();
     }
 
     let type_filter = parse_type_filter(&params);

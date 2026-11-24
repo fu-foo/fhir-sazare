@@ -9,6 +9,8 @@ use std::collections::HashSet;
 fn split_prefix(param_type: &SearchParamType, value: &str) -> (Option<String>, String) {
     if *param_type == SearchParamType::Date {
         sazare_core::search_param::parse_date_prefix(value)
+    } else if *param_type == SearchParamType::Number {
+        sazare_core::search_param::parse_number_prefix(value)
     } else {
         (None, value.to_string())
     }
@@ -217,13 +219,16 @@ impl<'a> SearchExecutor<'a> {
                     .map_err(|e| e.to_string())
             }
             SearchParamType::Number => {
-                // Number search isn't implemented. Return an explicit error
-                // rather than silently matching nothing (which looks like a
-                // valid "no results" to the client).
-                Err(format!(
-                    "Number search is not supported for parameter '{}'",
-                    param.name
-                ))
+                if value.parse::<f64>().is_err() {
+                    return Err(format!(
+                        "Invalid number '{}' for parameter '{}'",
+                        value, param.name
+                    ));
+                }
+                let prefix = param.prefix.as_deref().unwrap_or("eq");
+                self.index
+                    .search_number_with_prefix(resource_type, &param.name, prefix, value)
+                    .map_err(|e| e.to_string())
             }
         }
     }

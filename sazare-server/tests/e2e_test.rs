@@ -81,14 +81,16 @@ async fn test_webhook_task_completed_fires() {
 
     // A sazare server with webhooks enabled, pointing at the sink.
     let temp_dir = TempDir::new().unwrap();
-    let mut config = ServerConfig::default();
-    config.webhook = WebhookSettings {
-        enabled: true,
-        endpoints: vec![WebhookEndpoint {
-            url: sink_url,
-            events: vec!["TaskCompleted".to_string()],
-            headers: Default::default(),
-        }],
+    let config = ServerConfig {
+        webhook: WebhookSettings {
+            enabled: true,
+            endpoints: vec![WebhookEndpoint {
+                url: sink_url,
+                events: vec!["TaskCompleted".to_string()],
+                headers: Default::default(),
+            }],
+        },
+        ..Default::default()
     };
     let webhook = Arc::new(sazare_server::webhook::WebhookManager::new(config.webhook.clone()));
     let state = Arc::new(AppState {
@@ -340,6 +342,25 @@ async fn test_bulk_export_sync_fallback_and_bad_format() {
         .await
         .unwrap();
     assert_eq!(resp.status(), 400);
+
+    // A malformed _since is rejected (it used to be ignored, exporting
+    // everything), in both the sync and async paths.
+    for prefer in [None, Some("respond-async")] {
+        let mut req = client.get(format!("{}/$export?_since=yesterday", base_url));
+        if let Some(p) = prefer {
+            req = req.header("Prefer", p);
+        }
+        assert_eq!(req.send().await.unwrap().status(), 400);
+    }
+
+    // An unencoded `+09:00` offset still parses: a future cutoff exports nothing.
+    let resp = client
+        .get(format!("{}/$export?_since=2999-01-01T00:00:00+09:00", base_url))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    assert!(resp.text().await.unwrap().trim().is_empty());
 }
 
 // Test RSA key (RS384) for SMART Backend Services: the private PEM signs the

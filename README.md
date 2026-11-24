@@ -359,7 +359,9 @@ The evaluator covers path navigation, `|` unions, choice types (`as` /
 filters (`where(resolve() is Patient)`) and `[n]` indexers — 1479 of the 1480
 expressions in base R4 plus US Core 8.0.0. Results are indexed by type the
 same way as built-in parameters (HumanName/Address parts for string, Period
-ranges for date, bare ids for reference, booleans for token). Expressions
+ranges for date, bare ids for reference, booleans for token). Supported types
+are `string`, `token`, `date`, `reference` and `number` (`gt`/`lt`/`ap`/… with
+FHIR precision: `probability=0.8` matches [0.75, 0.85)). Expressions
 outside the subset (e.g. `resolve()` navigation, boolean logic) are rejected at
 load — never silently mis-evaluated into wrong results.
 

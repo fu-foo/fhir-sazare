@@ -169,7 +169,12 @@ impl IndexBuilder {
                         Self::push_token_node(node, name, param_type, indices);
                     }
                 }
-                SearchParamType::Number => {}
+                SearchParamType::Number => {
+                    // Keep the JSON text (e.g. "0.80") so precision survives.
+                    if node.is_number() {
+                        push(node.to_string(), None);
+                    }
+                }
             }
         }
         indices.extend(

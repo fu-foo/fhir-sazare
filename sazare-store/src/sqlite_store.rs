@@ -306,6 +306,14 @@ impl SqliteStore {
         Ok(versions)
     }
 
+    /// True if the store holds at least one resource (row), without loading any.
+    pub fn has_any(&self) -> Result<bool> {
+        let conn = self.reader();
+        let exists: bool =
+            conn.query_row("SELECT EXISTS(SELECT 1 FROM resources)", [], |row| row.get(0))?;
+        Ok(exists)
+    }
+
     /// Get resource counts by type
     pub fn count_by_type(&self) -> Result<Vec<(String, i64)>> {
         let conn = self.reader();
@@ -498,6 +506,14 @@ mod tests {
 
         let retrieved = store.get("Patient", "123").unwrap();
         assert_eq!(retrieved, Some(data.to_vec()));
+    }
+
+    #[test]
+    fn test_has_any() {
+        let store = SqliteStore::open(":memory:").unwrap();
+        assert!(!store.has_any().unwrap());
+        store.put("Patient", "1", br#"{"resourceType":"Patient","id":"1"}"#).unwrap();
+        assert!(store.has_any().unwrap());
     }
 
     #[test]

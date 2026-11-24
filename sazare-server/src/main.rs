@@ -152,10 +152,8 @@ async fn main() {
     // following a schema change like added common params _id/_profile/_tag/etc.)
     match index.row_count() {
         Ok(0) => {
-            let store_has_data = store
-                .list_all(None)
-                .map(|v| !v.is_empty())
-                .unwrap_or(false);
+            // An existence check, not a full load of every resource.
+            let store_has_data = store.has_any().unwrap_or(false);
             if store_has_data {
                 tracing::info!("Search index is empty; rebuilding from resource store...");
                 match perform_reindex(&store, &index, &search_param_registry) {

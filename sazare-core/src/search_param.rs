@@ -231,6 +231,16 @@ impl SearchQuery {
             // Parse date prefix (ge, le, gt, lt, eq)
             let (prefix, actual_value) = if param_type == SearchParamType::Date {
                 parse_date_prefix(&decode_query_value(raw_value, true)?)
+            } else if param_type == SearchParamType::Number {
+                let (prefix, number) = parse_number_prefix(&value);
+                // Reject at parse time (a 400), comma-separated alternatives
+                // each checked; `:missing` takes true/false instead.
+                if modifier.as_deref() != Some("missing")
+                    && number.split(',').any(|n| n.trim().parse::<f64>().is_err())
+                {
+                    return Err(format!("Invalid number '{value}' for parameter '{param_name}'"));
+                }
+                (prefix, number)
             } else {
                 (None, value.to_string())
             };
@@ -375,6 +385,20 @@ fn decode_query_value(raw: &str, plus_is_literal: bool) -> Result<String, String
         &spaced
     };
     urlencoding::decode(input).map(|s| s.into_owned()).map_err(|e| e.to_string())
+}
+
+/// Parse a number prefix (`gt5.4` → (Some("gt"), "5.4")); defaults to `eq`.
+/// A prefix only counts if a number follows (digit, sign or decimal point).
+pub fn parse_number_prefix(value: &str) -> (Option<String>, String) {
+    const PREFIXES: [&str; 9] = ["eq", "ne", "gt", "lt", "ge", "le", "sa", "eb", "ap"];
+    for prefix in PREFIXES {
+        if let Some(rest) = value.strip_prefix(prefix)
+            && rest.chars().next().is_some_and(|c| c.is_ascii_digit() || matches!(c, '-' | '+' | '.'))
+        {
+            return (Some(prefix.to_string()), rest.to_string());
+        }
+    }
+    (Some("eq".to_string()), value.to_string())
 }
 
 /// Parse date prefix from value (ge2020-01-01 -> (Some("ge"), "2020-01-01")).
@@ -659,6 +683,34 @@ mod tests {
         let (prefix, val) = parse_date_prefix("2024-01-01");
         assert_eq!(prefix.as_deref(), Some("eq"));
         assert_eq!(val, "2024-01-01");
+    }
+
+    #[test]
+    fn test_number_prefix_parsing() {
+        assert_eq!(parse_number_prefix("gt5.4"), (Some("gt".into()), "5.4".into()));
+        assert_eq!(parse_number_prefix("lt-1"), (Some("lt".into()), "-1".into()));
+        assert_eq!(parse_number_prefix("ap.5"), (Some("ap".into()), ".5".into()));
+        assert_eq!(parse_number_prefix("100"), (Some("eq".into()), "100".into()));
+        // Not a prefix unless a number follows.
+        assert_eq!(parse_number_prefix("gtx"), (Some("eq".into()), "gtx".into()));
+    }
+
+    #[test]
+    fn test_invalid_number_value_is_a_parse_error() {
+        let mut reg = SearchParamRegistry::new();
+        reg.register_search_parameter(&serde_json::json!({
+            "resourceType": "SearchParameter", "code": "probability",
+            "base": ["RiskAssessment"], "type": "number",
+            "expression": "RiskAssessment.prediction.probability.ofType(decimal)"
+        }))
+        .unwrap();
+        let parse = |q: &str| SearchQuery::parse_with_registry(q, Some("RiskAssessment"), &reg);
+        assert!(parse("probability=abc").is_err());
+        assert!(parse("probability=gt0.2,abc").is_err());
+        let q = parse("probability=gt0.2").unwrap();
+        assert_eq!(q.parameters[0].param_type, SearchParamType::Number);
+        assert_eq!(q.parameters[0].prefix.as_deref(), Some("gt"));
+        assert!(parse("probability:missing=true").is_ok());
     }
 
     #[test]

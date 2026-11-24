@@ -163,6 +163,13 @@ impl SearchIndex {
         CREATE INDEX IF NOT EXISTS idx_sp_date
             ON search_index(resource_type, param_name, value_date_start, value_date_end, resource_id);
         "#,
+        // v3 — number search parameters (custom SearchParameters of type
+        // `number`; they were never indexed before, so nothing to backfill).
+        r#"
+        ALTER TABLE search_index ADD COLUMN value_number REAL;
+        CREATE INDEX IF NOT EXISTS idx_sp_number
+            ON search_index(resource_type, param_name, value_number, resource_id);
+        "#,
     ];
 
     /// Open the index (create if not exists)
@@ -214,14 +221,19 @@ impl SearchIndex {
         } else {
             (None, None)
         };
+        let number: Option<f64> = if param_type == "number" {
+            value_string.and_then(|s| s.parse::<f64>().ok()).filter(|n| n.is_finite())
+        } else {
+            None
+        };
 
         self.conn.execute(
             r#"
             INSERT OR REPLACE INTO search_index
             (resource_type, resource_id, param_name, param_type,
              value_string, value_string_lower, value_system,
-             value_date_start, value_date_end)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+             value_date_start, value_date_end, value_number)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
             "#,
             params![
                 resource_type,
@@ -233,6 +245,7 @@ impl SearchIndex {
                 value_system,
                 date_start,
                 date_end,
+                number,
             ],
         )?;
 
@@ -564,6 +577,54 @@ impl SearchIndex {
         let mut stmt = self.conn.prepare(&query)?;
         collect_distinct_ids(&mut stmt, params![resource_type, param_name, qs, qe])
     }
+
+    /// Number search with FHIR prefixes. `eq` (and `ne`) honour the query's
+    /// precision: `100` matches [99.5, 100.5), `100.00` matches
+    /// [99.995, 100.005). `ap` is ±10% of the value. `sa`/`eb` behave like
+    /// `gt`/`lt` for a single number.
+    pub fn search_number_with_prefix(
+        &self,
+        resource_type: &str,
+        param_name: &str,
+        prefix: &str,
+        value: &str,
+    ) -> Result<Vec<String>> {
+        let Some((v, half)) = number_with_precision(value) else {
+            return Ok(Vec::new());
+        };
+        let (lo, hi, cond) = match prefix {
+            "ne" => (v - half, v + half, "(value_number < ?3 OR value_number >= ?4)"),
+            "gt" | "sa" => (v, v, "value_number > ?3 AND ?4 = ?4"),
+            "ge" => (v, v, "value_number >= ?3 AND ?4 = ?4"),
+            "lt" | "eb" => (v, v, "value_number < ?3 AND ?4 = ?4"),
+            "le" => (v, v, "value_number <= ?3 AND ?4 = ?4"),
+            "ap" => {
+                let d = (v.abs() * 0.1).max(half);
+                (v - d, v + d, "value_number >= ?3 AND value_number <= ?4")
+            }
+            _ => (v - half, v + half, "value_number >= ?3 AND value_number < ?4"),
+        };
+        let query = format!(
+            "SELECT resource_id FROM search_index
+             WHERE resource_type = ?1 AND param_name = ?2
+               AND value_number IS NOT NULL AND ({cond})"
+        );
+        let mut stmt = self.conn.prepare(&query)?;
+        collect_distinct_ids(&mut stmt, params![resource_type, param_name, lo, hi])
+    }
+}
+
+/// Parse a FHIR number search value into (value, half of its precision step):
+/// `100` → (100, 0.5), `100.25` → (100.25, 0.005), `1e2` → (100, 50).
+fn number_with_precision(value: &str) -> Option<(f64, f64)> {
+    let v: f64 = value.parse().ok().filter(|n: &f64| n.is_finite())?;
+    let lower = value.to_ascii_lowercase();
+    let (mantissa, exp) = match lower.split_once('e') {
+        Some((m, e)) => (m, e.parse::<i32>().ok()?),
+        None => (lower.as_str(), 0),
+    };
+    let decimals = mantissa.split_once('.').map_or(0, |(_, frac)| frac.len() as i32);
+    Some((v, 0.5 * 10f64.powi(exp - decimals)))
 }
 
 #[cfg(test)]
@@ -805,6 +866,39 @@ mod tests {
         index.add_index("Patient", "1", "given", "string", Some("Annabel"), None).unwrap();
         let r = index.search_string("Patient", "given", "ann", StringMatch::Prefix).unwrap();
         assert_eq!(r, vec!["1"]);
+    }
+
+    #[test]
+    fn test_number_search_prefixes_and_precision() {
+        let index = SearchIndex::open(":memory:").unwrap();
+        for (id, v) in [("a", "0.8"), ("b", "100"), ("c", "100.4"), ("d", "105"), ("e", "-3")] {
+            index.add_index("RiskAssessment", id, "probability", "number", Some(v), None).unwrap();
+        }
+        let q = |prefix: &str, v: &str| {
+            let mut ids = index.search_number_with_prefix("RiskAssessment", "probability", prefix, v).unwrap();
+            ids.sort();
+            ids
+        };
+        // eq honours the query's precision.
+        assert_eq!(q("eq", "100"), vec!["b", "c"]);
+        assert_eq!(q("eq", "100.0"), vec!["b"]);
+        assert_eq!(q("eq", "0.80"), vec!["a"]);
+        assert_eq!(q("ne", "100"), vec!["a", "d", "e"]);
+        assert_eq!(q("gt", "100"), vec!["c", "d"]);
+        assert_eq!(q("ge", "100"), vec!["b", "c", "d"]);
+        assert_eq!(q("lt", "0"), vec!["e"]);
+        assert_eq!(q("le", "0.8"), vec!["a", "e"]);
+        assert_eq!(q("ap", "100"), vec!["b", "c", "d"]);
+        assert_eq!(q("eq", "1e2"), vec!["b", "c", "d"]);
+        assert!(q("eq", "abc").is_empty());
+    }
+
+    #[test]
+    fn test_number_with_precision() {
+        assert_eq!(number_with_precision("100"), Some((100.0, 0.5)));
+        assert_eq!(number_with_precision("-2.50"), Some((-2.5, 0.005)));
+        assert_eq!(number_with_precision("1e2"), Some((100.0, 50.0)));
+        assert_eq!(number_with_precision("NaN"), None);
     }
 
     #[test]
