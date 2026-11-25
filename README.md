@@ -614,6 +614,25 @@ Three separate SQLite databases for clean separation of concerns:
 - **`search_index.fts.sqlite`** — Full text for `_text` / `_content` (derived data, like the index; kept in its own file because FTS writes in the shared file made every write ~10× slower)
 - **`audit.sqlite`** — Audit log entries
 
+### Monitoring
+
+`GET /metrics` serves Prometheus metrics: requests and latency by method,
+route template and status (`sazare_http_requests_total`,
+`sazare_http_request_duration_seconds`), stored resources by type
+(`sazare_resources`), database file sizes (`sazare_database_size_bytes`),
+version and uptime. With auth enabled it needs operator credentials (an API
+key, a Basic user or a `system/*.write` token), since it reveals data volumes:
+
+```yaml
+# prometheus.yml
+scrape_configs:
+  - job_name: sazare
+    authorization: { credentials: "<api key>" }
+    static_configs: [{ targets: ["sazare:8080"] }]
+```
+
+`GET /health` remains the unauthenticated liveness check.
+
 ### Backup and restore
 
 `--backup <dir>` writes a consistent copy of all three databases into `<dir>`

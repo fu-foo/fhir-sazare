@@ -12,6 +12,7 @@ pub mod config;
 pub mod dashboard;
 pub mod demo;
 pub mod handlers;
+pub mod metrics;
 pub mod plugins;
 pub mod smart;
 pub mod subscription;
@@ -102,6 +103,7 @@ pub async fn conditional_create_check(
 
 /// Build the application router with all routes and middleware
 pub fn build_router(state: Arc<AppState>) -> Router {
+    metrics::mark_start();
     let max_request_bytes = state.config.server.max_request_mb.saturating_mul(1024 * 1024);
     let cors = CorsLayer::new()
         .allow_origin(Any)
@@ -130,6 +132,8 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .merge(Router::new()
         // Health check
         .route("/health", get(handlers::metadata::health_check))
+        // Prometheus metrics (operators only when auth is enabled)
+        .route("/metrics", get(metrics::metrics))
         // Dashboard
         .route("/", get(dashboard::dashboard_page).post(bundle::process_bundle))
         .route("/$status", get(dashboard::status_api))
@@ -189,6 +193,8 @@ pub fn build_router(state: Arc<AppState>) -> Router {
             state.clone(),
             auth::auth_middleware,
         ))
+        // Outside auth, so refused requests are counted too.
+        .layer(axum::middleware::from_fn(metrics::track))
         // One configurable cap for every request body. axum's extractors also
         // enforce their own 2MB default, which silently overrode this layer
         // (Synthea bundles and $import NDJSON routinely exceed 2MB), so that

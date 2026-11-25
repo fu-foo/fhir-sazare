@@ -1764,3 +1764,28 @@ async fn test_reindex_records_the_parameter_fingerprint() {
     let stored = index.get_meta(sazare_server::handlers::reindex::FINGERPRINT_KEY).unwrap().unwrap();
     assert_eq!(stored, sazare_server::handlers::reindex::index_fingerprint(&SearchParamRegistry::new()));
 }
+
+#[tokio::test]
+async fn test_metrics_prometheus_text() {
+    let (base_url, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    create(&client, &base_url, "Patient", &json!({"resourceType": "Patient"})).await;
+    client.get(format!("{}/Patient/does-not-exist", base_url)).send().await.unwrap();
+    let resp = client.get(format!("{}/metrics", base_url)).send().await.unwrap();
+    assert_eq!(resp.status(), 200);
+    assert!(resp.headers()["content-type"].to_str().unwrap().starts_with("text/plain"));
+    let body = resp.text().await.unwrap();
+    for want in [
+        "sazare_build_info{version=",
+        // Labelled by route template, not the concrete id. (Counters are
+        // process-wide and other tests run in parallel, so no exact counts.)
+        "sazare_http_requests_total{method=\"GET\",route=\"/{resource_type}/{id}\",status=\"404\"} ",
+        "sazare_http_requests_total{method=\"POST\",route=\"/{resource_type}\",status=\"201\"} ",
+        "sazare_http_request_duration_seconds_bucket{method=\"GET\",route=\"/{resource_type}/{id}\",le=\"+Inf\"} ",
+        "sazare_resources{type=\"Patient\"} 1",
+        "sazare_database_size_bytes{db=\"resources\"}",
+    ] {
+        assert!(body.contains(want), "missing {want} in:\n{body}");
+    }
+    assert!(!body.contains("does-not-exist"), "concrete ids must not become labels");
+}

@@ -216,6 +216,9 @@ async fn admin_operations_require_an_operator() {
     }
     let system = jwt("system/*.write", None);
     assert_eq!(c.send(reqwest::Method::POST, "/$reindex", &system, None).await.0, 200);
+    // Metrics reveal resource counts: operators only.
+    assert_eq!(c.get("/metrics", &t).await.0, 403);
+    assert_eq!(c.get("/metrics", ADMIN_KEY).await.0, 200);
     assert_eq!(c.send(reqwest::Method::POST, "/$reindex", ADMIN_KEY, None).await.0, 200);
 }
 

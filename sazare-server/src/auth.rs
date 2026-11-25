@@ -265,7 +265,7 @@ pub async fn auth_middleware(
 
     // Server administration (rebuilding the index, loading sample data) is
     // for operators, not for app tokens.
-    if matches!(path, "/$reindex" | "/$demo") && !is_admin(&auth_user) {
+    if matches!(path, "/$reindex" | "/$demo" | "/metrics") && !is_admin(&auth_user) {
         let outcome = OperationOutcome::forbidden(
             "This operation requires an API key, Basic auth, or a token with a system/*.write scope",
         );
