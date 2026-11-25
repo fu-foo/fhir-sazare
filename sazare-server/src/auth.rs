@@ -215,6 +215,32 @@ pub async fn auth_middleware(
         return Err((StatusCode::UNAUTHORIZED, axum::Json(outcome)).into_response());
     };
 
+    // CSRF: browsers resend cached Basic credentials automatically, even on a
+    // request another site triggers. Refuse state-changing requests the
+    // browser itself marks as cross-site (non-browser clients send no
+    // Sec-Fetch-Site and are unaffected; the dashboard is same-origin).
+    let unsafe_method = !matches!(*request.method(), Method::GET | Method::HEAD | Method::OPTIONS);
+    if unsafe_method
+        && auth_user.auth_type == AuthType::BasicAuth
+        && request
+            .headers()
+            .get("sec-fetch-site")
+            .and_then(|v| v.to_str().ok())
+            == Some("cross-site")
+    {
+        let outcome = OperationOutcome::forbidden("Cross-site request refused");
+        return Err((StatusCode::FORBIDDEN, axum::Json(outcome)).into_response());
+    }
+
+    // Server administration (rebuilding the index, loading sample data) is
+    // for operators, not for app tokens.
+    if matches!(path, "/$reindex" | "/$demo") && !is_admin(&auth_user) {
+        let outcome = OperationOutcome::forbidden(
+            "This operation requires an API key, Basic auth, or a token with a system/*.write scope",
+        );
+        return Err((StatusCode::FORBIDDEN, axum::Json(outcome)).into_response());
+    }
+
     // Scope check for JWT users
     if auth_user.auth_type == AuthType::Jwt {
         let method = request.method().clone();
@@ -412,6 +438,18 @@ fn authenticate_basic(config: &ServerConfig, auth_header: &str) -> Result<AuthUs
 
     let outcome = OperationOutcome::unauthorized("Invalid username or password");
     Err((StatusCode::UNAUTHORIZED, axum::Json(outcome)).into_response())
+}
+
+/// Operators: API keys and Basic users (configured by the operator), or a JWT
+/// with a system-level write scope on all resources.
+pub fn is_admin(user: &AuthUser) -> bool {
+    match user.auth_type {
+        AuthType::ApiKey | AuthType::BasicAuth => true,
+        AuthType::Jwt => user
+            .scopes
+            .iter()
+            .any(|s| matches!(s.as_str(), "system/*.write" | "system/*.*" | "system/*.cruds")),
+    }
 }
 
 /// Writes a patient-scoped (patient app) token may not make even when its

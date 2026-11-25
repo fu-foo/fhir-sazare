@@ -24,6 +24,9 @@ auth:
   api_keys:
     - name: admin
       key: {ADMIN_KEY}
+  basic_auth:
+    - username: ops
+      password: ops-password
   jwt:
     secret: {JWT_SECRET}
 "#
@@ -201,4 +204,39 @@ async fn subscription_endpoint_must_be_http_url() {
         let (s, _) = c.send(reqwest::Method::POST, "/Subscription", ADMIN_KEY, Some(subscription(bad))).await;
         assert_eq!(s, 400, "{bad}");
     }
+}
+
+#[tokio::test]
+async fn admin_operations_require_an_operator() {
+    let (c, t, _d) = two_patients().await;
+    for path in ["/$reindex", "/$demo"] {
+        assert_eq!(c.send(reqwest::Method::POST, path, &t, None).await.0, 403, "{path} patient");
+        let user = jwt("user/*.read user/*.write", None);
+        assert_eq!(c.send(reqwest::Method::POST, path, &user, None).await.0, 403, "{path} user");
+    }
+    let system = jwt("system/*.write", None);
+    assert_eq!(c.send(reqwest::Method::POST, "/$reindex", &system, None).await.0, 200);
+    assert_eq!(c.send(reqwest::Method::POST, "/$reindex", ADMIN_KEY, None).await.0, 200);
+}
+
+#[tokio::test]
+async fn cross_site_basic_auth_writes_are_refused() {
+    let (c, _t, _d) = two_patients().await;
+    let post = |site: Option<&'static str>| {
+        let mut r = c
+            .http
+            .post(format!("{}/$reindex", c.base))
+            .basic_auth("ops", Some("ops-password"));
+        if let Some(s) = site {
+            r = r.header("Sec-Fetch-Site", s);
+        }
+        r.send()
+    };
+    assert_eq!(post(Some("cross-site")).await.unwrap().status().as_u16(), 403);
+    assert_eq!(post(Some("same-origin")).await.unwrap().status().as_u16(), 200);
+    assert_eq!(post(None).await.unwrap().status().as_u16(), 200); // curl & co.
+    // Reads are unaffected.
+    let r = c.http.get(format!("{}/Patient/p1", c.base)).basic_auth("ops", Some("ops-password"))
+        .header("Sec-Fetch-Site", "cross-site").send().await.unwrap();
+    assert_eq!(r.status().as_u16(), 200);
 }
