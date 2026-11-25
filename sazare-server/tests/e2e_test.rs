@@ -1185,6 +1185,10 @@ async fn test_websocket_subscription_ping() {
 
     assert_eq!(next_text(&mut ws).await, format!("bound {sub_id}"));
 
+    // Binding to an id that isn't a websocket Subscription is refused.
+    ws.send(Message::text("bind no-such-subscription")).await.unwrap();
+    assert!(next_text(&mut ws).await.starts_with("error no-such-subscription"));
+
     // A matching create triggers a ping.
     create(
         &client,

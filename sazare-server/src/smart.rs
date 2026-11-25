@@ -237,11 +237,17 @@ pub async fn token(State(state): State<Arc<AppState>>, Form(req): Form<TokenRequ
         .token_endpoint
         .clone()
         .or_else(|| jwt_cfg.issuer.as_ref().map(|i| format!("{i}/token")));
-    if let Some(aud) = &token_endpoint {
-        validation.set_audience(&[aud]);
-    } else {
-        validation.validate_aud = false;
-    }
+    // The assertion's `aud` must be this token endpoint; without a known
+    // endpoint an assertion made for any other server would be accepted, so
+    // refuse instead of skipping the check.
+    let Some(aud) = &token_endpoint else {
+        return oauth_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "server_error",
+            "Token endpoint URL unknown: set auth.smart.token_endpoint or auth.jwt.issuer",
+        );
+    };
+    validation.set_audience(&[aud]);
     validation.set_required_spec_claims(&["exp"]);
     let assertion_claims = match jsonwebtoken::decode::<Value>(assertion, &decoding_key, &validation) {
         Ok(data) => data.claims,

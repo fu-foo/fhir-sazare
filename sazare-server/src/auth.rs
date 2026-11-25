@@ -171,6 +171,32 @@ pub async fn auth_middleware(
         || path == "/$status" || path.starts_with("/$browse")
         || path == "/ui" || path.starts_with("/ui/");
 
+    let client_ip = request
+        .extensions()
+        .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+        .map(|ci| ci.0.ip());
+
+    // Brute-force guard: an address with too many recent failed logins is
+    // refused for the rest of the window.
+    if let Some(ip) = client_ip
+        && failed_logins::is_locked(ip)
+    {
+        let outcome = OperationOutcome::new(
+            sazare_core::operation_outcome::IssueSeverity::Error,
+            sazare_core::operation_outcome::IssueType::Throttled,
+            "Too many failed authentication attempts; try again later",
+        );
+        return Err((StatusCode::TOO_MANY_REQUESTS, axum::Json(outcome)).into_response());
+    }
+    let ip_str = client_ip.map(|ip| ip.to_string()).unwrap_or_else(|| "unknown".to_string());
+    let fail = |resp: Response| -> Response {
+        audit::log_auth_attempt(&ip_str, None, false);
+        if let Some(ip) = client_ip {
+            failed_logins::record(ip);
+        }
+        resp
+    };
+
     // Extract authorization header
     let auth_header = request
         .headers()
@@ -195,11 +221,13 @@ pub async fn auth_middleware(
         // Dashboard only accepts Basic auth (browser dialog)
         if auth_header.starts_with("Basic ") {
             authenticate_basic(&state.config, auth_header).map_err(|_| {
-                Response::builder()
-                    .status(StatusCode::UNAUTHORIZED)
-                    .header(header::WWW_AUTHENTICATE, "Basic realm=\"sazare\"")
-                    .body(Body::empty())
-                    .unwrap()
+                fail(
+                    Response::builder()
+                        .status(StatusCode::UNAUTHORIZED)
+                        .header(header::WWW_AUTHENTICATE, "Basic realm=\"sazare\"")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
             })?
         } else {
             return Err(Response::builder()
@@ -209,9 +237,9 @@ pub async fn auth_middleware(
                 .unwrap());
         }
     } else if auth_header.starts_with("Bearer ") {
-        authenticate_bearer(&state, auth_header).await?
+        authenticate_bearer(&state, auth_header).await.map_err(fail)?
     } else if auth_header.starts_with("Basic ") {
-        authenticate_basic(&state.config, auth_header)?
+        authenticate_basic(&state.config, auth_header).map_err(fail)?
     } else {
         let outcome =
             OperationOutcome::unauthorized("Invalid Authorization header format. Use 'Bearer <token>' or 'Basic <credentials>'");
@@ -264,12 +292,7 @@ pub async fn auth_middleware(
     }
 
     // Log successful authentication
-    let client_ip = request
-        .extensions()
-        .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
-        .map(|ci| ci.0.ip().to_string())
-        .unwrap_or_else(|| "unknown".to_string());
-    audit::log_auth_attempt(&client_ip, Some(&auth_user.user_id), true);
+    audit::log_auth_attempt(&ip_str, Some(&auth_user.user_id), true);
 
     // Insert auth user into request extensions
     request.extensions_mut().insert(auth_user);
@@ -443,6 +466,50 @@ fn authenticate_basic(config: &ServerConfig, auth_header: &str) -> Result<AuthUs
     Err((StatusCode::UNAUTHORIZED, axum::Json(outcome)).into_response())
 }
 
+/// Per-address failed-login counter: `MAX_FAILURES` failures within `WINDOW`
+/// lock the address out until the window ends. In memory, per process.
+///
+/// Loopback is never locked: behind a reverse proxy every request comes from
+/// 127.0.0.1, and locking it would lock out every user (rate-limit at the
+/// proxy instead). Failures are still audit-logged.
+mod failed_logins {
+    use std::collections::HashMap;
+    use std::net::IpAddr;
+    use std::sync::{Mutex, OnceLock};
+    use std::time::{Duration, Instant};
+
+    pub const MAX_FAILURES: u32 = 10;
+    pub const WINDOW: Duration = Duration::from_secs(60);
+
+    fn table() -> &'static Mutex<HashMap<IpAddr, (u32, Instant)>> {
+        static T: OnceLock<Mutex<HashMap<IpAddr, (u32, Instant)>>> = OnceLock::new();
+        T.get_or_init(|| Mutex::new(HashMap::new()))
+    }
+
+    pub fn record(ip: IpAddr) {
+        if ip.is_loopback() {
+            return;
+        }
+        let mut t = table().lock().unwrap_or_else(|e| e.into_inner());
+        let now = Instant::now();
+        // Keep the table bounded: drop expired windows when it grows.
+        if t.len() > 10_000 {
+            t.retain(|_, (_, start)| now.duration_since(*start) < WINDOW);
+        }
+        let e = t.entry(ip).or_insert((0, now));
+        if now.duration_since(e.1) >= WINDOW {
+            *e = (0, now);
+        }
+        e.0 += 1;
+    }
+
+    pub fn is_locked(ip: IpAddr) -> bool {
+        let t = table().lock().unwrap_or_else(|e| e.into_inner());
+        t.get(&ip)
+            .is_some_and(|(n, start)| *n >= MAX_FAILURES && start.elapsed() < WINDOW)
+    }
+}
+
 /// Operators: API keys and Basic users (configured by the operator), or a JWT
 /// with a system-level write scope on all resources.
 pub fn is_admin(user: &AuthUser) -> bool {
@@ -552,6 +619,23 @@ pub fn check_scope(scopes: &[String], resource_type: &str, action: &str) -> bool
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_failed_logins_lock_after_limit_but_never_loopback() {
+        let ip: std::net::IpAddr = "203.0.113.77".parse().unwrap();
+        for _ in 0..failed_logins::MAX_FAILURES - 1 {
+            failed_logins::record(ip);
+        }
+        assert!(!failed_logins::is_locked(ip));
+        failed_logins::record(ip);
+        assert!(failed_logins::is_locked(ip));
+
+        let lo: std::net::IpAddr = "127.0.0.1".parse().unwrap();
+        for _ in 0..failed_logins::MAX_FAILURES * 2 {
+            failed_logins::record(lo);
+        }
+        assert!(!failed_logins::is_locked(lo));
+    }
     use crate::config::{ApiKey, AuthSettings, BasicAuthUser, JwtSettings};
 
     fn test_config() -> ServerConfig {

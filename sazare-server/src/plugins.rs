@@ -23,13 +23,21 @@ use crate::AppState;
 #[derive(Clone)]
 pub struct PluginName(pub String);
 
-/// Validate plugin name: only [a-zA-Z0-9_-], 1..=64 characters.
+/// Validate plugin name: only [a-zA-Z0-9_-], 1..=64 characters, and not a
+/// name the server's own routes use. A plugin's path is auth-exempt, so a
+/// plugin named like a FHIR resource type (PascalCase letters only, e.g.
+/// `Patient`) or a server endpoint would expose that API without auth.
 fn is_valid_plugin_name(name: &str) -> bool {
+    const RESERVED: &[&str] = &["metadata", "health", "token", "ws", "ui", "_history", "_search"];
+    let could_be_resource_type = name.starts_with(|c: char| c.is_ascii_uppercase())
+        && name.chars().all(|c| c.is_ascii_alphabetic());
     !name.is_empty()
         && name.len() <= 64
         && name
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        && !could_be_resource_type
+        && !RESERVED.contains(&name)
 }
 
 /// Resolve a plugin's base directory with security checks.
@@ -316,6 +324,11 @@ mod tests {
         assert!(!is_valid_plugin_name("my/plugin"));
         assert!(!is_valid_plugin_name("my plugin"));
         assert!(!is_valid_plugin_name(&"a".repeat(65)));
+        // Names that would shadow (and un-authenticate) server routes.
+        assert!(!is_valid_plugin_name("Patient"));
+        assert!(!is_valid_plugin_name("Observation"));
+        assert!(!is_valid_plugin_name("metadata"));
+        assert!(!is_valid_plugin_name("ws"));
     }
 
     #[test]

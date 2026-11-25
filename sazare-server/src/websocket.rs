@@ -85,6 +85,23 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
                     Some(Ok(Message::Text(text))) => {
                         if let Some(sub_id) = text.trim().strip_prefix("bind ") {
                             let sub_id = sub_id.trim().to_string();
+                            // Only an existing websocket-channel Subscription
+                            // can be bound — not an arbitrary id.
+                            let is_ws_subscription = state
+                                .store
+                                .get("Subscription", &sub_id)
+                                .ok()
+                                .flatten()
+                                .and_then(|d| serde_json::from_slice::<serde_json::Value>(&d).ok())
+                                .is_some_and(|s| {
+                                    s.pointer("/channel/type").and_then(|t| t.as_str()) == Some("websocket")
+                                });
+                            if !is_ws_subscription {
+                                let _ = tx.send(Message::Text(
+                                    format!("error {sub_id}: no websocket Subscription with this id").into(),
+                                ));
+                                continue;
+                            }
                             state.ws_registry.bind(&sub_id, tx.clone()).await;
                             let _ = tx.send(Message::Text(format!("bound {sub_id}").into()));
                             debug!("websocket bound to subscription {sub_id}");
