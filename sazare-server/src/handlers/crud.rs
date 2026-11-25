@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 use crate::audit::{self, AuditContext};
 use crate::auth::AuthUser;
-use crate::compartment_check::check_compartment_access;
+use crate::compartment_check::{check_compartment_access, check_compartment_write};
 use crate::subscription::{self, SubscriptionManager};
 use crate::{AppState, ConditionalResult};
 use super::{
@@ -57,11 +57,11 @@ pub async fn create(
     let (headers, body) = extract_body(request).await?;
 
     // Compartment check: patient-scoped tokens can only create resources in their compartment
-    check_compartment_access(auth_user.as_ref(), &state.compartment_def, &resource_type, &body)?;
+    check_compartment_write(auth_user.as_ref(), &state.compartment_def, &resource_type, &body)?;
 
     // Conditional create: If-None-Exist header
     if let Some(if_none_exist) = headers.get("If-None-Exist").and_then(|v| v.to_str().ok()) {
-        match crate::conditional_create_check(&state, &resource_type, if_none_exist).await {
+        match crate::conditional_create_check(&state, auth_user.as_ref(), &resource_type, if_none_exist).await {
             ConditionalResult::Exists(existing) => {
                 return Ok(response_with_etag(StatusCode::OK, existing).into_response());
             }
@@ -279,7 +279,7 @@ pub async fn update(
 
     // The new content must be in the caller's compartment too (the existing
     // version is checked below) — this also covers update-as-create.
-    check_compartment_access(auth_user.as_ref(), &state.compartment_def, &resource_type, &body)?;
+    check_compartment_write(auth_user.as_ref(), &state.compartment_def, &resource_type, &body)?;
 
     // Validate
     if let Err(outcome) = validate_resource_all_phases(
@@ -321,7 +321,7 @@ pub async fn update(
             let existing: Value = serde_json::from_slice(&data).unwrap_or_default();
 
             // Compartment check on existing resource
-            check_compartment_access(auth_user.as_ref(), &state.compartment_def, &resource_type, &existing)?;
+            check_compartment_write(auth_user.as_ref(), &state.compartment_def, &resource_type, &existing)?;
 
             let current_ver_str = existing
                 .get("meta")
@@ -477,7 +477,7 @@ pub async fn patch_resource(
     })?;
 
     // Compartment check on existing resource
-    check_compartment_access(auth_user.as_ref(), &state.compartment_def, &resource_type, &resource)?;
+    check_compartment_write(auth_user.as_ref(), &state.compartment_def, &resource_type, &resource)?;
 
     // If-Match check
     let if_match = headers
@@ -521,7 +521,7 @@ pub async fn patch_resource(
     })?;
 
     // The patched result must stay in the caller's compartment.
-    check_compartment_access(auth_user.as_ref(), &state.compartment_def, &resource_type, &resource)?;
+    check_compartment_write(auth_user.as_ref(), &state.compartment_def, &resource_type, &resource)?;
 
     // Validate patched resource
     if let Err(outcome) = validate_resource_all_phases(
@@ -602,7 +602,7 @@ pub async fn delete_resource(
     if let Ok(Some(data)) = state.store.get(&resource_type, &id)
         && let Ok(resource) = serde_json::from_slice::<Value>(&data)
     {
-        check_compartment_access(auth_user.as_ref(), &state.compartment_def, &resource_type, &resource)?;
+        check_compartment_write(auth_user.as_ref(), &state.compartment_def, &resource_type, &resource)?;
     }
 
     match state.store.delete(&resource_type, &id) {

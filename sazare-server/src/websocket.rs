@@ -59,8 +59,29 @@ impl WsRegistry {
 }
 
 /// `GET /ws` — upgrade to a FHIR R4 subscription websocket.
-pub async fn ws_handler(ws: WebSocketUpgrade, State(state): State<Arc<AppState>>) -> Response {
-    ws.on_upgrade(move |socket| handle_socket(socket, state))
+///
+/// Notifications fire for every patient's data, so a patient-scoped token may
+/// not listen (the same rule as for managing Subscriptions).
+pub async fn ws_handler(
+    State(state): State<Arc<AppState>>,
+    auth_user: Option<axum::extract::Extension<crate::auth::AuthUser>>,
+    // Refuse by authorization before judging the upgrade request itself.
+    ws: Result<WebSocketUpgrade, axum::extract::ws::rejection::WebSocketUpgradeRejection>,
+) -> Response {
+    use axum::response::IntoResponse;
+    if auth_user.is_some_and(|axum::extract::Extension(u)| u.compartment_restricted("Subscription")) {
+        return (
+            axum::http::StatusCode::FORBIDDEN,
+            axum::Json(sazare_core::OperationOutcome::forbidden(
+                "Patient-scoped tokens may not listen to Subscription notifications",
+            )),
+        )
+            .into_response();
+    }
+    match ws {
+        Ok(ws) => ws.on_upgrade(move |socket| handle_socket(socket, state)),
+        Err(rejection) => rejection.into_response(),
+    }
 }
 
 async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {

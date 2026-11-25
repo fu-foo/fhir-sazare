@@ -113,7 +113,7 @@ impl AuthUser {
 
     /// Returns true if the user has only patient/ scopes (no user/ or system/ scopes).
     pub fn is_patient_scoped(&self) -> bool {
-        if self.scopes.is_empty() {
+        if self.auth_type != AuthType::Jwt || self.scopes.is_empty() {
             return false;
         }
         let has_patient = self.scopes.iter().any(|s| s.starts_with("patient/"));
@@ -123,6 +123,112 @@ impl AuthUser {
             .any(|s| s.starts_with("user/") || s.starts_with("system/"));
         has_patient && !has_other
     }
+
+    /// What this user may do with `resource_type` for `perm` (a SMART v2
+    /// permission letter: c, r, u, d or s). API keys and Basic users are
+    /// operators and may do anything.
+    pub fn grant(&self, resource_type: &str, perm: char) -> Option<Grant> {
+        match self.auth_type {
+            AuthType::ApiKey | AuthType::BasicAuth => Some(Grant::Full),
+            AuthType::Jwt => scope_grant(&self.scopes, resource_type, perm),
+        }
+    }
+
+    /// Whether access to `resource_type` is limited to the patient
+    /// compartment: the user's access to it comes only from `patient/`
+    /// scopes. Decided per type, so `patient/Observation.rs user/Practitioner.rs`
+    /// restricts Observations and not Practitioners.
+    pub fn compartment_restricted(&self, resource_type: &str) -> bool {
+        if self.auth_type != AuthType::Jwt {
+            return false;
+        }
+        let scopes = parsed_scopes(&self.scopes);
+        let covers = |s: &&Scope| s.resource_type == "*" || s.resource_type == resource_type;
+        let unrestricted = scopes.iter().filter(covers).any(|s| s.context != Context::Patient);
+        let patient = scopes.iter().any(|s| s.context == Context::Patient);
+        patient && !unrestricted
+    }
+}
+
+/// How far a scope reaches.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Grant {
+    /// Any resource of the type (user/ or system/ scope, operators).
+    Full,
+    /// Only resources in the token's patient compartment (patient/ scope).
+    Patient,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Context {
+    Patient,
+    User,
+    System,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Scope {
+    context: Context,
+    resource_type: String,
+    /// Permission letters out of "cruds".
+    perms: String,
+}
+
+/// Parse a SMART scope: v1 `ctx/Type.read|write|*` or v2 `ctx/Type.cruds`
+/// (any in-order subset). Scopes with a query (`?category=...`, SMART v2
+/// granular scopes) narrow access in a way this server doesn't evaluate, so
+/// they grant nothing rather than more than intended.
+fn parse_scope(scope: &str) -> Option<Scope> {
+    let (ctx, rest) = scope.split_once('/')?;
+    let context = match ctx {
+        "patient" => Context::Patient,
+        "user" => Context::User,
+        "system" => Context::System,
+        _ => return None,
+    };
+    let (rt, action) = rest.split_once('.')?;
+    if rt.is_empty() || action.contains('?') {
+        return None;
+    }
+    let perms = match action {
+        "read" => "rs".to_string(),
+        "write" => "cud".to_string(),
+        "*" => "cruds".to_string(),
+        v2 if !v2.is_empty() && is_in_order_subset(v2, "cruds") => v2.to_string(),
+        _ => return None,
+    };
+    Some(Scope { context, resource_type: rt.to_string(), perms })
+}
+
+fn is_in_order_subset(s: &str, of: &str) -> bool {
+    let mut rest = of.chars();
+    s.chars().all(|c| rest.by_ref().any(|o| o == c))
+}
+
+fn parsed_scopes(scopes: &[String]) -> Vec<Scope> {
+    scopes.iter().filter_map(|s| parse_scope(s)).collect()
+}
+
+/// The widest grant `scopes` give for `perm` on `resource_type`.
+pub fn scope_grant(scopes: &[String], resource_type: &str, perm: char) -> Option<Grant> {
+    let mut best = None;
+    for s in parsed_scopes(scopes) {
+        if (s.resource_type == "*" || s.resource_type == resource_type) && s.perms.contains(perm) {
+            if s.context != Context::Patient {
+                return Some(Grant::Full);
+            }
+            best = Some(Grant::Patient);
+        }
+    }
+    best
+}
+
+/// Whether `scopes` include a `system/` scope on all resource types with
+/// every permission in `perms` — what Bulk Data and administration need.
+pub fn has_system_scope(scopes: &[String], perms: &str) -> bool {
+    parsed_scopes(scopes).iter().any(|s| {
+        s.context == Context::System && s.resource_type == "*" && perms.chars().all(|p| s.perms.contains(p))
+    })
 }
 
 /// JWT claims structure
@@ -276,15 +382,14 @@ pub async fn auth_middleware(
     if auth_user.auth_type == AuthType::Jwt {
         let method = request.method().clone();
         let path = request.uri().path().to_string();
-        if let Some((resource_type, action)) = extract_resource_action(&method, &path) {
-            if !check_scope(&auth_user.scopes, &resource_type, &action) {
+        if let Some((resource_type, perm)) = extract_resource_action(&method, &path) {
+            if auth_user.grant(&resource_type, perm).is_none() {
                 let outcome = OperationOutcome::forbidden(format!(
-                    "Insufficient scope for {}/{}.{}",
-                    resource_type, resource_type, action
+                    "Insufficient scope: {resource_type} needs the '{perm}' permission"
                 ));
                 return Err((StatusCode::FORBIDDEN, axum::Json(outcome)).into_response());
             }
-            if let Err(msg) = patient_scope_may(&auth_user, &resource_type, &action) {
+            if let Err(msg) = patient_scope_may(&auth_user, &resource_type, perm) {
                 let outcome = OperationOutcome::forbidden(msg);
                 return Err((StatusCode::FORBIDDEN, axum::Json(outcome)).into_response());
             }
@@ -472,7 +577,7 @@ fn authenticate_basic(config: &ServerConfig, auth_header: &str) -> Result<AuthUs
 /// Loopback is never locked: behind a reverse proxy every request comes from
 /// 127.0.0.1, and locking it would lock out every user (rate-limit at the
 /// proxy instead). Failures are still audit-logged.
-mod failed_logins {
+pub(crate) mod failed_logins {
     use std::collections::HashMap;
     use std::net::IpAddr;
     use std::sync::{Mutex, OnceLock};
@@ -511,38 +616,34 @@ mod failed_logins {
 }
 
 /// Operators: API keys and Basic users (configured by the operator), or a JWT
-/// with a system-level write scope on all resources.
+/// with a system-level write scope on all resources (`system/*.write`,
+/// `system/*.*`, `system/*.cud`, `system/*.cruds`).
 pub fn is_admin(user: &AuthUser) -> bool {
     match user.auth_type {
         AuthType::ApiKey | AuthType::BasicAuth => true,
-        AuthType::Jwt => user
-            .scopes
-            .iter()
-            .any(|s| matches!(s.as_str(), "system/*.write" | "system/*.*" | "system/*.cruds")),
+        AuthType::Jwt => has_system_scope(&user.scopes, "cud"),
     }
 }
 
 /// Writes a patient-scoped (patient app) token may not make even when its
 /// scopes match: Subscriptions fire for every patient's data, so creating one
 /// would reach beyond the patient's compartment.
-pub fn patient_scope_may(user: &AuthUser, resource_type: &str, action: &str) -> Result<(), String> {
-    if user.is_patient_scoped() && action == "write" && resource_type == "Subscription" {
+pub fn patient_scope_may(user: &AuthUser, resource_type: &str, perm: char) -> Result<(), String> {
+    if resource_type == "Subscription" && user.compartment_restricted("Subscription") && perm != 'r' && perm != 's' {
         return Err("Patient-scoped tokens may not create or change Subscriptions".to_string());
     }
     Ok(())
 }
 
-/// Extract resource type and action (read/write) from HTTP method + path
-fn extract_resource_action(method: &Method, path: &str) -> Option<(String, String)> {
+/// The resource type and SMART permission (c, r, u, d, s) a request needs.
+/// `None` for paths that are not resource interactions (authorized elsewhere).
+fn extract_resource_action(method: &Method, path: &str) -> Option<(String, char)> {
     let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
-    if segments.is_empty() {
-        return None;
-    }
+    let first = *segments.first()?;
 
     // Skip non-resource paths. The Bulk Data operation endpoints ($export and
     // its async status/file/cancel paths) are gated by token presence + system
     // scope at the operation level, not by per-resource CRUD scope.
-    let first = segments[0];
     if matches!(
         first,
         "health"
@@ -562,15 +663,32 @@ fn extract_resource_action(method: &Method, path: &str) -> Option<(String, Strin
     if segments.last() == Some(&"$export") {
         return None;
     }
+    // The WebSocket channel delivers Subscription notifications.
+    if first == "ws" {
+        return Some(("Subscription".to_string(), 'r'));
+    }
 
-    let resource_type = first.to_string();
-    let action = match *method {
-        Method::GET | Method::HEAD => "read".to_string(),
-        Method::POST | Method::PUT | Method::PATCH | Method::DELETE => "write".to_string(),
+    let second = segments.get(1).copied();
+    let last = segments.last().copied().unwrap_or("");
+    let perm = match *method {
+        Method::GET | Method::HEAD => match (segments.len(), second) {
+            (1, _) | (2, Some("_history")) | (2, Some("_search")) => 's',
+            _ => 'r',
+        },
+        Method::POST => {
+            if second == Some("_search") {
+                's'
+            } else if matches!(last, "$validate" | "$everything") {
+                'r'
+            } else {
+                'c'
+            }
+        }
+        Method::PUT | Method::PATCH => 'u',
+        Method::DELETE => 'd',
         _ => return None,
     };
-
-    Some((resource_type, action))
+    Some((first.to_string(), perm))
 }
 
 /// Constant-time byte comparison for secrets, to avoid leaking how many leading
@@ -586,34 +704,6 @@ fn ct_eq(a: &str, b: &str) -> bool {
         diff |= x ^ y;
     }
     diff == 0
-}
-
-/// Check if the given scopes allow access to the specified resource_type and action.
-///
-/// SMART on FHIR v2 scope format: `context/resourceType.action`
-/// - context: patient | user | system
-/// - resourceType: specific type or `*` (all)
-/// - action: read | write | `*` (all)
-///
-/// Examples: `user/Patient.read`, `system/*.write`, `patient/*.*`
-pub fn check_scope(scopes: &[String], resource_type: &str, action: &str) -> bool {
-    if scopes.is_empty() {
-        return false;
-    }
-
-    for scope in scopes {
-        if let Some((_context, rest)) = scope.split_once('/')
-            && let Some((scope_rt, scope_action)) = rest.split_once('.')
-        {
-            let rt_match = scope_rt == "*" || scope_rt == resource_type;
-            let action_match = scope_action == "*" || scope_action == action;
-            if rt_match && action_match {
-                return true;
-            }
-        }
-    }
-
-    false
 }
 
 #[cfg(test)]
@@ -806,125 +896,98 @@ mod tests {
         assert_eq!(auth_user.auth_type, AuthType::ApiKey);
     }
 
-    // --- Scope check tests ---
+    // --- Scope tests ---
 
-    #[test]
-    fn test_check_scope_exact_match() {
-        assert!(check_scope(
-            &["user/Patient.read".to_string()],
-            "Patient",
-            "read"
-        ));
+    fn sc(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| s.to_string()).collect()
     }
 
     #[test]
-    fn test_check_scope_wildcard_resource() {
-        assert!(check_scope(
-            &["user/*.read".to_string()],
-            "Patient",
-            "read"
-        ));
-        assert!(check_scope(
-            &["user/*.read".to_string()],
-            "Observation",
-            "read"
-        ));
+    fn test_scope_v1_forms() {
+        let s = sc(&["user/Patient.read"]);
+        assert_eq!(scope_grant(&s, "Patient", 'r'), Some(Grant::Full));
+        assert_eq!(scope_grant(&s, "Patient", 's'), Some(Grant::Full));
+        assert_eq!(scope_grant(&s, "Patient", 'c'), None);
+        assert_eq!(scope_grant(&s, "Observation", 'r'), None);
+        let s = sc(&["user/*.write"]);
+        for p in ['c', 'u', 'd'] {
+            assert_eq!(scope_grant(&s, "Observation", p), Some(Grant::Full));
+        }
+        assert_eq!(scope_grant(&s, "Observation", 'r'), None);
+        let s = sc(&["system/*.*"]);
+        for p in "cruds".chars() {
+            assert_eq!(scope_grant(&s, "Anything", p), Some(Grant::Full));
+        }
+        assert_eq!(scope_grant(&[], "Patient", 'r'), None);
     }
 
     #[test]
-    fn test_check_scope_wildcard_action() {
-        assert!(check_scope(
-            &["user/Patient.*".to_string()],
-            "Patient",
-            "read"
-        ));
-        assert!(check_scope(
-            &["user/Patient.*".to_string()],
-            "Patient",
-            "write"
-        ));
+    fn test_scope_v2_forms() {
+        let s = sc(&["patient/Observation.rs"]);
+        assert_eq!(scope_grant(&s, "Observation", 'r'), Some(Grant::Patient));
+        assert_eq!(scope_grant(&s, "Observation", 's'), Some(Grant::Patient));
+        assert_eq!(scope_grant(&s, "Observation", 'c'), None);
+        let s = sc(&["user/Patient.cruds"]);
+        assert_eq!(scope_grant(&s, "Patient", 'd'), Some(Grant::Full));
+        // Out of order, unknown letters, granular (query) scopes grant nothing.
+        assert_eq!(scope_grant(&sc(&["user/Patient.sr"]), "Patient", 'r'), None);
+        assert_eq!(scope_grant(&sc(&["user/Patient.rx"]), "Patient", 'r'), None);
+        assert_eq!(scope_grant(&sc(&["user/Observation.rs?category=laboratory"]), "Observation", 'r'), None);
+        assert_eq!(scope_grant(&sc(&["admin/*.*"]), "Patient", 'r'), None);
     }
 
     #[test]
-    fn test_check_scope_wildcard_both() {
-        assert!(check_scope(
-            &["system/*.*".to_string()],
-            "Patient",
-            "read"
-        ));
-        assert!(check_scope(
-            &["system/*.*".to_string()],
-            "Observation",
-            "write"
-        ));
+    fn test_system_scope_and_admin() {
+        assert!(has_system_scope(&sc(&["system/*.read"]), "r"));
+        assert!(!has_system_scope(&sc(&["user/*.read"]), "r"));
+        assert!(!has_system_scope(&sc(&["system/Patient.read"]), "r"));
+        let jwt = |s: &[&str]| AuthUser::with_scopes("t".into(), AuthType::Jwt, sc(s));
+        assert!(is_admin(&jwt(&["system/*.write"])));
+        assert!(is_admin(&jwt(&["system/*.cruds"])));
+        assert!(is_admin(&jwt(&["system/*.cud"])));
+        assert!(!is_admin(&jwt(&["user/*.write"])));
+        assert!(!is_admin(&jwt(&["system/*.read"])));
     }
 
     #[test]
-    fn test_check_scope_no_match() {
-        assert!(!check_scope(
-            &["user/Patient.read".to_string()],
-            "Patient",
-            "write"
-        ));
-        assert!(!check_scope(
-            &["user/Observation.read".to_string()],
-            "Patient",
-            "read"
-        ));
-    }
-
-    #[test]
-    fn test_check_scope_empty() {
-        assert!(!check_scope(&[], "Patient", "read"));
-    }
-
-    #[test]
-    fn test_check_scope_multiple_scopes() {
-        let scopes = vec![
-            "user/Patient.read".to_string(),
-            "user/Observation.write".to_string(),
-        ];
-        assert!(check_scope(&scopes, "Patient", "read"));
-        assert!(check_scope(&scopes, "Observation", "write"));
-        assert!(!check_scope(&scopes, "Patient", "write"));
+    fn test_compartment_restriction_is_per_type() {
+        let u = AuthUser::with_scopes(
+            "t".into(),
+            AuthType::Jwt,
+            sc(&["patient/Observation.rs", "user/Practitioner.rs"]),
+        );
+        assert!(u.compartment_restricted("Observation"));
+        assert!(!u.compartment_restricted("Practitioner"));
+        // A type no unrestricted scope covers stays restricted.
+        assert!(u.compartment_restricted("Encounter"));
+        let u = AuthUser::with_scopes("t".into(), AuthType::Jwt, sc(&["patient/*.rs", "user/*.rs"]));
+        assert!(!u.compartment_restricted("Observation"));
+        let u = AuthUser::new("k".into(), AuthType::ApiKey);
+        assert!(!u.compartment_restricted("Observation"));
     }
 
     // --- extract_resource_action tests ---
 
-    #[test]
-    fn test_extract_resource_action_read() {
-        let result = extract_resource_action(&Method::GET, "/Patient/123");
-        assert_eq!(result, Some(("Patient".to_string(), "read".to_string())));
+    fn act(m: Method, p: &str) -> Option<(String, char)> {
+        extract_resource_action(&m, p)
     }
 
     #[test]
-    fn test_extract_resource_action_search() {
-        let result = extract_resource_action(&Method::GET, "/Patient");
-        assert_eq!(result, Some(("Patient".to_string(), "read".to_string())));
-    }
-
-    #[test]
-    fn test_extract_resource_action_create() {
-        let result = extract_resource_action(&Method::POST, "/Patient");
-        assert_eq!(result, Some(("Patient".to_string(), "write".to_string())));
-    }
-
-    #[test]
-    fn test_extract_resource_action_update() {
-        let result = extract_resource_action(&Method::PUT, "/Patient/123");
-        assert_eq!(result, Some(("Patient".to_string(), "write".to_string())));
-    }
-
-    #[test]
-    fn test_extract_resource_action_delete() {
-        let result = extract_resource_action(&Method::DELETE, "/Patient/123");
-        assert_eq!(result, Some(("Patient".to_string(), "write".to_string())));
-    }
-
-    #[test]
-    fn test_extract_resource_action_skip_metadata() {
-        assert!(extract_resource_action(&Method::GET, "/metadata").is_none());
-        assert!(extract_resource_action(&Method::GET, "/health").is_none());
+    fn test_extract_resource_action() {
+        let pa = |c| Some(("Patient".to_string(), c));
+        assert_eq!(act(Method::GET, "/Patient/123"), pa('r'));
+        assert_eq!(act(Method::GET, "/Patient/123/_history/2"), pa('r'));
+        assert_eq!(act(Method::GET, "/Patient"), pa('s'));
+        assert_eq!(act(Method::GET, "/Patient/_history"), pa('s'));
+        assert_eq!(act(Method::POST, "/Patient/_search"), pa('s'));
+        assert_eq!(act(Method::POST, "/Patient/$validate"), pa('r'));
+        assert_eq!(act(Method::POST, "/Patient"), pa('c'));
+        assert_eq!(act(Method::PUT, "/Patient/123"), pa('u'));
+        assert_eq!(act(Method::PATCH, "/Patient/123"), pa('u'));
+        assert_eq!(act(Method::DELETE, "/Patient/123"), pa('d'));
+        assert_eq!(act(Method::GET, "/ws"), Some(("Subscription".to_string(), 'r')));
+        assert!(act(Method::GET, "/metadata").is_none());
+        assert!(act(Method::GET, "/health").is_none());
     }
 
     // --- is_patient_scoped tests ---

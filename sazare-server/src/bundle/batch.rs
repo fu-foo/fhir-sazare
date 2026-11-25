@@ -17,12 +17,13 @@ use std::sync::Arc;
 pub(super) async fn process_batch(
     state: &Arc<AppState>,
     audit_ctx: &AuditContext,
+    auth_user: Option<&crate::auth::AuthUser>,
     mut entries: Vec<BundleEntry>,
 ) -> axum::response::Response {
     let mut response_entries: Vec<Value> = Vec::with_capacity(entries.len());
 
     for (i, entry) in entries.iter_mut().enumerate() {
-        let result = process_batch_entry(state, entry, i).await;
+        let result = process_batch_entry(state, auth_user, entry, i).await;
         response_entries.push(result);
     }
 
@@ -57,6 +58,7 @@ fn notify_change(state: &Arc<AppState>, resource_type: &str, id: &str, resource:
 /// Process a single batch entry independently.
 async fn process_batch_entry(
     state: &Arc<AppState>,
+    auth_user: Option<&crate::auth::AuthUser>,
     entry: &mut BundleEntry,
     index: usize,
 ) -> Value {
@@ -64,7 +66,7 @@ async fn process_batch_entry(
         "POST" => {
             // Check ifNoneExist (conditional create)
             if let Some(ref query) = entry.if_none_exist {
-                match conditional_create_check(state, &entry.resource_type, query).await {
+                match conditional_create_check(state, auth_user, &entry.resource_type, query).await {
                     ConditionalResult::Exists(existing) => {
                         let existing_id = existing.get("id")
                             .and_then(|v| v.as_str())

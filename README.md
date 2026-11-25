@@ -77,8 +77,10 @@ Know these before you rely on sazare:
   with `bench/run.sh <patients> <obs-per-patient>` before relying on it.
 - **Subscriptions:** R4 rest-hook and websocket, best-effort delivery (a few retries,
   no persistent queue).
-- **Auth:** API keys, Basic, JWT (HS256/RS256/JWKS) with SMART scopes, SMART Backend
-  Services. No built-in OAuth authorization server for user login (use an external IdP).
+- **Auth:** API keys, Basic, JWT (HS256/RS256/JWKS) with SMART v1 and v2 scopes, SMART
+  Backend Services. No built-in OAuth authorization server for user login (use an
+  external IdP). SMART v2 granular scopes (`?category=...`) are not evaluated and grant
+  nothing.
 
 ---
 

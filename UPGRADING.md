@@ -41,6 +41,17 @@ into `data_dir`, delete the two `search_index*` files, start the older binary).
 
 ## Version notes
 
+### To 0.13.0 (security release)
+
+- SMART Backend Services clients need `allowed_scopes` in the configuration; a client
+  without it is now granted nothing.
+- Bulk Data with JWTs needs a `system/` scope (`system/*.read` for export,
+  `system/*.write` for import).
+- Patient-scoped tokens can't change resources outside the patient compartment
+  (Practitioner, Organization, ...); use a `user/` or `system/` scope for that.
+- Tokens using SMART v2 granular scopes (`...?category=...`) get no access through them;
+  grant plain `.rs` scopes instead.
+
 ### To 0.12.0
 
 - The first start rebuilds the search index once (new built-in reference parameters; the

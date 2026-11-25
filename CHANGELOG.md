@@ -4,6 +4,45 @@ All notable changes to sazare. Versions follow [Semantic Versioning](https://sem
 until 1.0, a minor version (0.x.0) may change behavior — those changes are listed under
 **Behavior changes**. See [UPGRADING.md](UPGRADING.md) for how to upgrade.
 
+## Unreleased
+
+Security release: a second review (an external model's, verified line by line) found
+authorization gaps the 0.11.0 hardening missed.
+
+### Security
+- Dashboard: values from stored resources and the audit log (names, ids, resource types)
+  are HTML-escaped, and click targets no longer embed them in inline JavaScript. A
+  resource with markup in, e.g., `Patient.name.text` could run script in an operator's
+  browser.
+- Conditional create (`If-None-Exist`, also in Bundles) and conditional update/delete only
+  match resources the caller may see: a patient-scoped token could get another patient's
+  resource back, or learn that it exists.
+- Patient-scoped access can no longer create, change or delete resources outside the
+  patient compartment (Practitioner, Organization, Medication, ...). Reading them for
+  reference resolution still works.
+- SMART scopes are read with their context and per permission:
+  - The patient-compartment restriction is decided per resource type, so a token mixing
+    `patient/` and `user/` scopes no longer escapes it for the patient-scoped types.
+  - Bulk Data (`$export`, `$import`) requires a `system/` scope; `user/*.read`/`write`
+    no longer passes.
+  - SMART v2 permissions (`.c` `.r` `.u` `.d` `.s` and combinations such as `.rs`,
+    `.cruds`) are understood; v2 granular scopes with a query (`?category=...`) grant
+    nothing instead of everything of the type.
+  - `POST /{type}/_search` and `$validate` need read/search, not write.
+- `_include`, `_revinclude` and `$everything` leave out resource types the token's scopes
+  don't allow reading.
+- `/ws` needs Subscription read access, and patient-scoped tokens can't listen.
+- `POST /token`: a backend client without `allowed_scopes` is granted no scopes (it used to
+  get whatever it asked for); failed token requests count toward the failed-login lockout.
+- A plugin can't be named `metrics` (it would have shadowed `/metrics`).
+
+### Fixed
+- Patient-scoped searches narrow to the compartment before paging, so `total`, the page and
+  the `next` link are right (another patient's matches on the first page used to hide
+  later ones).
+- `$everything` covers every Patient-compartment resource type (it had a fixed list of 9)
+  and answers with `application/fhir+json`.
+
 ## 0.12.0 — 2026-11-25
 
 ### Added

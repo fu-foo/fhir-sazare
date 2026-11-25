@@ -16,7 +16,7 @@ use std::sync::Arc;
 use super::{response_with_etag, update_search_index};
 use crate::audit::{self, AuditContext};
 use crate::auth::AuthUser;
-use crate::compartment_check::check_compartment_access;
+use crate::compartment_check::check_compartment_write;
 use crate::AppState;
 
 /// Conditional update (PUT /{resource_type}?params)
@@ -75,12 +75,15 @@ pub async fn conditional_update(
     let (match_id, is_create) = {
         let index = state.index.lock().await;
         let executor = SearchExecutor::new(&state.store, &index);
-        let ids = executor.search(&resource_type, &query).map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!(OperationOutcome::storage_error(e))),
-            )
-        })?;
+        let ids = executor
+            .search(&resource_type, &query)
+            .and_then(|ids| crate::visible_matches(&state, &executor, auth_user.as_ref(), &resource_type, ids))
+            .map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!(OperationOutcome::storage_error(e))),
+                )
+            })?;
 
         match ids.len() {
             0 => (None, true),
@@ -98,7 +101,7 @@ pub async fn conditional_update(
     };
 
     // Compartment check
-    check_compartment_access(auth_user.as_ref(), &state.compartment_def, &resource_type, &body_value)?;
+    check_compartment_write(auth_user.as_ref(), &state.compartment_def, &resource_type, &body_value)?;
 
     // Validate
     if let Err(outcome) = validate_resource_all_phases(
@@ -143,7 +146,7 @@ pub async fn conditional_update(
         let version_id = match state.store.get(&resource_type, &id) {
             Ok(Some(data)) => {
                 let existing: Value = serde_json::from_slice(&data).unwrap_or_default();
-                check_compartment_access(auth_user.as_ref(), &state.compartment_def, &resource_type, &existing)?;
+                check_compartment_write(auth_user.as_ref(), &state.compartment_def, &resource_type, &existing)?;
                 let current: i32 = existing
                     .get("meta")
                     .and_then(|m| m.get("versionId"))
@@ -194,7 +197,7 @@ pub async fn conditional_update(
             Ok(Some(data)) => {
                 let existing: Value = serde_json::from_slice(&data).unwrap_or_default();
                 // The matched resource must be the caller's to replace.
-                check_compartment_access(auth_user.as_ref(), &state.compartment_def, &resource_type, &existing)?;
+                check_compartment_write(auth_user.as_ref(), &state.compartment_def, &resource_type, &existing)?;
                 let current_ver: i32 = existing
                     .get("meta")
                     .and_then(|m| m.get("versionId"))
@@ -275,12 +278,15 @@ pub async fn conditional_delete(
     let (ids, resource_to_check) = {
         let index = state.index.lock().await;
         let executor = SearchExecutor::new(&state.store, &index);
-        let ids = executor.search(&resource_type, &query).map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!(OperationOutcome::storage_error(e))),
-            )
-        })?;
+        let ids = executor
+            .search(&resource_type, &query)
+            .and_then(|ids| crate::visible_matches(&state, &executor, auth_user.as_ref(), &resource_type, ids))
+            .map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!(OperationOutcome::storage_error(e))),
+                )
+            })?;
 
         // Load the resource for compartment check if exactly 1 match
         let resource = if ids.len() == 1 {
@@ -299,7 +305,7 @@ pub async fn conditional_delete(
 
             // Compartment check
             if let Some(ref resource) = resource_to_check {
-                check_compartment_access(auth_user.as_ref(), &state.compartment_def, &resource_type, resource)?;
+                check_compartment_write(auth_user.as_ref(), &state.compartment_def, &resource_type, resource)?;
             }
 
             state.store.delete(&resource_type, id).map_err(|e| {

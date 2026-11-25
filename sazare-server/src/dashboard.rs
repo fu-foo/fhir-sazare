@@ -325,6 +325,23 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
 </div>
 
 <script>
+// Everything shown here comes from stored resources and the audit log, i.e.
+// from API clients: escape it before it goes into HTML. Click targets carry
+// their arguments in data-* attributes (never in inline JS).
+function esc(v) {
+  return String(v == null ? '' : v)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+document.addEventListener('click', function (ev) {
+  const list = ev.target.closest('[data-list-type]');
+  if (list && !list.disabled) {
+    showResourceList(list.dataset.listType, Number(list.dataset.offset || 0));
+    return;
+  }
+  const row = ev.target.closest('[data-show-type]');
+  if (row) showResource(row.dataset.showType, row.dataset.showId);
+});
 // --- Minimal message catalog keyed by string id (English). ---
 const I18N = {
   en: {
@@ -385,17 +402,17 @@ async function refresh() {
 
     // Resource type stats
     const statsEl = document.getElementById('stats');
-    let statsHtml = '<div class="stat"><div class="num">' + data.totalResources +
+    let statsHtml = '<div class="stat"><div class="num">' + esc(data.totalResources) +
                     '</div><div class="label">' + t('resources.total') + '</div></div>';
     for (const rc of data.resourceCounts) {
-      statsHtml += '<div class="stat clickable" onclick="showResourceList(\'' + rc.type + '\')">' +
-                   '<div class="num">' + rc.count + '</div><div class="label">' + rc.type + '</div></div>';
+      statsHtml += '<div class="stat clickable" data-list-type="' + esc(rc.type) + '">' +
+                   '<div class="num">' + esc(rc.count) + '</div><div class="label">' + esc(rc.type) + '</div></div>';
     }
     statsEl.innerHTML = statsHtml;
 
     // Populate the search type suggestions.
     const dl = document.getElementById('search-types');
-    dl.innerHTML = data.resourceCounts.map(rc => '<option value="' + rc.type + '">').join('');
+    dl.innerHTML = data.resourceCounts.map(rc => '<option value="' + esc(rc.type) + '">').join('');
 
     // Activity log
     const logsEl = document.getElementById('logs');
@@ -408,8 +425,8 @@ async function refresh() {
           : '<span class="badge error">ERR</span>';
         const res = e.resourceType ? (e.resourceType + (e.resourceId ? '/' + e.resourceId : '')) : '';
         const local = new Date(e.timestamp + 'Z').toLocaleString();
-        return '<tr><td>' + local + '</td><td>' + e.operation +
-               '</td><td>' + res + '</td><td>' + badge + '</td></tr>';
+        return '<tr><td>' + esc(local) + '</td><td>' + esc(e.operation) +
+               '</td><td>' + esc(res) + '</td><td>' + badge + '</td></tr>';
       }).join('');
     }
 
@@ -451,7 +468,7 @@ async function runSearch() {
   const bodyEl = document.getElementById('search-results-body');
 
   urlEl.classList.remove('hidden');
-  urlEl.innerHTML = 'GET <code>' + url.replace(/</g,'&lt;') + '</code>';
+  urlEl.innerHTML = 'GET <code>' + esc(url) + '</code>';
   tableEl.classList.remove('hidden');
   bodyEl.innerHTML = '<tr><td colspan="2" style="color:#bbb">' + t('list.loading') + '</td></tr>';
 
@@ -460,11 +477,11 @@ async function runSearch() {
     const data = await res.json();
     if (!res.ok) {
       const msg = (data.issue && data.issue[0] && data.issue[0].diagnostics) || ('HTTP ' + res.status);
-      bodyEl.innerHTML = '<tr><td colspan="2" style="color:#c0392b">' + t('search.error') + ': ' + msg.replace(/</g,'&lt;') + '</td></tr>';
+      bodyEl.innerHTML = '<tr><td colspan="2" style="color:#c0392b">' + t('search.error') + ': ' + esc(msg) + '</td></tr>';
       return;
     }
     const entries = (data.entry || []).filter(e => e.search ? e.search.mode === 'match' : true);
-    urlEl.innerHTML += ' &middot; <strong>' + (data.total != null ? data.total : entries.length) + '</strong> ' + t('search.results');
+    urlEl.innerHTML += ' &middot; <strong>' + esc(data.total != null ? data.total : entries.length) + '</strong> ' + t('search.results');
     if (entries.length === 0) {
       bodyEl.innerHTML = '<tr><td colspan="2" style="color:#bbb">' + t('search.none') + '</td></tr>';
       return;
@@ -472,11 +489,11 @@ async function runSearch() {
     bodyEl.innerHTML = entries.map(e => {
       const r = e.resource || {};
       const id = r.id || '-';
-      return '<tr class="clickable-row" onclick="showResource(\'' + type + '\',\'' + id + '\')">' +
-             '<td><code>' + id + '</code></td><td>' + getSummary(r) + '</td></tr>';
+      return '<tr class="clickable-row" data-show-type="' + esc(type) + '" data-show-id="' + esc(id) + '">' +
+             '<td><code>' + esc(id) + '</code></td><td>' + esc(getSummary(r)) + '</td></tr>';
     }).join('');
   } catch (err) {
-    bodyEl.innerHTML = '<tr><td colspan="2" style="color:#c0392b">' + t('search.error') + ': ' + err.message + '</td></tr>';
+    bodyEl.innerHTML = '<tr><td colspan="2" style="color:#c0392b">' + t('search.error') + ': ' + esc(err.message) + '</td></tr>';
   }
 }
 
@@ -495,7 +512,7 @@ async function showResourceList(type, offset) {
   body.innerHTML = '<tr><td colspan="3" style="color:#bbb">' + t('list.loading') + '</td></tr>';
 
   try {
-    const res = await fetch('/$browse/' + type + '?_count=' + PAGE_SIZE + '&_offset=' + currentOffset);
+    const res = await fetch('/$browse/' + encodeURIComponent(type) + '?_count=' + PAGE_SIZE + '&_offset=' + currentOffset);
     const data = await res.json();
     const entries = data.entries || [];
     const total = data.total || 0;
@@ -507,8 +524,8 @@ async function showResourceList(type, offset) {
         const id = e.id || '-';
         const updated = e.lastUpdated ? new Date(e.lastUpdated).toLocaleString() : '-';
         const summary = getSummary(e.resource);
-        return '<tr class="clickable-row" onclick="showResource(\'' + type + '\',\'' + id + '\')">' +
-               '<td><code>' + id + '</code></td><td>' + updated + '</td><td>' + summary + '</td></tr>';
+        return '<tr class="clickable-row" data-show-type="' + esc(type) + '" data-show-id="' + esc(id) + '">' +
+               '<td><code>' + esc(id) + '</code></td><td>' + esc(updated) + '</td><td>' + esc(summary) + '</td></tr>';
       }).join('');
     }
 
@@ -516,11 +533,11 @@ async function showResourceList(type, offset) {
     const pag = document.getElementById('resource-list-pagination');
     const showing = Math.min(currentOffset + PAGE_SIZE, total);
     pag.innerHTML =
-      '<button ' + (currentOffset === 0 ? 'disabled' : 'onclick="showResourceList(\'' + type + '\',' + (currentOffset - PAGE_SIZE) + ')"') + '>' + t('list.prev') + '</button>' +
-      '<span>' + (currentOffset + 1) + '–' + showing + ' ' + t('list.of') + ' ' + total + '</span>' +
-      '<button ' + (currentOffset + PAGE_SIZE >= total ? 'disabled' : 'onclick="showResourceList(\'' + type + '\',' + (currentOffset + PAGE_SIZE) + ')"') + '>' + t('list.next') + '</button>';
+      '<button ' + (currentOffset === 0 ? 'disabled' : 'data-list-type="' + esc(type) + '" data-offset="' + (currentOffset - PAGE_SIZE) + '"') + '>' + t('list.prev') + '</button>' +
+      '<span>' + (currentOffset + 1) + '–' + showing + ' ' + t('list.of') + ' ' + esc(total) + '</span>' +
+      '<button ' + (currentOffset + PAGE_SIZE >= total ? 'disabled' : 'data-list-type="' + esc(type) + '" data-offset="' + (currentOffset + PAGE_SIZE) + '"') + '>' + t('list.next') + '</button>';
   } catch (err) {
-    body.innerHTML = '<tr><td colspan="3" style="color:#c00">Error: ' + err.message + '</td></tr>';
+    body.innerHTML = '<tr><td colspan="3" style="color:#c00">Error: ' + esc(err.message) + '</td></tr>';
   }
 }
 
@@ -569,7 +586,7 @@ async function showResource(type, id) {
   document.getElementById('resource-detail').scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   try {
-    const res = await fetch('/$browse/' + type + '/' + id);
+    const res = await fetch('/$browse/' + encodeURIComponent(type) + '/' + encodeURIComponent(id));
     const data = await res.json();
     pre.innerHTML = highlightJson(data, 0);
   } catch (err) {

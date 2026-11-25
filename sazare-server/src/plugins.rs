@@ -28,7 +28,9 @@ pub struct PluginName(pub String);
 /// plugin named like a FHIR resource type (PascalCase letters only, e.g.
 /// `Patient`) or a server endpoint would expose that API without auth.
 fn is_valid_plugin_name(name: &str) -> bool {
-    const RESERVED: &[&str] = &["metadata", "health", "token", "ws", "ui", "_history", "_search"];
+    // Every top-level route the server serves itself — a plugin by one of
+    // these names would shadow it (and be served without authentication).
+    const RESERVED: &[&str] = &["metadata", "health", "metrics", "token", "ws", "ui", "_history", "_search"];
     let could_be_resource_type = name.starts_with(|c: char| c.is_ascii_uppercase())
         && name.chars().all(|c| c.is_ascii_alphabetic());
     !name.is_empty()

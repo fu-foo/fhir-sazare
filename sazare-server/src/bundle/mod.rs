@@ -116,8 +116,8 @@ fn parse_entries(bundle: &Value) -> Result<Vec<BundleEntry>, OperationOutcome> {
 /// (and the patient-token restrictions), then the patient compartment for the
 /// entry's body and for the existing resource it reads, replaces or deletes.
 fn authorize_entries(state: &AppState, user: &AuthUser, entries: &[BundleEntry]) -> Result<(), OperationOutcome> {
-    use crate::auth::{check_scope, patient_scope_may, AuthType};
-    use crate::compartment_check::check_compartment_access;
+    use crate::auth::patient_scope_may;
+    use crate::compartment_check::{check_compartment_access, check_compartment_write};
 
     let deny = |i: usize, why: String| {
         OperationOutcome::error(IssueType::Forbidden, format!("entry[{i}]: {why}"))
@@ -125,26 +125,35 @@ fn authorize_entries(state: &AppState, user: &AuthUser, entries: &[BundleEntry])
     for (i, e) in entries.iter().enumerate() {
         // `Type?query` (conditional/search URLs) authorizes as `Type`.
         let rt = e.resource_type.split('?').next().unwrap_or("");
-        let action = if e.method == "GET" { "read" } else { "write" };
-
-        if user.auth_type == AuthType::Jwt {
-            if !check_scope(&user.scopes, rt, action) {
-                return Err(deny(i, format!("insufficient scope for {rt}.{action}")));
-            }
-            patient_scope_may(user, rt, action).map_err(|m| deny(i, m))?;
+        let perm = match e.method.as_str() {
+            "GET" | "HEAD" if e.id.is_some() => 'r',
+            "GET" | "HEAD" => 's',
+            "POST" => 'c',
+            "PUT" | "PATCH" => 'u',
+            "DELETE" => 'd',
+            _ => 'c',
+        };
+        if user.grant(rt, perm).is_none() {
+            return Err(deny(i, format!("insufficient scope: {rt} needs the '{perm}' permission")));
         }
+        patient_scope_may(user, rt, perm).map_err(|m| deny(i, m))?;
+        let writes = !matches!(perm, 'r' | 's');
 
         let to_resp = |_| deny(i, "resource is not in the patient compartment".to_string());
         if let Some(body) = &e.resource
             && matches!(e.method.as_str(), "POST" | "PUT")
         {
-            check_compartment_access(Some(user), &state.compartment_def, rt, body).map_err(to_resp)?;
+            check_compartment_write(Some(user), &state.compartment_def, rt, body).map_err(to_resp)?;
         }
         if let Some(id) = &e.id
             && let Ok(Some(data)) = state.store.get(rt, id)
             && let Ok(existing) = serde_json::from_slice::<Value>(&data)
         {
-            check_compartment_access(Some(user), &state.compartment_def, rt, &existing).map_err(to_resp)?;
+            if writes {
+                check_compartment_write(Some(user), &state.compartment_def, rt, &existing).map_err(to_resp)?;
+            } else {
+                check_compartment_access(Some(user), &state.compartment_def, rt, &existing).map_err(to_resp)?;
+            }
         }
     }
     Ok(())
@@ -229,9 +238,9 @@ pub async fn process_bundle(
     }
 
     let response = if bundle_type == "transaction" {
-        transaction::process_transaction(&state, &audit_ctx, entries).await
+        transaction::process_transaction(&state, &audit_ctx, auth_user.as_ref(), entries).await
     } else {
-        batch::process_batch(&state, &audit_ctx, entries).await
+        batch::process_batch(&state, &audit_ctx, auth_user.as_ref(), entries).await
     };
 
     // Fire the BundleCreated lifecycle webhook on a successful bundle.

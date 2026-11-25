@@ -114,6 +114,13 @@ impl CompartmentDef {
         Self { membership }
     }
 
+    /// Every resource type that can belong to the compartment, sorted.
+    pub fn resource_types(&self) -> Vec<&str> {
+        let mut types: Vec<&str> = self.membership.keys().map(String::as_str).collect();
+        types.sort_unstable();
+        types
+    }
+
     /// Check if a resource type can belong to the Patient compartment.
     pub fn is_in_compartment(&self, resource_type: &str) -> bool {
         self.membership.contains_key(resource_type)

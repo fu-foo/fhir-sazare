@@ -280,3 +280,164 @@ async fn bundles_accept_api_credentials_and_authorize_each_entry() {
     // p2's Observation still exists.
     assert_eq!(c.get("/Observation/o-p2", ADMIN_KEY).await.0, 200);
 }
+
+impl Client {
+    async fn post(&self, path: &str, token: &str, body: Value, headers: &[(&str, &str)]) -> (u16, Value) {
+        let mut req = self
+            .http
+            .post(format!("{}{}", self.base, path))
+            .bearer_auth(token)
+            .header("Content-Type", "application/fhir+json")
+            .body(body.to_string());
+        for (k, v) in headers {
+            req = req.header(*k, *v);
+        }
+        let resp = req.send().await.unwrap();
+        let status = resp.status().as_u16();
+        let text = resp.text().await.unwrap();
+        (status, serde_json::from_str(&text).unwrap_or(Value::Null))
+    }
+}
+
+fn ids_of(bundle: &Value, rt: &str) -> Vec<String> {
+    bundle["entry"]
+        .as_array()
+        .map(|es| {
+            es.iter()
+                .filter(|e| e["resource"]["resourceType"] == rt)
+                .map(|e| e["resource"]["id"].as_str().unwrap_or("").to_string())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[tokio::test]
+async fn conditional_create_does_not_reveal_other_patients() {
+    let (c, t, _d) = two_patients().await;
+    let obs = json!({"resourceType": "Observation", "status": "final", "code": {"text": "x"},
+                     "subject": {"reference": "Patient/p1"}});
+    // o-p2 matches, but it isn't p1's: it must not come back (nor count).
+    let (status, body) = c.post("/Observation", &t, obs.clone(), &[("If-None-Exist", "_id=o-p2")]).await;
+    assert_eq!(status, 201, "{body}");
+    assert_ne!(body["id"], "o-p2");
+    assert_eq!(body["subject"]["reference"], "Patient/p1");
+    // Two matches, one of them p1's: only p1's counts → 200 with p1's own.
+    let (status, body) = c.post("/Observation", &t, obs, &[("If-None-Exist", "_id=o-p1,o-p2")]).await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["id"], "o-p1");
+}
+
+#[tokio::test]
+async fn patient_tokens_cannot_change_resources_outside_the_compartment() {
+    let (c, t, _d) = two_patients().await;
+    assert_eq!(c.put("/Practitioner/dr", ADMIN_KEY, json!({"resourceType": "Practitioner", "id": "dr"})).await, 201);
+    // Readable for reference resolution...
+    assert_eq!(c.get("/Practitioner/dr", &t).await.0, 200);
+    // ...but not writable.
+    assert_eq!(c.put("/Practitioner/dr", &t, json!({"resourceType": "Practitioner", "id": "dr"})).await, 403);
+    let (status, _) = c.post("/Organization", &t, json!({"resourceType": "Organization"}), &[]).await;
+    assert_eq!(status, 403);
+    let (status, _) = c.send(reqwest::Method::DELETE, "/Practitioner/dr", &t, None).await;
+    assert_eq!(status, 403);
+}
+
+#[tokio::test]
+async fn mixed_scopes_keep_the_compartment_for_patient_types() {
+    let (c, _t, _d) = two_patients().await;
+    let t = jwt("patient/Observation.rs user/Practitioner.rs", Some("p1"));
+    assert_eq!(c.get("/Observation/o-p1", &t).await.0, 200);
+    assert_eq!(c.get("/Observation/o-p2", &t).await.0, 403);
+    let (_, b) = c.get("/Observation", &t).await;
+    assert_eq!(ids_of(&b, "Observation"), vec!["o-p1"]);
+}
+
+#[tokio::test]
+async fn scopes_are_read_with_context_and_v2_permissions() {
+    let (c, _t, _d) = two_patients().await;
+    // v2 read+search: may search with POST, may not create.
+    let t = jwt("patient/Observation.rs", Some("p1"));
+    let (status, b) = c.post("/Observation/_search", &t, json!({}), &[]).await;
+    assert_eq!(status, 200, "{b}");
+    assert_eq!(b["total"], 1);
+    let obs = json!({"resourceType": "Observation", "status": "final", "code": {"text": "x"},
+                     "subject": {"reference": "Patient/p1"}});
+    assert_eq!(c.post("/Observation", &t, obs.clone(), &[]).await.0, 403);
+    // v2 create.
+    let t = jwt("patient/Observation.c", Some("p1"));
+    assert_eq!(c.post("/Observation", &t, obs, &[]).await.0, 201);
+    // Bulk import needs a system/ scope; user/*.write is not enough.
+    let ndjson = json!({"resourceType": "Patient", "id": "bulk"}).to_string();
+    let user_write = jwt("user/*.write", None);
+    let resp = c.http.post(format!("{}/$import", c.base)).bearer_auth(&user_write)
+        .header("Content-Type", "application/fhir+ndjson").body(ndjson.clone()).send().await.unwrap();
+    assert_eq!(resp.status(), 403);
+    let system_write = jwt("system/*.write", None);
+    let resp = c.http.post(format!("{}/$import", c.base)).bearer_auth(&system_write)
+        .header("Content-Type", "application/fhir+ndjson").body(ndjson).send().await.unwrap();
+    assert_eq!(resp.status(), 200);
+    // Granular (query) scopes grant nothing rather than everything.
+    let t = jwt("user/Observation.rs?category=laboratory", None);
+    assert_eq!(c.get("/Observation", &t).await.0, 403);
+}
+
+#[tokio::test]
+async fn includes_and_everything_respect_resource_type_scopes() {
+    let (c, _t, _d) = two_patients().await;
+    let t = jwt("user/Patient.rs", None);
+    let (status, b) = c.get("/Patient?_id=p1&_revinclude=Observation:subject", &t).await;
+    assert_eq!(status, 200);
+    assert_eq!(ids_of(&b, "Patient"), vec!["p1"]);
+    assert!(ids_of(&b, "Observation").is_empty(), "{b}");
+    let (status, b) = c.get("/Patient/p1/$everything", &t).await;
+    assert_eq!(status, 200);
+    assert!(ids_of(&b, "Observation").is_empty(), "{b}");
+    // With Observation scope they're there.
+    let t = jwt("user/Patient.rs user/Observation.rs", None);
+    let (_, b) = c.get("/Patient/p1/$everything", &t).await;
+    assert_eq!(ids_of(&b, "Observation"), vec!["o-p1"]);
+}
+
+#[tokio::test]
+async fn patient_search_pages_after_the_compartment_filter() {
+    let (c, t, _d) = two_patients().await;
+    // Other patients' Observations sort before p1's.
+    for id in ["a1", "a2", "a3"] {
+        assert_eq!(
+            c.put(&format!("/Observation/{id}"), ADMIN_KEY, json!({
+                "resourceType": "Observation", "id": id, "status": "final",
+                "code": {"text": "x"}, "subject": {"reference": "Patient/p2"}
+            }))
+            .await,
+            201
+        );
+    }
+    let (status, b) = c.get("/Observation?_count=1", &t).await;
+    assert_eq!(status, 200);
+    assert_eq!(b["total"], 1);
+    assert_eq!(ids_of(&b, "Observation"), vec!["o-p1"]);
+    let (_, b) = c.get("/Observation?_summary=count", &t).await;
+    assert_eq!(b["total"], 1);
+}
+
+#[tokio::test]
+async fn patient_tokens_cannot_listen_on_the_websocket() {
+    let (c, _t, _d) = two_patients().await;
+    let t = jwt("patient/*.read", Some("p1"));
+    // A plain GET is enough to see the refusal before any upgrade.
+    assert_eq!(c.get("/ws", &t).await.0, 403);
+    let t = jwt("user/Observation.read", None);
+    assert_eq!(c.get("/ws", &t).await.0, 403, "needs Subscription read");
+}
+
+#[tokio::test]
+async fn browse_is_for_operators_and_the_dashboard_escapes() {
+    let (c, t, _d) = two_patients().await;
+    // The dashboard's data endpoints take Basic credentials (operators) only.
+    assert_eq!(c.get("/$browse/Patient", &t).await.0, 401);
+    let resp = c.http.get(format!("{}/$browse/Patient", c.base)).basic_auth("ops", Some("ops-password"))
+        .send().await.unwrap();
+    assert_eq!(resp.status(), 200);
+    let html = c.http.get(format!("{}/", c.base)).basic_auth("ops", Some("ops-password")).send().await.unwrap().text().await.unwrap();
+    assert!(html.contains("function esc("));
+    assert!(!html.contains("onclick=\"showResource"), "no stored values in inline handlers");
+}

@@ -227,21 +227,13 @@ async fn do_search(
             )
         })?;
 
-        // For count mode with compartment filtering, we need to load and filter
-        if auth_user.as_ref().is_some_and(|u| u.is_patient_scoped()) {
-            let resources = executor.load_resources(&resource_type, &ids).map_err(|e| {
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(json!(OperationOutcome::storage_error(e))),
-                )
-            })?;
-            let filtered = filter_by_compartment(auth_user.as_ref(), &state.compartment_def, &resource_type, resources);
-            return Ok(super::fhir_json(StatusCode::OK, json!({
-                "resourceType": "Bundle",
-                "type": "searchset",
-                "total": filtered.len()
-            })));
-        }
+        // A compartment-restricted user counts only what they may see.
+        let ids = crate::visible_matches(&state, &executor, auth_user.as_ref(), &resource_type, ids).map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!(OperationOutcome::storage_error(e))),
+            )
+        })?;
 
         return Ok(super::fhir_json(StatusCode::OK, json!({
             "resourceType": "Bundle",
@@ -257,29 +249,34 @@ async fn do_search(
     let index = state.index.lock().await;
     let executor = SearchExecutor::new(&state.store, &index);
 
-    let (ids, total) = executor.search_with_total(&resource_type, &query).map_err(|e| {
+    let storage_err = |e: String| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!(OperationOutcome::storage_error(e))),
         )
-    })?;
-
-    let resources = executor.load_resources(&resource_type, &ids).map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!(OperationOutcome::storage_error(e))),
-        )
-    })?;
-
-    // Compartment filtering
-    let mut resources = filter_by_compartment(auth_user.as_ref(), &state.compartment_def, &resource_type, resources);
-
-    let total = if auth_user.as_ref().is_some_and(|u| u.is_patient_scoped()) {
-        // If compartment-filtered, total is the filtered count
-        resources.len()
-    } else {
-        total
     };
+    // A compartment-restricted user's matches are narrowed to the compartment
+    // *before* paging, so `total`, the page and the `next` link describe what
+    // they may see (filtering a page afterwards loses later matches).
+    let (ids, total) = if auth_user.as_ref().is_some_and(|u| u.compartment_restricted(&resource_type)) {
+        let mut all = query.clone();
+        all.count = None;
+        all.offset = None;
+        let (ids, _) = executor.search_with_total(&resource_type, &all).map_err(storage_err)?;
+        let mut ids = crate::visible_matches(&state, &executor, auth_user.as_ref(), &resource_type, ids)
+            .map_err(storage_err)?;
+        let total = ids.len();
+        ids.drain(..query.offset.unwrap_or(0).min(ids.len()));
+        ids.truncate(query.count.unwrap_or(DEFAULT_COUNT));
+        (ids, total)
+    } else {
+        executor.search_with_total(&resource_type, &query).map_err(storage_err)?
+    };
+
+    let resources = executor.load_resources(&resource_type, &ids).map_err(storage_err)?;
+
+    // Compartment filtering (already applied above; kept as a safety net).
+    let mut resources = filter_by_compartment(auth_user.as_ref(), &state.compartment_def, &resource_type, resources);
 
     // Included resources are held to the same compartment rule as matches —
     // a resource outside the compartment can't be reached through a

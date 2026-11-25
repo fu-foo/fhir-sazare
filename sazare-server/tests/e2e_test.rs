@@ -418,7 +418,7 @@ async fn test_smart_backend_services_token_flow() {
             client_id: "inferno-client".into(),
             jwks_url: None,
             jwks: Some(serde_json::from_str(SMART_TEST_JWKS).unwrap()),
-            allowed_scopes: vec![],
+            allowed_scopes: vec!["system/*.read".to_string()],
         }],
     });
 

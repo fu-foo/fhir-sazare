@@ -22,6 +22,7 @@ use std::sync::Arc;
 pub(super) async fn process_transaction(
     state: &Arc<AppState>,
     audit_ctx: &AuditContext,
+    auth_user: Option<&crate::auth::AuthUser>,
     mut entries: Vec<BundleEntry>,
 ) -> axum::response::Response {
     // Phase 1: Validate all resources that will be created/updated
@@ -92,7 +93,7 @@ pub(super) async fn process_transaction(
             "POST" => {
                 // Check ifNoneExist before assigning a new ID
                 if let Some(ref query) = entry.if_none_exist {
-                    match conditional_create_check(state, &entry.resource_type, query).await {
+                    match conditional_create_check(state, auth_user, &entry.resource_type, query).await {
                         ConditionalResult::Exists(existing) => {
                             let existing_id = existing.get("id")
                                 .and_then(|v| v.as_str())

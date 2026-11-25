@@ -23,7 +23,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use tokio::sync::Mutex;
 
-use crate::auth::{check_scope, AuthType, AuthUser};
+use crate::auth::{has_system_scope, AuthType, AuthUser};
 use crate::AppState;
 
 /// Authorize a Bulk Data operation against the caller's SMART scopes.
@@ -52,7 +52,8 @@ pub(crate) fn authorize_bulk(
             "Patient-scoped tokens may not perform Bulk Data operations",
         ));
     }
-    if !check_scope(&user.scopes, "*", action) {
+    let perms = if action == "read" { "r" } else { "cu" };
+    if !has_system_scope(&user.scopes, perms) {
         return Err(bulk_forbidden(&format!(
             "Bulk Data {action} requires a system-level *.{action} scope"
         )));

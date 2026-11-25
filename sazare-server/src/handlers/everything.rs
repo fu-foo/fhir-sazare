@@ -1,7 +1,7 @@
 use axum::{
     extract::{Path, Request, State},
     http::StatusCode,
-    response::{IntoResponse, Json, Response},
+    response::{Json, Response},
 };
 use sazare_core::{
     operation_outcome::IssueType,
@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use crate::audit::{self, AuditContext};
 use crate::auth::AuthUser;
-use crate::compartment_check::check_compartment_access;
+use crate::compartment_check::{check_compartment_access, filter_mixed_by_compartment};
 use crate::AppState;
 
 /// Patient $everything (GET /Patient/{id}/$everything)
@@ -71,42 +71,54 @@ pub async fn patient_everything(
         "search": {"mode": "match"}
     }));
 
-    // Get all compartment resource types and their reference fields
+    // Every compartment type the caller's scopes let them read, found
+    // through the fields that link it to the Patient.
     let index = state.index.lock().await;
     let patient_ref = format!("Patient/{}", patient_id);
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut found: Vec<Value> = Vec::new();
 
-    // Iterate over all compartment resource types
-    let compartment_types = [
-        "Observation", "Encounter", "Condition", "MedicationRequest",
-        "Procedure", "AllergyIntolerance", "DiagnosticReport", "Immunization", "Task",
-    ];
-
-    for comp_type in &compartment_types {
-        if let Some(ref_fields) = state.compartment_def.get_reference_fields(comp_type) {
-            for field in ref_fields {
-                let ids = index
-                    .search_reference(comp_type, field, &patient_ref)
-                    .unwrap_or_default();
-
-                for id in &ids {
-                    if let Ok(Some(data)) = state.store.get(comp_type, id)
-                        && let Ok(resource) = serde_json::from_slice::<Value>(&data)
-                    {
-                        // Avoid duplicates (e.g. Task may match on both "for" and "owner")
-                        let full_url = format!("{}/{}", comp_type, id);
-                        if !entries.iter().any(|e| {
-                            e.get("fullUrl").and_then(|v| v.as_str()) == Some(&full_url)
-                        }) {
-                            entries.push(json!({
-                                "fullUrl": full_url,
-                                "resource": resource,
-                                "search": {"mode": "match"}
-                            }));
-                        }
-                    }
+    for comp_type in state.compartment_def.resource_types() {
+        if comp_type == "Patient" {
+            continue;
+        }
+        if auth_user.as_ref().is_some_and(|u| u.grant(comp_type, 'r').is_none()) {
+            continue;
+        }
+        let Some(ref_fields) = state.compartment_def.get_reference_fields(comp_type) else {
+            continue;
+        };
+        for field in ref_fields {
+            let ids = index
+                .search_reference(comp_type, field, &patient_ref)
+                .unwrap_or_default();
+            for id in ids {
+                // Each resource once (e.g. Task may match on both "for" and "owner").
+                if !seen.insert(format!("{comp_type}/{id}")) {
+                    continue;
+                }
+                if let Ok(Some(data)) = state.store.get(comp_type, &id)
+                    && let Ok(resource) = serde_json::from_slice::<Value>(&data)
+                {
+                    found.push(resource);
                 }
             }
         }
+    }
+    drop(index);
+
+    // Same rules as `_include`: scopes and the patient compartment.
+    for resource in filter_mixed_by_compartment(auth_user.as_ref(), &state.compartment_def, found) {
+        let full_url = format!(
+            "{}/{}",
+            resource.get("resourceType").and_then(|v| v.as_str()).unwrap_or(""),
+            resource.get("id").and_then(|v| v.as_str()).unwrap_or("")
+        );
+        entries.push(json!({
+            "fullUrl": full_url,
+            "resource": resource,
+            "search": {"mode": "match"}
+        }));
     }
 
     let total = entries.len();
@@ -119,10 +131,10 @@ pub async fn patient_everything(
         &state.audit,
     );
 
-    Ok(Json(json!({
+    Ok(super::fhir_json(StatusCode::OK, json!({
         "resourceType": "Bundle",
         "type": "searchset",
         "total": total,
         "entry": entries
-    })).into_response())
+    })))
 }

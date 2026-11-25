@@ -10,7 +10,7 @@
 use std::sync::Arc;
 
 use axum::{
-    extract::State,
+    extract::{ConnectInfo, State},
     http::StatusCode,
     response::{IntoResponse, Response},
     Form, Json,
@@ -116,21 +116,39 @@ fn now_secs(state: &AppState) -> u64 {
         .unwrap_or(0)
 }
 
-/// Grant the requested scopes, restricted to the client's allowlist if it has one.
+/// Grant the requested scopes that are on the client's allowlist. A client
+/// without `allowed_scopes` is granted nothing (fail closed): an empty list
+/// must not mean "anything, including system/*.*".
 fn grant_scopes(requested: &str, client: &BackendClient) -> String {
-    let requested: Vec<&str> = requested.split_whitespace().collect();
-    if client.allowed_scopes.is_empty() {
-        return requested.join(" ");
-    }
     requested
-        .into_iter()
+        .split_whitespace()
         .filter(|s| client.allowed_scopes.iter().any(|a| a == s))
         .collect::<Vec<_>>()
         .join(" ")
 }
 
 /// `POST /token` — SMART Backend Services client-credentials grant.
-pub async fn token(State(state): State<Arc<AppState>>, Form(req): Form<TokenRequest>) -> Response {
+pub async fn token(
+    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
+    State(state): State<Arc<AppState>>,
+    Form(req): Form<TokenRequest>,
+) -> Response {
+    // The same lockout as failed logins: repeated bad client assertions from
+    // one address lock it out for a while.
+    use crate::auth::failed_logins;
+    let ip = addr.ip();
+    if failed_logins::is_locked(ip) {
+        return oauth_error(StatusCode::TOO_MANY_REQUESTS, "invalid_client", "Too many failed attempts; try again later");
+    }
+    let response = issue_token(state, req).await;
+    if response.status() == StatusCode::BAD_REQUEST || response.status() == StatusCode::UNAUTHORIZED {
+        failed_logins::record(ip);
+        tracing::warn!("token request from {ip} refused ({})", response.status());
+    }
+    response
+}
+
+async fn issue_token(state: Arc<AppState>, req: TokenRequest) -> Response {
     let Some(smart) = state.config.auth.smart.as_ref() else {
         return oauth_error(
             StatusCode::NOT_FOUND,
@@ -351,6 +369,21 @@ pub async fn token(State(state): State<Arc<AppState>>, Form(req): Form<TokenRequ
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn grant_scopes_fails_closed() {
+        let mut client = crate::config::BackendClient {
+            client_id: "c".into(),
+            jwks_url: None,
+            jwks: None,
+            allowed_scopes: vec![],
+        };
+        // No allowlist: nothing is granted, not "whatever was asked".
+        assert_eq!(grant_scopes("system/*.*", &client), "");
+        client.allowed_scopes = vec!["system/*.read".into()];
+        assert_eq!(grant_scopes("system/*.read system/*.write", &client), "system/*.read");
+    }
+
     use super::*;
     use jsonwebtoken::jwk::Jwk;
 

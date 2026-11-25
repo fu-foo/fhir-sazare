@@ -25,7 +25,7 @@ pub fn check_compartment_access(
         return Ok(());
     };
 
-    if !user.is_patient_scoped() {
+    if !user.compartment_restricted(resource_type) {
         return Ok(());
     }
 
@@ -56,6 +56,30 @@ pub fn check_compartment_access(
     }
 }
 
+/// [`check_compartment_access`] for a write (create, update, patch, delete).
+/// Reading resources outside the compartment (Practitioner, Organization...)
+/// is allowed for reference resolution, but a compartment-restricted user may
+/// not create or change them.
+pub fn check_compartment_write(
+    auth_user: Option<&AuthUser>,
+    compartment: &CompartmentDef,
+    resource_type: &str,
+    resource: &Value,
+) -> Result<(), (StatusCode, Json<Value>)> {
+    if let Some(user) = auth_user
+        && user.compartment_restricted(resource_type)
+        && !compartment.is_in_compartment(resource_type)
+    {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(json!(OperationOutcome::forbidden(format!(
+                "Patient-scoped access may not change {resource_type} resources (outside the patient compartment)"
+            )))),
+        ));
+    }
+    check_compartment_access(auth_user, compartment, resource_type, resource)
+}
+
 /// Filter a list of resources by compartment membership.
 ///
 /// Returns only resources that belong to the patient's compartment.
@@ -70,7 +94,7 @@ pub fn filter_by_compartment(
         return resources;
     };
 
-    if !user.is_patient_scoped() {
+    if !user.compartment_restricted(resource_type) {
         return resources;
     }
 
@@ -90,7 +114,8 @@ pub fn filter_by_compartment(
 }
 
 /// [`filter_by_compartment`] for a mixed list (e.g. `_include` /
-/// `_revinclude` results), judging each resource by its own `resourceType`.
+/// `_revinclude` / `$everything` results), judging each resource by its own
+/// `resourceType` — and dropping types the user's scopes don't let them read.
 pub fn filter_mixed_by_compartment(
     auth_user: Option<&AuthUser>,
     compartment: &CompartmentDef,
@@ -100,7 +125,9 @@ pub fn filter_mixed_by_compartment(
         .into_iter()
         .filter(|r| {
             let rt = r.get("resourceType").and_then(|v| v.as_str()).unwrap_or("");
-            check_compartment_access(auth_user, compartment, rt, r).is_ok()
+            // The user's scopes must allow reading the included type at all.
+            auth_user.is_none_or(|u| u.grant(rt, 'r').is_some())
+                && check_compartment_access(auth_user, compartment, rt, r).is_ok()
         })
         .collect()
 }
@@ -216,7 +243,8 @@ mod tests {
     #[test]
     fn test_filter_mixed_by_compartment_judges_each_type() {
         let comp = CompartmentDef::patient_compartment();
-        let user = patient_scoped_user("p123");
+        let mut user = patient_scoped_user("p123");
+        user.scopes = vec!["patient/*.read".to_string()];
         let mixed = vec![
             json!({"resourceType": "Practitioner", "id": "dr"}),
             json!({"resourceType": "MedicationRequest", "id": "mine", "subject": {"reference": "Patient/p123"}}),
@@ -228,6 +256,15 @@ mod tests {
             .map(|r| r["id"].as_str().unwrap().to_string())
             .collect();
         assert_eq!(kept, vec!["dr", "mine"]);
+        // Types the scopes don't cover are dropped even inside the compartment.
+        let only_obs = patient_scoped_user("p123");
+        let mixed = vec![
+            json!({"resourceType": "Observation", "id": "o", "subject": {"reference": "Patient/p123"}}),
+            json!({"resourceType": "MedicationRequest", "id": "m", "subject": {"reference": "Patient/p123"}}),
+        ];
+        let kept = filter_mixed_by_compartment(Some(&only_obs), &comp, mixed);
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0]["id"], "o");
         // Not patient-scoped: everything passes.
         let all = vec![json!({"resourceType": "Patient", "id": "other"})];
         assert_eq!(filter_mixed_by_compartment(None, &comp, all).len(), 1);

@@ -72,9 +72,39 @@ pub enum ConditionalResult {
     SearchError(String),
 }
 
+/// The subset of `ids` (matches of a conditional interaction) the caller may
+/// see. A compartment-restricted user must not learn about — let alone get
+/// back — another patient's resources through If-None-Exist or a conditional
+/// update/delete, so matches outside the compartment don't count.
+pub fn visible_matches(
+    state: &AppState,
+    executor: &SearchExecutor<'_>,
+    auth_user: Option<&auth::AuthUser>,
+    resource_type: &str,
+    ids: Vec<String>,
+) -> Result<Vec<String>, String> {
+    if !auth_user.is_some_and(|u| u.compartment_restricted(resource_type)) {
+        return Ok(ids);
+    }
+    // In chunks, keeping only ids, so a broad match set isn't held in memory.
+    let mut visible = Vec::new();
+    for chunk in ids.chunks(500) {
+        let resources = executor.load_resources(resource_type, chunk)?;
+        visible.extend(
+            compartment_check::filter_by_compartment(auth_user, &state.compartment_def, resource_type, resources)
+                .iter()
+                .filter_map(|r| r.get("id").and_then(|v| v.as_str()).map(str::to_string)),
+        );
+    }
+    // Keep the caller's order (e.g. `_sort`).
+    let keep: std::collections::HashSet<&str> = visible.iter().map(String::as_str).collect();
+    Ok(ids.iter().filter(|id| keep.contains(id.as_str())).cloned().collect())
+}
+
 /// Conditional create check
 pub async fn conditional_create_check(
     state: &Arc<AppState>,
+    auth_user: Option<&auth::AuthUser>,
     resource_type: &str,
     query_string: &str,
 ) -> ConditionalResult {
@@ -86,18 +116,22 @@ pub async fn conditional_create_check(
     let index = state.index.lock().await;
     let executor = SearchExecutor::new(&state.store, &index);
 
-    match executor.search(resource_type, &query) {
-        Ok(ids) if ids.is_empty() => ConditionalResult::NoMatch,
-        Ok(ids) if ids.len() == 1 => {
-            match executor.load_resources(resource_type, &ids) {
-                Ok(resources) if !resources.is_empty() => {
-                    ConditionalResult::Exists(resources.into_iter().next().unwrap())
-                }
-                _ => ConditionalResult::NoMatch,
+    let ids = match executor
+        .search(resource_type, &query)
+        .and_then(|ids| visible_matches(state, &executor, auth_user, resource_type, ids))
+    {
+        Ok(ids) => ids,
+        Err(e) => return ConditionalResult::SearchError(e),
+    };
+    match ids.len() {
+        0 => ConditionalResult::NoMatch,
+        1 => match executor.load_resources(resource_type, &ids) {
+            Ok(resources) if !resources.is_empty() => {
+                ConditionalResult::Exists(resources.into_iter().next().unwrap())
             }
-        }
-        Ok(_) => ConditionalResult::MultipleMatches,
-        Err(e) => ConditionalResult::SearchError(e),
+            _ => ConditionalResult::NoMatch,
+        },
+        _ => ConditionalResult::MultipleMatches,
     }
 }
 
@@ -137,7 +171,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         // Dashboard
         .route("/", get(dashboard::dashboard_page).post(bundle::process_bundle))
         .route("/$status", get(dashboard::status_api))
-        // Dashboard browse (auth-free)
+        // Dashboard browse (Basic auth only when auth is enabled — operators)
         .route("/$browse/{resource_type}", get(dashboard::browse_list))
         .route("/$browse/{resource_type}/{id}", get(dashboard::browse_read))
         // One-click sample data for first-run exploration. Writes data, so it is
