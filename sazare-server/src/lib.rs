@@ -72,6 +72,20 @@ pub enum ConditionalResult {
     SearchError(String),
 }
 
+/// The HTTP client for outbound calls to configured services (JWKS, webhooks):
+/// bounded connect and total timeouts, so a slow or silent remote can't hold
+/// requests — or locks — indefinitely.
+pub(crate) fn http_client() -> &'static reqwest::Client {
+    static C: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    C.get_or_init(|| {
+        reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(5))
+            .timeout(std::time::Duration::from_secs(10))
+            .build()
+            .unwrap_or_default()
+    })
+}
+
 /// The subset of `ids` (matches of a conditional interaction) the caller may
 /// see. A compartment-restricted user must not learn about — let alone get
 /// back — another patient's resources through If-None-Exist or a conditional

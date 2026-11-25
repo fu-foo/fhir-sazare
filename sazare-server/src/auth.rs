@@ -37,44 +37,58 @@ impl JwkCache {
     }
 }
 
-/// Fetch or return cached JWK set from the configured URL.
+/// Fetch or return the cached JWK set from the configured URL. `refresh`
+/// forces a fetch (a token named a `kid` the cache doesn't have, e.g. after
+/// the IdP rotated keys), at most once per [`JWK_MIN_REFRESH`] so tokens with
+/// made-up `kid`s can't make the server hammer the IdP.
+///
+/// The fetch runs without holding the cache lock, with the shared client's
+/// timeouts: a slow IdP delays only the requests that need fresh keys.
 async fn get_jwks(
     jwk_url: &str,
     cache: &RwLock<JwkCache>,
+    refresh: bool,
 ) -> Result<JwkSet, String> {
-    // Check cache first (read lock)
     {
         let c = cache.read().await;
-        if !c.is_expired()
-            && let Some(ref jwks) = c.jwks
+        let recently = c.fetched_at.is_some_and(|t| t.elapsed() < JWK_MIN_REFRESH);
+        if let Some(ref jwks) = c.jwks
+            && (!c.is_expired() && (!refresh || recently))
         {
             return Ok(jwks.clone());
         }
     }
 
-    // Fetch fresh keys (write lock)
-    let mut c = cache.write().await;
-    // Double-check after acquiring write lock
-    if !c.is_expired()
-        && let Some(ref jwks) = c.jwks
-    {
-        return Ok(jwks.clone());
-    }
-
-    let response = reqwest::get(jwk_url)
+    let jwks: JwkSet = crate::http_client()
+        .get(jwk_url)
+        .send()
         .await
-        .map_err(|e| format!("Failed to fetch JWK from {}: {}", jwk_url, e))?;
-
-    let jwks: JwkSet = response
+        .map_err(|e| format!("Failed to fetch JWK from {}: {}", jwk_url, e))?
         .json()
         .await
         .map_err(|e| format!("Failed to parse JWK response: {}", e))?;
 
+    let mut c = cache.write().await;
     c.jwks = Some(jwks.clone());
     c.fetched_at = Some(std::time::Instant::now());
-
     Ok(jwks)
 }
+
+/// The PEM of `public_key_file`, read once (not on every request).
+fn read_key_file(path: &str) -> std::io::Result<Vec<u8>> {
+    static CACHE: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, Vec<u8>>>> =
+        std::sync::OnceLock::new();
+    let cache = CACHE.get_or_init(Default::default);
+    if let Some(pem) = cache.lock().unwrap_or_else(|e| e.into_inner()).get(path) {
+        return Ok(pem.clone());
+    }
+    let pem = std::fs::read(path)?;
+    cache.lock().unwrap_or_else(|e| e.into_inner()).insert(path.to_string(), pem.clone());
+    Ok(pem)
+}
+
+/// Minimum time between forced JWKS refreshes.
+const JWK_MIN_REFRESH: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// Authenticated user information
 #[derive(Debug, Clone)]
@@ -436,10 +450,11 @@ async fn authenticate_jwt(
     // Determine decoding key and algorithm
     let (decoding_key, algorithm) = if let Some(ref jwk_url) = jwt_settings.jwk_url {
         // JWK URL mode: fetch keys from external IdP
-        let jwks = get_jwks(jwk_url, jwk_cache).await.map_err(|e| {
+        let fetch_failed = |e: String| {
             let outcome = OperationOutcome::storage_error(e);
             (StatusCode::INTERNAL_SERVER_ERROR, axum::Json(outcome)).into_response()
-        })?;
+        };
+        let mut jwks = get_jwks(jwk_url, jwk_cache, false).await.map_err(fetch_failed)?;
 
         // Decode JWT header to get kid
         let header = jsonwebtoken::decode_header(token).map_err(|e| {
@@ -447,16 +462,23 @@ async fn authenticate_jwt(
             (StatusCode::UNAUTHORIZED, axum::Json(outcome)).into_response()
         })?;
 
-        let kid = header.kid.as_deref().unwrap_or("");
-        let jwk = jwks
-            .keys
-            .iter()
-            .find(|k| k.common.key_id.as_deref() == Some(kid))
-            .or_else(|| jwks.keys.first())
-            .ok_or_else(|| {
-                let outcome = OperationOutcome::unauthorized("No matching JWK found");
-                (StatusCode::UNAUTHORIZED, axum::Json(outcome)).into_response()
-            })?;
+        // A token naming a kid gets exactly that key — refetching once if the
+        // cache predates a key rotation. Only a token without a kid may use
+        // the set's single key.
+        let jwk = match header.kid.as_deref() {
+            Some(kid) => {
+                if !jwks.keys.iter().any(|k| k.common.key_id.as_deref() == Some(kid)) {
+                    jwks = get_jwks(jwk_url, jwk_cache, true).await.map_err(fetch_failed)?;
+                }
+                jwks.keys.iter().find(|k| k.common.key_id.as_deref() == Some(kid))
+            }
+            None if jwks.keys.len() == 1 => jwks.keys.first(),
+            None => None,
+        }
+        .ok_or_else(|| {
+            let outcome = OperationOutcome::unauthorized("No matching JWK found for the token's kid");
+            (StatusCode::UNAUTHORIZED, axum::Json(outcome)).into_response()
+        })?;
 
         let key = DecodingKey::from_jwk(jwk).map_err(|e| {
             let outcome = OperationOutcome::unauthorized(format!("Invalid JWK: {}", e));
@@ -480,7 +502,7 @@ async fn authenticate_jwt(
     } else if let Some(ref secret) = jwt_settings.secret {
         (DecodingKey::from_secret(secret.as_bytes()), Algorithm::HS256)
     } else if let Some(ref key_file) = jwt_settings.public_key_file {
-        let pem = std::fs::read(key_file).map_err(|e| {
+        let pem = read_key_file(key_file).map_err(|e| {
             let outcome =
                 OperationOutcome::storage_error(format!("Failed to read public key file: {}", e));
             (StatusCode::INTERNAL_SERVER_ERROR, axum::Json(outcome)).into_response()

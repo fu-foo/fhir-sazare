@@ -99,7 +99,14 @@ struct ExportJob {
     request_url: String,
     /// (resource type, NDJSON) for each non-empty type.
     files: Vec<(String, String)>,
+    /// When the job completed or failed (for expiry).
+    finished_at: Option<std::time::Instant>,
 }
+
+/// How long a finished export's files stay downloadable.
+const JOB_RETENTION: std::time::Duration = std::time::Duration::from_secs(60 * 60);
+/// Jobs kept at once (running or finished but not yet expired/deleted).
+const MAX_JOBS: usize = 8;
 
 /// In-memory registry of bulk-export jobs.
 #[derive(Default)]
@@ -112,28 +119,40 @@ impl ExportJobs {
         Self::default()
     }
 
-    async fn start(&self, id: String, transaction_time: String, request_url: String) {
-        self.jobs.lock().await.insert(
+    /// Register a job. Finished jobs past their retention are dropped first;
+    /// `false` when [`MAX_JOBS`] are still held (the export output lives in
+    /// memory, so the number of jobs is what bounds it).
+    async fn start(&self, id: String, transaction_time: String, request_url: String) -> bool {
+        let mut jobs = self.jobs.lock().await;
+        jobs.retain(|_, j| j.finished_at.is_none_or(|t| t.elapsed() < JOB_RETENTION));
+        if jobs.len() >= MAX_JOBS {
+            return false;
+        }
+        jobs.insert(
             id,
             ExportJob {
                 status: JobStatus::InProgress,
                 transaction_time,
                 request_url,
                 files: Vec::new(),
+                finished_at: None,
             },
         );
+        true
     }
 
     async fn complete(&self, id: &str, files: Vec<(String, String)>) {
         if let Some(job) = self.jobs.lock().await.get_mut(id) {
             job.files = files;
             job.status = JobStatus::Complete;
+            job.finished_at = Some(std::time::Instant::now());
         }
     }
 
     async fn fail(&self, id: &str, err: String) {
         if let Some(job) = self.jobs.lock().await.get_mut(id) {
             job.status = JobStatus::Failed(err);
+            job.finished_at = Some(std::time::Instant::now());
         }
     }
 
@@ -360,16 +379,33 @@ async fn run_export(
     let job_id = uuid::Uuid::new_v4().to_string();
     let transaction_time = chrono::Utc::now().to_rfc3339();
     let request_url = format!("{base}{request_path}");
-    state
+    if !state
         .export_jobs
         .start(job_id.clone(), transaction_time, request_url)
-        .await;
+        .await
+    {
+        return (
+            StatusCode::TOO_MANY_REQUESTS,
+            [(header::RETRY_AFTER, "60")],
+            Json(op_outcome(
+                "throttled",
+                format!("{MAX_JOBS} export jobs are held; delete finished ones (DELETE the status URL) or retry later"),
+            )),
+        )
+            .into_response();
+    }
 
     let state2 = state.clone();
     let job_id2 = job_id.clone();
     let since = params._since.clone();
+    // Building reads the whole store synchronously: keep it off the async
+    // worker threads.
     tokio::spawn(async move {
-        match build_export_files(&state2, &scope, &type_filter, &since) {
+        let state3 = state2.clone();
+        let built = tokio::task::spawn_blocking(move || build_export_files(&state3, &scope, &type_filter, &since))
+            .await
+            .unwrap_or_else(|e| Err(format!("export task failed: {e}")));
+        match built {
             Ok(files) => state2.export_jobs.complete(&job_id2, files).await,
             Err(e) => state2.export_jobs.fail(&job_id2, e).await,
         }

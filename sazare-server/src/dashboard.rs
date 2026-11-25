@@ -82,7 +82,8 @@ pub async fn browse_list(
     Path(resource_type): Path<String>,
     Query(params): Query<BrowseParams>,
 ) -> impl IntoResponse {
-    let count = params._count.unwrap_or(20);
+    // The dashboard pages by 20; cap what a hand-written URL can ask for.
+    let count = params._count.unwrap_or(20).min(100);
     let offset = params._offset.unwrap_or(0);
 
     let (raw_entries, total) = match state.store.list_by_last_updated(&resource_type, count, offset) {

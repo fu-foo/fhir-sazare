@@ -1849,3 +1849,26 @@ async fn test_write_paths_keep_fhir_rules() {
     let h: Value = c.get(format!("{base}/Patient/t1/_history")).send().await.unwrap().json().await.unwrap();
     assert_eq!(h["total"], 3, "{h}");
 }
+
+/// Async exports hold their output in memory, so the number of held jobs is
+/// capped; deleting a finished one frees a slot.
+#[tokio::test]
+async fn test_export_jobs_are_bounded() {
+    let (base, _dir) = start_test_server().await;
+    let c = reqwest::Client::new();
+    let kick = || c.get(format!("{base}/$export")).header("Prefer", "respond-async").send();
+    let mut status_urls = Vec::new();
+    for _ in 0..8 {
+        let r = kick().await.unwrap();
+        assert_eq!(r.status(), 202);
+        status_urls.push(r.headers()["content-location"].to_str().unwrap().to_string());
+    }
+    let r = kick().await.unwrap();
+    assert_eq!(r.status(), 429);
+    assert!(r.headers().contains_key("retry-after"));
+    // Free one (DELETE the status URL, as the Bulk Data IG specifies).
+    let path = status_urls[0].split_once("/$export-status/").unwrap().1;
+    let r = c.delete(format!("{base}/$export-status/{path}")).send().await.unwrap();
+    assert!(r.status().is_success(), "{}", r.status());
+    assert_eq!(kick().await.unwrap().status(), 202);
+}

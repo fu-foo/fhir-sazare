@@ -27,7 +27,7 @@ impl WebhookManager {
     pub fn new(settings: WebhookSettings) -> Self {
         Self {
             settings,
-            client: reqwest::Client::new(),
+            client: crate::http_client().clone(),
         }
     }
 

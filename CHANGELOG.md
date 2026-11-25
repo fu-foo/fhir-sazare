@@ -36,6 +36,20 @@ authorization gaps the 0.11.0 hardening missed.
   get whatever it asked for); failed token requests count toward the failed-login lockout.
 - A plugin can't be named `metrics` (it would have shadowed `/metrics`).
 
+### Availability
+- HTTPS: TLS handshakes run concurrently with a 10 s timeout. A client that opened a
+  connection and never finished the handshake used to stop the server from accepting
+  anyone else.
+- Outbound calls (JWKS for JWT validation, SMART client JWKS, webhooks) have connect and
+  total timeouts, and the JWKS fetch no longer holds a lock that every JWT request waits on.
+- JWTs naming a `kid` are verified with that key only; an unknown `kid` refetches the JWKS
+  once (picking up a key rotation) instead of falling back to the first key. A token
+  without `kid` is accepted only when the JWKS has a single key.
+- Async `$export` jobs expire an hour after finishing, and at most 8 are held at once
+  (429 with `Retry-After` beyond that); the export is built off the async worker threads.
+- `$browse` pages are capped at 100; `public_key_file` is read once, not per request;
+  Subscription criteria are checked against the changed resource only.
+
 ### Fixed
 - Patient-scoped searches narrow to the compartment before paging, so `total`, the page and
   the `next` link are right (another patient's matches on the first page used to hide

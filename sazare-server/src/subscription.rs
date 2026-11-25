@@ -208,7 +208,10 @@ impl SubscriptionManager {
 
         // If there are query params, check if the resource matches
         if !criteria_query.is_empty() {
-            let query = SearchQuery::parse_with_registry(criteria_query, Some(criteria_type), &state.search_param_registry)
+            // Only "does this one resource match?" matters: narrow the search
+            // to its id instead of evaluating the criteria over the whole type.
+            let narrowed = format!("{criteria_query}&_id={}", urlencoding_id(resource_id));
+            let query = SearchQuery::parse_with_registry(&narrowed, Some(criteria_type), &state.search_param_registry)
                 .map_err(|e| e.to_string())?;
 
             let index = state.index.lock().await;
@@ -608,4 +611,15 @@ mod delivery_tests {
             assert!(is_public_ip(public.parse().unwrap()), "{public}");
         }
     }
+}
+
+/// Percent-encode the characters of a resource id that are special in a query
+/// string (FHIR ids are `[A-Za-z0-9\-.]`, but don't rely on it here).
+fn urlencoding_id(id: &str) -> String {
+    id.chars()
+        .map(|c| match c {
+            'A'..='Z' | 'a'..='z' | '0'..='9' | '-' | '.' => c.to_string(),
+            other => other.to_string().bytes().map(|b| format!("%{b:02X}")).collect(),
+        })
+        .collect()
 }

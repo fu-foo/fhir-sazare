@@ -97,7 +97,9 @@ async fn client_jwks(client: &BackendClient) -> Result<JwkSet, String> {
         return serde_json::from_value(inline.clone()).map_err(|e| format!("bad inline jwks: {e}"));
     }
     if let Some(url) = &client.jwks_url {
-        let resp = reqwest::get(url)
+        let resp = crate::http_client()
+            .get(url)
+            .send()
             .await
             .map_err(|e| format!("jwks fetch failed: {e}"))?;
         return resp

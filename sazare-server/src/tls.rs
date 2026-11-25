@@ -8,15 +8,57 @@ use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio_rustls::TlsAcceptor;
 
+/// Longest a client may take to complete the TLS handshake.
+const HANDSHAKE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+/// Handshakes in progress at once; further connections wait to be accepted.
+const MAX_HANDSHAKES: usize = 1024;
+
 /// A TLS-wrapped TCP listener that implements `axum::serve::Listener`.
+///
+/// Handshakes run concurrently in their own tasks, each with a timeout: a
+/// client that opens a connection and never finishes the handshake (or does
+/// so slowly) can't hold up anyone else's connection.
 pub struct TlsListener {
-    tcp: TcpListener,
-    acceptor: TlsAcceptor,
+    ready: tokio::sync::mpsc::Receiver<(tokio_rustls::server::TlsStream<tokio::net::TcpStream>, SocketAddr)>,
+    local_addr: io::Result<SocketAddr>,
 }
 
 impl TlsListener {
     pub fn new(tcp: TcpListener, acceptor: TlsAcceptor) -> Self {
-        Self { tcp, acceptor }
+        let local_addr = tcp.local_addr();
+        let (tx, ready) = tokio::sync::mpsc::channel(MAX_HANDSHAKES);
+        let slots = Arc::new(tokio::sync::Semaphore::new(MAX_HANDSHAKES));
+        tokio::spawn(async move {
+            loop {
+                let Ok(permit) = slots.clone().acquire_owned().await else {
+                    return;
+                };
+                let (stream, addr) = match tcp.accept().await {
+                    Ok(conn) => conn,
+                    Err(e) => {
+                        tracing::error!("TCP accept error: {}", e);
+                        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                        continue;
+                    }
+                };
+                if tx.is_closed() {
+                    return;
+                }
+                let acceptor = acceptor.clone();
+                let conn_tx = tx.clone();
+                tokio::spawn(async move {
+                    let _permit = permit;
+                    match tokio::time::timeout(HANDSHAKE_TIMEOUT, acceptor.accept(stream)).await {
+                        Ok(Ok(tls)) => {
+                            let _ = conn_tx.send((tls, addr)).await;
+                        }
+                        Ok(Err(e)) => tracing::warn!("TLS handshake failed from {}: {}", addr, e),
+                        Err(_) => tracing::warn!("TLS handshake from {} timed out", addr),
+                    }
+                });
+            }
+        });
+        Self { ready, local_addr }
     }
 }
 
@@ -25,28 +67,18 @@ impl axum::serve::Listener for TlsListener {
     type Addr = SocketAddr;
 
     async fn accept(&mut self) -> (Self::Io, Self::Addr) {
-        loop {
-            let (stream, addr) = match self.tcp.accept().await {
-                Ok(conn) => conn,
-                Err(e) => {
-                    tracing::error!("TCP accept error: {}", e);
-                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                    continue;
-                }
-            };
-
-            match self.acceptor.accept(stream).await {
-                Ok(tls_stream) => return (tls_stream, addr),
-                Err(e) => {
-                    tracing::warn!("TLS handshake failed from {}: {}", addr, e);
-                    continue;
-                }
-            }
+        match self.ready.recv().await {
+            Some(conn) => conn,
+            // The accept task only ends when the listener is dropped.
+            None => std::future::pending().await,
         }
     }
 
     fn local_addr(&self) -> io::Result<SocketAddr> {
-        self.tcp.local_addr()
+        match &self.local_addr {
+            Ok(a) => Ok(*a),
+            Err(e) => Err(io::Error::new(e.kind(), e.to_string())),
+        }
     }
 }
 
