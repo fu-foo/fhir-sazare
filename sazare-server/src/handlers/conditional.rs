@@ -155,7 +155,7 @@ pub async fn conditional_update(
                     .unwrap_or(0);
                 (current + 1).to_string()
             }
-            _ => "1".to_string(),
+            _ => state.store.next_version(&resource_type, &id).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!(OperationOutcome::storage_error(e.to_string())))))?,
         };
         // Preserve caller-provided meta (profile, source, …); only stamp the
         // server-managed versionId/lastUpdated.
@@ -206,7 +206,7 @@ pub async fn conditional_update(
                     .unwrap_or(0);
                 (current_ver + 1).to_string()
             }
-            _ => "1".to_string(),
+            _ => state.store.next_version(&resource_type, &id).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!(OperationOutcome::storage_error(e.to_string())))))?,
         };
 
         resource.id = Some(id.clone());

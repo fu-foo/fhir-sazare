@@ -1789,3 +1789,63 @@ async fn test_metrics_prometheus_text() {
     }
     assert!(!body.contains("does-not-exist"), "concrete ids must not become labels");
 }
+
+/// Write-path consistency: every way of writing keeps the same FHIR rules.
+#[tokio::test]
+async fn test_write_paths_keep_fhir_rules() {
+    let (base, _dir) = start_test_server().await;
+    let c = reqwest::Client::new();
+    let put = |path: &str, body: Value| {
+        c.put(format!("{base}{path}")).header("Content-Type", "application/fhir+json").body(body.to_string()).send()
+    };
+
+    // meta.tag / meta.security survive a REST create and update (and are searchable).
+    let body = json!({"resourceType": "Patient", "id": "t1",
+        "meta": {"tag": [{"system": "urn:t", "code": "vip"}], "security": [{"system": "urn:s", "code": "R"}]}});
+    assert_eq!(put("/Patient/t1", body).await.unwrap().status(), 201);
+    let p: Value = c.get(format!("{base}/Patient/t1")).send().await.unwrap().json().await.unwrap();
+    assert_eq!(p["meta"]["tag"][0]["code"], "vip", "{p}");
+    assert_eq!(p["meta"]["security"][0]["code"], "R");
+    let b: Value = c.get(format!("{base}/Patient?_tag=urn:t|vip")).send().await.unwrap().json().await.unwrap();
+    assert_eq!(b["total"], 1);
+
+    // PUT: body type and id must match the URL.
+    let r = put("/Patient/t1", json!({"resourceType": "Observation", "id": "t1", "status": "final", "code": {"text": "x"}})).await.unwrap();
+    assert_eq!(r.status(), 400);
+    let r = put("/Patient/t1", json!({"resourceType": "Patient", "id": "other"})).await.unwrap();
+    assert_eq!(r.status(), 400);
+
+    // Delete, then re-create: the history continues (v1 is not overwritten).
+    assert_eq!(c.delete(format!("{base}/Patient/t1")).send().await.unwrap().status(), 204);
+    let r = put("/Patient/t1", json!({"resourceType": "Patient", "id": "t1", "name": [{"family": "Again"}]})).await.unwrap();
+    assert_eq!(r.status(), 201);
+    let p: Value = r.json().await.unwrap();
+    assert_eq!(p["meta"]["versionId"], "2", "{p}");
+    let v1: Value = c.get(format!("{base}/Patient/t1/_history/1")).send().await.unwrap().json().await.unwrap();
+    assert_eq!(v1["meta"]["tag"][0]["code"], "vip", "version 1 is the original");
+
+    // PATCH may not change identity; a patch dropping meta still gets a new version.
+    let patch = |ops: Value| {
+        c.patch(format!("{base}/Patient/t1")).header("Content-Type", "application/json-patch+json").body(ops.to_string()).send()
+    };
+    let r = patch(json!([{"op": "replace", "path": "/id", "value": "zzz"}])).await.unwrap();
+    assert_eq!(r.status(), 422);
+    let r = patch(json!([{"op": "remove", "path": "/meta"}])).await.unwrap();
+    assert_eq!(r.status(), 200);
+    let p: Value = c.get(format!("{base}/Patient/t1")).send().await.unwrap().json().await.unwrap();
+    assert_eq!(p["meta"]["versionId"], "3", "{p}");
+
+    // Batch PUT with a mismatched body type is refused for that entry.
+    let bundle = json!({"resourceType": "Bundle", "type": "batch", "entry": [
+        {"request": {"method": "PUT", "url": "Patient/t2"},
+         "resource": {"resourceType": "Observation", "id": "t2", "status": "final", "code": {"text": "x"}}}
+    ]});
+    let r: Value = c.post(&base).header("Content-Type", "application/fhir+json").body(bundle.to_string())
+        .send().await.unwrap().json().await.unwrap();
+    assert!(r["entry"][0]["response"]["status"].as_str().unwrap().starts_with("400"), "{r}");
+    assert_eq!(c.get(format!("{base}/Patient/t2")).send().await.unwrap().status(), 404);
+
+    // The history lists every version, the re-created ones included.
+    let h: Value = c.get(format!("{base}/Patient/t1/_history")).send().await.unwrap().json().await.unwrap();
+    assert_eq!(h["total"], 3, "{h}");
+}

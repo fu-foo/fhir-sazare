@@ -159,8 +159,18 @@ pub async fn create(
     }
     resource.id = Some(id.clone());
 
-    // Set metadata — preserve caller-provided fields (profile, source, tag, ...)
-    let version_id = "1".to_string();
+    // Set metadata — preserve caller-provided fields (profile, source, tag, ...).
+    // A client-chosen id may name a deleted resource: continue its history.
+    let version_id = if client_supplied_id.is_some() {
+        state.store.next_version(&resource_type, &id).map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!(OperationOutcome::storage_error(e.to_string()))),
+            )
+        })?
+    } else {
+        "1".to_string()
+    };
     let now = chrono::Utc::now().to_rfc3339();
     let mut meta = resource.meta.take().unwrap_or_default();
     meta.version_id = Some(version_id.clone());
@@ -189,15 +199,33 @@ pub async fn create(
         update_search_index(&index, &state.search_param_registry, &resource_type, &id, &resource_value);
     }
 
-    state
+    // Compare-and-swap on "absent": two creates racing for the same
+    // client-chosen id can't both succeed.
+    let created = state
         .store
-        .put_with_version(&resource_type, &id, &version_id, &json_bytes)
+        .put_with_version_cas(&resource_type, &id, None, &version_id, &json_bytes)
         .map_err(|e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!(OperationOutcome::storage_error(e.to_string()))),
             )
         })?;
+    if !created {
+        // Put the index back to the stored resource it was just overwritten for.
+        if let Ok(Some(data)) = state.store.get(&resource_type, &id)
+            && let Ok(existing) = serde_json::from_slice::<Value>(&data)
+        {
+            let index = state.index.lock().await;
+            update_search_index(&index, &state.search_param_registry, &resource_type, &id, &existing);
+        }
+        return Err((
+            StatusCode::CONFLICT,
+            Json(json!(OperationOutcome::error(
+                IssueType::Conflict,
+                format!("{}/{} already exists; use PUT to update it", resource_type, id)
+            ))),
+        ));
+    }
 
     // Audit log
     audit::log_operation_success(&audit_ctx, "CREATE", &resource_type, &id, &state.audit);
@@ -307,6 +335,32 @@ pub async fn update(
         )
     })?;
 
+    // The body must be the resource the URL names (FHIR: 400 otherwise).
+    if resource.resource_type != resource_type {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!(OperationOutcome::error(
+                IssueType::Invalid,
+                format!(
+                    "The resource in the body is a {}, but the URL is for {}",
+                    resource.resource_type, resource_type
+                )
+            ))),
+        ));
+    }
+    match resource.id.as_deref() {
+        Some(body_id) if body_id != id => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(json!(OperationOutcome::error(
+                    IssueType::Invalid,
+                    format!("The body's id ({body_id}) differs from the URL's ({id})")
+                ))),
+            ));
+        }
+        _ => {}
+    }
+
     // If-Match header (optimistic locking)
     let if_match = headers
         .get(header::IF_MATCH)
@@ -360,7 +414,15 @@ pub async fn update(
                     ))),
                 ));
             }
-            ("1".to_string(), true, None)
+            // Continue the history of a deleted resource rather than
+            // overwriting its version 1.
+            let next = state.store.next_version(&resource_type, &id).map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!(OperationOutcome::storage_error(e.to_string()))),
+                )
+            })?;
+            (next, true, None)
         }
         Err(e) => {
             return Err((
@@ -520,8 +582,31 @@ pub async fn patch_resource(
         )
     })?;
 
+    // A patch may change content, not identity.
+    if resource.get("resourceType").and_then(|v| v.as_str()) != Some(resource_type.as_str())
+        || resource.get("id").and_then(|v| v.as_str()) != Some(id.as_str())
+    {
+        return Err((
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(json!(OperationOutcome::error(
+                IssueType::Processing,
+                "A patch may not change the resource's resourceType or id"
+            ))),
+        ));
+    }
+
     // The patched result must stay in the caller's compartment.
     check_compartment_write(auth_user.as_ref(), &state.compartment_def, &resource_type, &resource)?;
+
+    // Same rules for a patched Subscription as for a PUT one.
+    if resource_type == "Subscription"
+        && let Err(e) = subscription::validate_subscription(&resource, &state.search_param_registry)
+    {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!(OperationOutcome::error(IssueType::Invalid, e))),
+        ));
+    }
 
     // Validate patched resource
     if let Err(outcome) = validate_resource_all_phases(
@@ -536,12 +621,9 @@ pub async fn patch_resource(
     let current_ver: i32 = current_ver_str.parse().unwrap_or(0);
     let new_version = (current_ver + 1).to_string();
 
-    if let Some(meta) = resource.get_mut("meta").and_then(|m| m.as_object_mut()) {
-        meta.insert("versionId".to_string(), json!(new_version));
-        meta.insert(
-            "lastUpdated".to_string(),
-            json!(chrono::Utc::now().to_rfc3339()),
-        );
+    // Stamp meta even when the patch removed it.
+    if let Some(obj) = resource.as_object_mut() {
+        super::merge_version_meta(obj, &new_version);
     }
 
     // Save
@@ -560,15 +642,32 @@ pub async fn patch_resource(
         update_search_index(&index, &state.search_param_registry, &resource_type, &id, &resource);
     }
 
-    state
+    // Compare-and-swap against the version the patch was applied to: a
+    // concurrent update in between makes this a 409, not a lost update.
+    let written = state
         .store
-        .put_with_version(&resource_type, &id, &new_version, &json_bytes)
+        .put_with_version_cas(&resource_type, &id, Some(&current_ver_str), &new_version, &json_bytes)
         .map_err(|e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!(OperationOutcome::storage_error(e.to_string()))),
             )
         })?;
+    if !written {
+        if let Ok(Some(data)) = state.store.get(&resource_type, &id)
+            && let Ok(current) = serde_json::from_slice::<Value>(&data)
+        {
+            let index = state.index.lock().await;
+            update_search_index(&index, &state.search_param_registry, &resource_type, &id, &current);
+        }
+        return Err((
+            StatusCode::CONFLICT,
+            Json(json!(OperationOutcome::error(
+                IssueType::Conflict,
+                "The resource changed while the patch was applied; retry"
+            ))),
+        ));
+    }
 
     audit::log_operation_success(&audit_ctx, "PATCH", &resource_type, &id, &state.audit);
 

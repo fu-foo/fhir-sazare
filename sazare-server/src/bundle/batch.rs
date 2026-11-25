@@ -94,6 +94,7 @@ async fn process_batch_entry(
                 }
             }
 
+            let (method, url_type, url_id) = (entry.method.clone(), entry.resource_type.clone(), entry.id.clone());
             let resource = match &mut entry.resource {
                 Some(r) => r,
                 None => {
@@ -103,6 +104,10 @@ async fn process_batch_entry(
                     );
                 }
             };
+
+            if let Err(e) = super::check_entry_body(state, &method, &url_type, url_id.as_deref(), resource) {
+                return error_entry("400 Bad Request", &format!("entry[{index}]: {e}"));
+            }
 
             if let Err(outcome) = validate_resource_all_phases(
                 resource,
@@ -168,6 +173,7 @@ async fn process_batch_entry(
                 }
             };
 
+            let (method, url_type, url_id) = (entry.method.clone(), entry.resource_type.clone(), entry.id.clone());
             let resource = match &mut entry.resource {
                 Some(r) => r,
                 None => {
@@ -177,6 +183,10 @@ async fn process_batch_entry(
                     );
                 }
             };
+
+            if let Err(e) = super::check_entry_body(state, &method, &url_type, url_id.as_deref(), resource) {
+                return error_entry("400 Bad Request", &format!("entry[{index}]: {e}"));
+            }
 
             if let Err(outcome) = validate_resource_all_phases(
                 resource,
@@ -203,7 +213,10 @@ async fn process_batch_entry(
                         .unwrap_or(0);
                     (false, (current + 1).to_string())
                 }
-                Ok(None) => (true, "1".to_string()),
+                Ok(None) => match state.store.next_version(&entry.resource_type, &id) {
+                    Ok(v) => (true, v),
+                    Err(e) => return error_entry("500 Internal Server Error", &e.to_string()),
+                },
                 Err(e) => {
                     return error_entry("500 Internal Server Error", &e.to_string());
                 }

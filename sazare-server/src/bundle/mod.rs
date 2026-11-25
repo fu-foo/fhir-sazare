@@ -111,6 +111,35 @@ fn parse_entries(bundle: &Value) -> Result<Vec<BundleEntry>, OperationOutcome> {
     Ok(parsed)
 }
 
+/// The checks a REST create/update applies to its body, for a Bundle entry:
+/// the body is of the URL's type, a PUT's body id (if any) is the URL's id,
+/// and a Subscription passes the Subscription rules.
+pub(crate) fn check_entry_body(
+    state: &AppState,
+    method: &str,
+    url_type: &str,
+    url_id: Option<&str>,
+    resource: &Value,
+) -> Result<(), String> {
+    let body_type = resource.get("resourceType").and_then(|v| v.as_str()).unwrap_or("");
+    if body_type != url_type {
+        return Err(format!(
+            "resourceType '{}' does not match request URL type '{}'",
+            body_type, url_type
+        ));
+    }
+    if method == "PUT"
+        && let (Some(url_id), Some(body_id)) = (url_id, resource.get("id").and_then(|v| v.as_str()))
+        && url_id != body_id
+    {
+        return Err(format!("body id '{body_id}' differs from the request URL id '{url_id}'"));
+    }
+    if url_type == "Subscription" {
+        crate::subscription::validate_subscription(resource, &state.search_param_registry)?;
+    }
+    Ok(())
+}
+
 /// Recursively resolve urn:uuid references in a JSON value.
 /// Apply the per-request authorization rules to each Bundle entry: JWT scopes
 /// (and the patient-token restrictions), then the patient compartment for the

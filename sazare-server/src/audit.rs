@@ -41,7 +41,7 @@ fn parse_operation(op: &str) -> Operation {
     match op.to_uppercase().as_str() {
         "CREATE" => Operation::Create,
         "READ" | "READ_VERSION" | "VALIDATE" => Operation::Read,
-        "UPDATE" => Operation::Update,
+        "UPDATE" | "PATCH" => Operation::Update,
         "DELETE" => Operation::Delete,
         "SEARCH" | "HISTORY" => Operation::Search,
         "TRANSACTION" | "BATCH" | "IMPORT" => Operation::Create,
@@ -65,9 +65,8 @@ pub fn log_operation_success(
         resource_type = resource_type,
         resource_id = resource_id,
         status = "success",
-        "Audit: {} {} {}/{}",
+        "Audit: {} {}/{}",
         operation,
-        resource_type,
         resource_type,
         resource_id
     );

@@ -192,10 +192,18 @@ async fn load_resources_into(state: &AppState, resources: &[Value]) -> (usize, V
             continue;
         }
 
-        // Stamp meta and upsert (fixed version so repeated loads just refresh).
+        // Stamp meta and upsert; a repeated load adds a version (history is
+        // never overwritten).
+        let version = match state.store.next_version(&rt, &id) {
+            Ok(v) => v,
+            Err(e) => {
+                errors.push(format!("{rt}/{id}: {e}"));
+                continue;
+            }
+        };
         let mut stored = resource.clone();
         if let Some(obj) = stored.as_object_mut() {
-            crate::handlers::merge_version_meta(obj, "1");
+            crate::handlers::merge_version_meta(obj, &version);
         }
         let data = match serde_json::to_vec(&stored) {
             Ok(d) => d,
@@ -204,7 +212,7 @@ async fn load_resources_into(state: &AppState, resources: &[Value]) -> (usize, V
                 continue;
             }
         };
-        if let Err(e) = state.store.put_with_version(&rt, &id, "1", &data) {
+        if let Err(e) = state.store.put_with_version(&rt, &id, &version, &data) {
             errors.push(format!("{rt}/{id}: {e}"));
             continue;
         }

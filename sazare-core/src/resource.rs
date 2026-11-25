@@ -32,6 +32,11 @@ pub struct Meta {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub profile: Option<Vec<String>>,
+
+    /// Every other meta element (`tag`, `security`, `extension`, ...), kept
+    /// as sent — dropping them lost `_tag` / `_security` searchability.
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 impl Resource {

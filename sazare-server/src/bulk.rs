@@ -110,6 +110,13 @@ pub async fn import(
             continue;
         }
 
+        if resource_type == "Subscription"
+            && let Err(e) = crate::subscription::validate_subscription(&resource, &state.search_param_registry)
+        {
+            errors.push(json!({"line": line_num + 1, "resourceType": resource_type, "error": e}));
+            continue;
+        }
+
         // Use existing id or assign new one
         let id = resource
             .get("id")
@@ -129,7 +136,14 @@ pub async fn import(
                     .unwrap_or(0);
                 (current + 1).to_string()
             }
-            _ => "1".to_string(),
+            _ => match state.store.next_version(&resource_type, &id) {
+                Ok(v) => v,
+                Err(e) => {
+                    errors.push(json!({"line": line_num + 1, "resourceType": resource_type, "id": id,
+                                       "error": format!("Storage error: {}", e)}));
+                    continue;
+                }
+            },
         };
 
         // Set id and meta (preserve caller-provided meta fields)

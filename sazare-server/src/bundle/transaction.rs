@@ -46,15 +46,8 @@ pub(super) async fn process_transaction(
                 // The body's resourceType must match the request URL's type — a
                 // REST create checks this, so a bundle entry must too (otherwise
                 // an Observation could be stored under type Patient).
-                let body_type = resource.get("resourceType").and_then(|v| v.as_str()).unwrap_or("");
-                if body_type != entry.resource_type {
-                    let outcome = OperationOutcome::error(
-                        IssueType::Invalid,
-                        format!(
-                            "entry[{}]: resourceType '{}' does not match request URL type '{}'",
-                            i, body_type, entry.resource_type
-                        ),
-                    );
+                if let Err(e) = super::check_entry_body(state, &entry.method, &entry.resource_type, entry.id.as_deref(), resource) {
+                    let outcome = OperationOutcome::error(IssueType::Invalid, format!("entry[{i}]: {e}"));
                     return (StatusCode::BAD_REQUEST, Json(json!(outcome))).into_response();
                 }
                 if let Err(outcome) = validate_resource_all_phases(
@@ -233,7 +226,9 @@ pub(super) async fn process_transaction(
                     let resource = entry.resource.as_mut().unwrap();
 
                     // Determine version from existing resource
-                    let version_id = match ops.get(resource_type, id)? {
+                    let existing = ops.get(resource_type, id)?;
+                    let is_create = existing.is_none();
+                    let version_id = match existing {
                         Some(existing) => {
                             let existing: Value =
                                 serde_json::from_slice(&existing).unwrap_or(json!({}));
@@ -245,10 +240,9 @@ pub(super) async fn process_transaction(
                                 .unwrap_or(0);
                             (current + 1).to_string()
                         }
-                        None => "1".to_string(),
+                        // Continue a deleted resource's history.
+                        None => ops.next_version(resource_type, id)?,
                     };
-
-                    let is_create = version_id == "1";
 
                     if let Some(obj) = resource.as_object_mut() {
                         obj.insert("id".to_string(), json!(id));

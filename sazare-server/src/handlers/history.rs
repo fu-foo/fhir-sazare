@@ -64,16 +64,20 @@ pub async fn history(
         }
     }
 
-    Ok(super::fhir_json(StatusCode::OK, json!({
+    let mut bundle = json!({
         "resourceType": "Bundle",
         "type": "history",
         "total": entries.len(),
         "link": [{
             "relation": "self",
             "url": format!("{base}/{resource_type}/{id}/_history")
-        }],
-        "entry": entries
-    })))
+        }]
+    });
+    // FHIR forbids empty arrays: leave `entry` out when there are none.
+    if !entries.is_empty() {
+        bundle["entry"] = json!(entries);
+    }
+    Ok(super::fhir_json(StatusCode::OK, bundle))
 }
 
 /// Read specific version (GET /{resource_type}/{id}/_history/{vid})

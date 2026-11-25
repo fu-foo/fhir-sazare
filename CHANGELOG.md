@@ -42,6 +42,20 @@ authorization gaps the 0.11.0 hardening missed.
   later ones).
 - `$everything` covers every Patient-compartment resource type (it had a fixed list of 9)
   and answers with `application/fhir+json`.
+- REST create/update keep every `meta` element (`tag`, `security`, `extension`); they were
+  dropped, so `_tag` / `_security` missed resources written through REST.
+- Re-creating a deleted resource continues its version history instead of overwriting
+  version 1 (and the history table now refuses to overwrite any version).
+- A create with a client-chosen id is atomic (two racing creates: one gets 409).
+- `PUT` and batch/transaction entries refuse a body whose `resourceType` or `id` differs
+  from the URL (400).
+- `PATCH` can't change `resourceType` / `id` (422), validates a patched Subscription,
+  stamps `meta` even when the patch removed it, and is a compare-and-swap (409 when the
+  resource changed meanwhile).
+- Subscriptions written through batch/transaction or `$import` get the same validation as
+  through REST.
+- A history Bundle without versions omits `entry` instead of sending `[]`; audit entries
+  record PATCH as an update.
 
 ## 0.12.0 — 2026-11-25
 

@@ -115,6 +115,12 @@ impl SqliteStore {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
+    /// The version to give `resource_type/id` when it is (re)created: one past
+    /// its history, so a re-create after a delete continues the history.
+    pub fn next_version(&self, resource_type: &str, id: &str) -> Result<String> {
+        next_version_in(&self.conn(), resource_type, id)
+    }
+
     /// Get a resource
     pub fn get(&self, resource_type: &str, id: &str) -> Result<Option<Vec<u8>>> {
         let conn = self.reader();
@@ -168,7 +174,7 @@ impl SqliteStore {
             params![resource_type, id, value],
         )?;
         tx.execute(
-            "INSERT OR REPLACE INTO resource_history (resource_type, id, version_id, value) VALUES (?, ?, ?, ?)",
+            "INSERT INTO resource_history (resource_type, id, version_id, value) VALUES (?, ?, ?, ?)",
             params![resource_type, id, version_id, value],
         )?;
         tx.commit()?;
@@ -225,7 +231,7 @@ impl SqliteStore {
             params![resource_type, id, value],
         )?;
         tx.execute(
-            "INSERT OR REPLACE INTO resource_history (resource_type, id, version_id, value) VALUES (?, ?, ?, ?)",
+            "INSERT INTO resource_history (resource_type, id, version_id, value) VALUES (?, ?, ?, ?)",
             params![resource_type, id, new_version, value],
         )?;
         tx.commit()?;
@@ -462,10 +468,15 @@ impl<'a> TransactionOps<'a> {
             params![resource_type, id, value],
         )?;
         conn.execute(
-            "INSERT OR REPLACE INTO resource_history (resource_type, id, version_id, value) VALUES (?, ?, ?, ?)",
+            "INSERT INTO resource_history (resource_type, id, version_id, value) VALUES (?, ?, ?, ?)",
             params![resource_type, id, version_id, value],
         )?;
         Ok(())
+    }
+
+    /// [`SqliteStore::next_version`] inside the transaction.
+    pub fn next_version(&self, resource_type: &str, id: &str) -> Result<String> {
+        next_version_in(self.tx.deref(), resource_type, id)
     }
 
     /// Get a resource
@@ -491,6 +502,18 @@ impl<'a> TransactionOps<'a> {
         )?;
         Ok(rows > 0)
     }
+}
+
+/// The version a write of an absent resource starts at: one past the highest
+/// version in its history (a deleted resource keeps its history, and a
+/// re-create must continue it, not overwrite version 1), or "1".
+fn next_version_in(conn: &Connection, resource_type: &str, id: &str) -> Result<String> {
+    let max: Option<i64> = conn.query_row(
+        "SELECT MAX(CAST(version_id AS INTEGER)) FROM resource_history WHERE resource_type = ?1 AND id = ?2",
+        params![resource_type, id],
+        |row| row.get(0),
+    )?;
+    Ok((max.unwrap_or(0) + 1).to_string())
 }
 
 #[cfg(test)]
