@@ -41,6 +41,15 @@ into `data_dir`, delete the two `search_index*` files, start the older binary).
 
 ## Version notes
 
+### To 0.12.0
+
+- The first start rebuilds the search index once (new built-in reference parameters; the
+  log says `was built with different search parameters`). From now on this happens
+  automatically whenever the parameter set changes — no manual `$reindex`.
+- `_include` / `_revinclude` with an unknown or non-reference parameter, and chains deeper
+  than 4 hops, are a 400 instead of returning nothing.
+- With auth enabled, scrape `/metrics` with operator credentials.
+
 ### To 0.11.0 (security release)
 
 - The binary now listens on `127.0.0.1` by default. If other machines connect to it, set
