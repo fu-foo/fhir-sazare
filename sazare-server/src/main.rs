@@ -193,6 +193,15 @@ async fn main() {
     }
 
     let bind_addr = format!("{}:{}", config.server.host, config.server.port);
+    let loopback = matches!(config.server.host.as_str(), "127.0.0.1" | "localhost" | "::1");
+    if !config.auth.enabled && !loopback {
+        tracing::warn!(
+            "Listening on {} with authentication DISABLED: anyone who can reach this \
+             address can read and change all data. Set auth.enabled: true, or bind \
+             to 127.0.0.1 (server.host / SAZARE_HOST).",
+            bind_addr
+        );
+    }
 
     let plugin_names = plugins::discover_plugin_names(&config);
 

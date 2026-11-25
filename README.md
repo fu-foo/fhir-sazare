@@ -212,7 +212,7 @@ cp config.example.yaml config.yaml
 
 ```yaml
 server:
-  host: "0.0.0.0"
+  host: "127.0.0.1"       # default: this machine only; "0.0.0.0" for the network (enable auth!)
   port: 8080
   max_request_mb: 64      # Max request body (Bundles, $import NDJSON); 413 above it
 

@@ -2,7 +2,9 @@
 # Copy this file to config.yaml and customize as needed
 
 server:
-  host: "0.0.0.0"
+  # 127.0.0.1 (default) = this machine only. Use "0.0.0.0" to accept
+  # connections from the network — only together with auth.enabled: true.
+  host: "127.0.0.1"
   port: 8080
   # Maximum request body size in MiB (transaction Bundles, $import NDJSON).
   # Larger requests are rejected with 413.

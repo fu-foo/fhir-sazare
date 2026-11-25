@@ -166,7 +166,9 @@ pub struct PluginSettings {
 impl Default for ServerSettings {
     fn default() -> Self {
         Self {
-            host: "0.0.0.0".to_string(),
+            // Loopback by default: an unconfigured server (auth off) must not
+            // be reachable from the network. Docker sets SAZARE_HOST=0.0.0.0.
+            host: "127.0.0.1".to_string(),
             port: 8080,
             tls: None,
             max_request_mb: 64,
@@ -267,7 +269,7 @@ mod tests {
     fn test_default_config() {
         let config = ServerConfig::default();
         assert_eq!(config.server.port, 8080);
-        assert_eq!(config.server.host, "0.0.0.0");
+        assert_eq!(config.server.host, "127.0.0.1");
         assert!(!config.auth.enabled);
     }
 
