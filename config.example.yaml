@@ -34,6 +34,12 @@ log:
   # Log level: trace, debug, info, warn, error
   level: "info"
 
+# subscription:
+#   # Allow rest-hook endpoints on loopback/private/link-local addresses
+#   # (localhost, 10.x, 192.168.x, 169.254.x, ...). Off by default when auth is
+#   # enabled; always allowed when auth is disabled (local development).
+#   allow_private_endpoints: false
+
 # validation:
 #   # Validate resources that declare no meta.profile against a default profile
 #   # per resource type. The profile must be loaded (embedded US Core, or a

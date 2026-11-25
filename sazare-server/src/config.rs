@@ -12,6 +12,18 @@ pub struct ServerConfig {
     pub webhook: WebhookSettings,
     pub plugins: PluginSettings,
     pub validation: ValidationSettings,
+    pub subscription: SubscriptionSettings,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SubscriptionSettings {
+    /// Allow rest-hook endpoints on loopback / private / link-local addresses
+    /// (localhost, 10.x, 192.168.x, 169.254.x, fc00::/7, …). Off by default
+    /// when auth is enabled, so a client that may create Subscriptions can't
+    /// make the server send requests into its own network. With auth
+    /// disabled (local development) private endpoints are always allowed.
+    pub allow_private_endpoints: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

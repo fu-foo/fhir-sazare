@@ -219,14 +219,18 @@ pub async fn auth_middleware(
     if auth_user.auth_type == AuthType::Jwt {
         let method = request.method().clone();
         let path = request.uri().path().to_string();
-        if let Some((resource_type, action)) = extract_resource_action(&method, &path)
-            && !check_scope(&auth_user.scopes, &resource_type, &action)
-        {
-            let outcome = OperationOutcome::forbidden(format!(
-                "Insufficient scope for {}/{}.{}",
-                resource_type, resource_type, action
-            ));
-            return Err((StatusCode::FORBIDDEN, axum::Json(outcome)).into_response());
+        if let Some((resource_type, action)) = extract_resource_action(&method, &path) {
+            if !check_scope(&auth_user.scopes, &resource_type, &action) {
+                let outcome = OperationOutcome::forbidden(format!(
+                    "Insufficient scope for {}/{}.{}",
+                    resource_type, resource_type, action
+                ));
+                return Err((StatusCode::FORBIDDEN, axum::Json(outcome)).into_response());
+            }
+            if let Err(msg) = patient_scope_may(&auth_user, &resource_type, &action) {
+                let outcome = OperationOutcome::forbidden(msg);
+                return Err((StatusCode::FORBIDDEN, axum::Json(outcome)).into_response());
+            }
         }
     }
 
@@ -408,6 +412,16 @@ fn authenticate_basic(config: &ServerConfig, auth_header: &str) -> Result<AuthUs
 
     let outcome = OperationOutcome::unauthorized("Invalid username or password");
     Err((StatusCode::UNAUTHORIZED, axum::Json(outcome)).into_response())
+}
+
+/// Writes a patient-scoped (patient app) token may not make even when its
+/// scopes match: Subscriptions fire for every patient's data, so creating one
+/// would reach beyond the patient's compartment.
+pub fn patient_scope_may(user: &AuthUser, resource_type: &str, action: &str) -> Result<(), String> {
+    if user.is_patient_scoped() && action == "write" && resource_type == "Subscription" {
+        return Err("Patient-scoped tokens may not create or change Subscriptions".to_string());
+    }
+    Ok(())
 }
 
 /// Extract resource type and action (read/write) from HTTP method + path

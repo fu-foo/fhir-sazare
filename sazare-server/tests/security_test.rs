@@ -170,3 +170,35 @@ async fn writes_cannot_target_another_patients_compartment() {
     let (_, o) = c.get("/Observation/o-p2", ADMIN_KEY).await;
     assert_eq!(o["subject"]["reference"], "Patient/p2");
 }
+
+fn subscription(endpoint: &str) -> Value {
+    json!({
+        "resourceType": "Subscription", "status": "requested", "reason": "test",
+        "criteria": "Observation?",
+        "channel": {"type": "rest-hook", "endpoint": endpoint, "payload": "application/fhir+json"}
+    })
+}
+
+#[tokio::test]
+async fn patient_tokens_cannot_create_subscriptions() {
+    let (c, t, _d) = two_patients().await;
+    let sub = subscription("https://example.org/hook");
+    let (s, _) = c.send(reqwest::Method::POST, "/Subscription", &t, Some(sub.clone())).await;
+    assert_eq!(s, 403);
+    let mut with_id = sub.clone();
+    with_id["id"] = json!("s1");
+    assert_eq!(c.put("/Subscription/s1", &t, with_id).await, 403);
+    // A system-scoped client may.
+    let system = jwt("system/*.read system/*.write", None);
+    let (s, _) = c.send(reqwest::Method::POST, "/Subscription", &system, Some(sub)).await;
+    assert_eq!(s, 201);
+}
+
+#[tokio::test]
+async fn subscription_endpoint_must_be_http_url() {
+    let (c, _t, _d) = two_patients().await;
+    for bad in ["file:///etc/passwd", "gopher://x/", "not a url", "/relative"] {
+        let (s, _) = c.send(reqwest::Method::POST, "/Subscription", ADMIN_KEY, Some(subscription(bad))).await;
+        assert_eq!(s, 400, "{bad}");
+    }
+}

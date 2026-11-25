@@ -88,6 +88,14 @@ pub fn validate_subscription(
             if endpoint.is_empty() {
                 return Err("channel.endpoint is required for rest-hook".to_string());
             }
+            match reqwest::Url::parse(endpoint) {
+                Ok(u) if matches!(u.scheme(), "http" | "https") && u.host().is_some() => {}
+                _ => {
+                    return Err(format!(
+                        "channel.endpoint must be an absolute http(s) URL, got '{endpoint}'"
+                    ));
+                }
+            }
         }
         // websocket clients connect to the server's /ws endpoint and `bind` by
         // subscription id, so no channel.endpoint is required here.
@@ -263,7 +271,9 @@ impl SubscriptionManager {
         const MAX_ATTEMPTS: u32 = 3;
         let mut last_err = String::new();
         for attempt in 1..=MAX_ATTEMPTS {
-            match Self::deliver_rest_hook(channel, endpoint, body.as_deref()).await {
+            let allow_private =
+                !state.config.auth.enabled || state.config.subscription.allow_private_endpoints;
+            match Self::deliver_rest_hook(channel, endpoint, body.as_deref(), allow_private).await {
                 Ok(()) => {
                     debug!(
                         "Subscription notification sent to {} for {}/{} (attempt {})",
@@ -289,12 +299,32 @@ impl SubscriptionManager {
 
     /// One rest-hook delivery attempt: POST the optional body to `endpoint` with
     /// the subscription's custom headers. Err on transport failure or non-2xx.
+    ///
+    /// Unless `allow_private`, the endpoint must resolve to public addresses
+    /// only: IP literals are checked directly and host names go through a
+    /// resolver that drops non-public addresses (so DNS can't point a public
+    /// name at an internal one). Redirects are not followed.
     async fn deliver_rest_hook(
         channel: &Value,
         endpoint: &str,
         body: Option<&[u8]>,
+        allow_private: bool,
     ) -> Result<(), String> {
-        let client = reqwest::Client::new();
+        let mut builder = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .timeout(std::time::Duration::from_secs(30));
+        if !allow_private {
+            let url = reqwest::Url::parse(endpoint).map_err(|e| format!("invalid endpoint: {e}"))?;
+            // IP literals bypass the resolver, so check them here.
+            let host = url.host_str().unwrap_or("").trim_start_matches('[').trim_end_matches(']');
+            if let Ok(ip) = host.parse::<std::net::IpAddr>()
+                && !is_public_ip(ip)
+            {
+                return Err(format!("endpoint {endpoint} is not a public address"));
+            }
+            builder = builder.dns_resolver(Arc::new(PublicOnlyResolver));
+        }
+        let client = builder.build().map_err(|e| format!("HTTP client: {e}"))?;
         let mut request = client.post(endpoint);
 
         if let Some(headers) = channel.get("header").and_then(|v| v.as_array()) {
@@ -375,6 +405,57 @@ impl SubscriptionManager {
                 }
             }
         }
+    }
+}
+
+/// True for addresses a rest-hook may reach when private endpoints are not
+/// allowed: not loopback, private, link-local, CGNAT, unspecified, broadcast,
+/// multicast or documentation ranges (IPv4-mapped IPv6 judged as IPv4).
+pub fn is_public_ip(ip: std::net::IpAddr) -> bool {
+    use std::net::IpAddr;
+    match ip {
+        IpAddr::V4(v4) => {
+            let o = v4.octets();
+            !(v4.is_loopback()
+                || v4.is_private()
+                || v4.is_link_local()
+                || v4.is_unspecified()
+                || v4.is_broadcast()
+                || v4.is_multicast()
+                || v4.is_documentation()
+                || o[0] == 0
+                || (o[0] == 100 && (64..=127).contains(&o[1]))) // 100.64.0.0/10 (CGNAT)
+        }
+        IpAddr::V6(v6) => {
+            if let Some(v4) = v6.to_ipv4_mapped() {
+                return is_public_ip(IpAddr::V4(v4));
+            }
+            let seg0 = v6.segments()[0];
+            !(v6.is_loopback()
+                || v6.is_unspecified()
+                || v6.is_multicast()
+                || (seg0 & 0xfe00) == 0xfc00 // fc00::/7 unique local
+                || (seg0 & 0xffc0) == 0xfe80) // fe80::/10 link-local
+        }
+    }
+}
+
+/// DNS resolver that only returns public addresses (see [`is_public_ip`]).
+struct PublicOnlyResolver;
+
+impl reqwest::dns::Resolve for PublicOnlyResolver {
+    fn resolve(&self, name: reqwest::dns::Name) -> reqwest::dns::Resolving {
+        Box::pin(async move {
+            let host = name.as_str().to_string();
+            let addrs: Vec<std::net::SocketAddr> = tokio::net::lookup_host((host.as_str(), 0))
+                .await?
+                .filter(|a| is_public_ip(a.ip()))
+                .collect();
+            if addrs.is_empty() {
+                return Err(format!("{host} does not resolve to a public address").into());
+            }
+            Ok(Box::new(addrs.into_iter()) as reqwest::dns::Addrs)
+        })
     }
 }
 
@@ -494,14 +575,37 @@ mod delivery_tests {
     async fn deliver_ok_on_2xx() {
         let url = one_shot_server("200 OK").await;
         let channel = serde_json::json!({});
-        assert!(SubscriptionManager::deliver_rest_hook(&channel, &url, None).await.is_ok());
+        assert!(SubscriptionManager::deliver_rest_hook(&channel, &url, None, true).await.is_ok());
     }
 
     #[tokio::test]
     async fn deliver_err_on_5xx() {
         let url = one_shot_server("500 Internal Server Error").await;
         let channel = serde_json::json!({});
-        let r = SubscriptionManager::deliver_rest_hook(&channel, &url, None).await;
+        let r = SubscriptionManager::deliver_rest_hook(&channel, &url, None, true).await;
         assert!(r.is_err(), "non-2xx must be an error so the retry loop kicks in");
+    }
+
+    #[tokio::test]
+    async fn deliver_refuses_private_endpoints_unless_allowed() {
+        let url = one_shot_server("200 OK").await; // http://127.0.0.1:port/
+        let channel = serde_json::json!({});
+        let r = SubscriptionManager::deliver_rest_hook(&channel, &url, None, false).await;
+        assert!(r.unwrap_err().contains("not a public address"));
+        // A host name resolving only to loopback is refused too.
+        let port = url.rsplit(':').next().unwrap().trim_end_matches('/');
+        let named = format!("http://localhost:{port}/");
+        assert!(SubscriptionManager::deliver_rest_hook(&channel, &named, None, false).await.is_err());
+    }
+
+    #[test]
+    fn public_ip_classification() {
+        for private in ["127.0.0.1", "10.1.2.3", "172.16.0.1", "192.168.1.1", "169.254.169.254",
+                        "100.64.0.1", "0.0.0.0", "::1", "fd00::1", "fe80::1", "::ffff:10.0.0.1"] {
+            assert!(!is_public_ip(private.parse().unwrap()), "{private}");
+        }
+        for public in ["8.8.8.8", "203.0.114.1", "2001:4860:4860::8888"] {
+            assert!(is_public_ip(public.parse().unwrap()), "{public}");
+        }
     }
 }
