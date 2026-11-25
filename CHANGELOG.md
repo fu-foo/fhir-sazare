@@ -4,7 +4,7 @@ All notable changes to sazare. Versions follow [Semantic Versioning](https://sem
 until 1.0, a minor version (0.x.0) may change behavior — those changes are listed under
 **Behavior changes**. See [UPGRADING.md](UPGRADING.md) for how to upgrade.
 
-## Unreleased
+## 0.13.0 — 2026-11-26
 
 Security release: a second review (an external model's, verified line by line) found
 authorization gaps the 0.11.0 hardening missed.
