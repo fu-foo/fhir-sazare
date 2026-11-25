@@ -89,19 +89,19 @@ jobs:
           docker volume create olddata
           # What a pre-0.13 image left behind: root-owned files.
           docker run --rm -v olddata:/data alpine sh -c 'touch /data/resources.sqlite && chown -R 0:0 /data'
-          docker run -d --name s -p 8080:8080 -v olddata:/data sazare:ci
+          docker run -d --name sazare -p 8080:8080 -v olddata:/data sazare:ci
           for i in $(seq 60); do curl -sf localhost:8080/health && break; sleep 1; done
           curl -sf localhost:8080/health
           test "$(curl -s -o /dev/null -w '%{http_code}' -X PUT localhost:8080/Patient/p1 \
             -H 'Content-Type: application/fhir+json' -d '{"resourceType":"Patient","id":"p1"}')" = 201
           # The server process is not root, and the data is its.
-          test "$(docker exec s ps -o user= -o comm= | awk '$2=="sazare-server"{print $1}')" = sazare
-          test "$(docker exec s stat -c %U /data/resources.sqlite)" = sazare
+          test "$(docker exec sazare ps -o user= -o comm= | awk '$2=="sazare-server"{print $1}')" = sazare
+          test "$(docker exec sazare stat -c %U /data/resources.sqlite)" = sazare
           # The bundled sample app is served.
           test "$(curl -s -o /dev/null -w '%{http_code}' localhost:8080/apps/sample-patient-register/)" = 200
-          docker restart s
+          docker restart sazare
           for i in $(seq 60); do curl -sf localhost:8080/health && break; sleep 1; done
           test "$(curl -s -o /dev/null -w '%{http_code}' localhost:8080/Patient/p1)" = 200
       - name: Server log
         if: always()
-        run: docker logs s || true
+        run: docker logs sazare || true
