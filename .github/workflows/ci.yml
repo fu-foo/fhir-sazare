@@ -57,3 +57,14 @@ jobs:
       - name: Server log
         if: always()
         run: tail -50 "$RUNNER_TEMP/jp/server.log" || true
+
+  # Backup → restore round trip as documented: online --backup, restore only
+  # resources + audit, let the index and full text rebuild, compare searches.
+  backup-restore:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release
+      - run: bash ci/backup_roundtrip.sh

@@ -1,6 +1,7 @@
 name: Inferno US Core
 
-# Runs the Inferno US Core Test Kit against a freshly seeded sazare server.
+# Runs the Inferno US Core Test Kit (v7 and v8, the versions the README claims)
+# against a freshly seeded sazare server.
 # Slow (Inferno + HL7 validator containers), so it runs on PRs/main and on demand.
 on:
   push:
@@ -11,8 +12,19 @@ on:
 
 jobs:
   us-core:
+    name: us-core (${{ matrix.label }})
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: v8
+            suite: us_core_v800
+            seed: examples/10_us_core_v8_seed.sh
+          - label: v7
+            suite: us_core_v700
+            seed: examples/09_us_core_seed.sh
     env:
       # The TLS test needs an HTTPS deployment; sazare is served over plain HTTP here.
       INFERNO_DISABLE_TLS_TEST: "true"
@@ -22,7 +34,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release
 
-      - name: Start sazare and load the US Core v8 seed
+      - name: Start sazare and load the US Core ${{ matrix.label }} seed
         run: |
           mkdir -p "$RUNNER_TEMP/sazare"
           cat > "$RUNNER_TEMP/sazare/config.yaml" <<YAML
@@ -37,7 +49,7 @@ jobs:
           nohup target/release/sazare-server --config "$RUNNER_TEMP/sazare/config.yaml" \
             > "$RUNNER_TEMP/sazare/server.log" 2>&1 &
           for _ in $(seq 100); do curl -sf http://localhost:18080/health && break; sleep 0.2; done
-          SAZARE_URL=http://localhost:18080 bash examples/10_us_core_v8_seed.sh | tail -5
+          SAZARE_URL=http://localhost:18080 bash ${{ matrix.seed }} | tail -5
 
       - name: Fetch US Core Test Kit
         run: git clone --depth 1 https://github.com/inferno-framework/us-core-test-kit.git "$RUNNER_TEMP/us-core-test-kit"
@@ -59,21 +71,34 @@ jobs:
             curl -sf http://localhost/hl7validatorapi/validator/version && break; sleep 5
           done
 
-      # Short ids follow the suite definition order regardless of options:
-      # 1-3 are the SMART App Launch v1 / v2 / v2.2 groups (need a browser — not
-      # runnable from the CLI), 4 is the US Core FHIR API group this job runs.
-      - name: Run us_core_v800 (US Core FHIR API group)
+      # Short ids follow the suite definition order regardless of options (same
+      # in v7 and v8): 1-3 are the SMART App Launch v1 / v2 / v2.2 groups (need a
+      # browser — not runnable from the CLI), 4 is the US Core FHIR API group.
+      #
+      # The first validations of a run sometimes *error* (an exception while the
+      # HL7 validator is still loading packages) rather than *fail*. A run whose
+      # only problems are errors is retried once; any `fail` is reported as is.
+      - name: Run ${{ matrix.suite }} (US Core FHIR API group)
         working-directory: ${{ runner.temp }}/us-core-test-kit
         run: |
-          status=0
-          bundle exec inferno execute --suite us_core_v800 \
-            --groups 4 \
-            --inputs url:http://localhost:18080 patient_ids:patient-example \
-              'smart_auth_info:{"access_token":"unused-auth-disabled"}' \
-            > "$RUNNER_TEMP/inferno.txt" 2>&1 || status=$?
+          run_kit() {
+            status=0
+            bundle exec inferno execute --suite ${{ matrix.suite }} \
+              --groups 4 \
+              --inputs url:http://localhost:18080 patient_ids:patient-example \
+                'smart_auth_info:{"access_token":"unused-auth-disabled"}' \
+              > "$RUNNER_TEMP/inferno.txt" 2>&1 || status=$?
+          }
+          run_kit
+          if [ "$status" != 0 ] && grep -q ': X error' "$RUNNER_TEMP/inferno.txt" \
+             && ! grep -q ': X fail' "$RUNNER_TEMP/inferno.txt"; then
+            echo "::warning::only validator errors (no failures) — retrying once"
+            grep ': X error' "$RUNNER_TEMP/inferno.txt" || true
+            run_kit
+          fi
           cat "$RUNNER_TEMP/inferno.txt"
           {
-            echo '### Inferno us_core_v800 — US Core FHIR API'
+            echo '### Inferno ${{ matrix.suite }} — US Core FHIR API'
             echo '```'
             grep -vE '^(W|I), \[|warning:' "$RUNNER_TEMP/inferno.txt"
             echo '```'
