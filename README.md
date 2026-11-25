@@ -55,6 +55,31 @@ server such as [HAPI FHIR](https://hapifhir.io/).
 | Terminology | No `$expand` / `$validate-code` / `$lookup` | Terminology services |
 | Conformance check | Inferno US Core v7/v8 FHIR API suites pass, run in CI | Widely used reference implementation |
 
+### Limitations
+
+Know these before you rely on sazare:
+
+- **FHIR R4 (4.0.1) only.** No R4B / R5.
+- **Search:** the common parameter types (string, token, date, reference, number) with
+  `:exact`, `:contains`, `:missing`, `:not`; chains up to 4 hops; one level of `_has`.
+  Not supported: `quantity`/`uri`/`composite` parameters, `_filter`, `_list`, `_query`,
+  nested `_has`, `:above`/`:below`/`:in`/`:text` modifiers. For resource types with a
+  built-in parameter list, unknown parameters are a 400, never silently ignored.
+- **Custom SearchParameters** use a FHIRPath subset (paths, `|`, `ofType`/`as`,
+  `extension()`, `where(a = 'x' and ...)`, `resolve() is`, `[n]`); others are rejected at load.
+- **Validation** checks declared (or default) profiles — cardinality, types, fixed values,
+  extensions, required bindings to complete code systems — but is not the full HL7
+  validator (no FHIRPath invariants, no terminology service, no `$expand` /
+  `$validate-code` / `$lookup`).
+- **Scale:** one process with SQLite; writes go through a single index lock, so it does
+  not scale horizontally or for highly concurrent writes. Benchmarked (in CI) on 60k
+  resources, where searches stay well under 100 ms; larger datasets are untested — measure
+  with `bench/run.sh <patients> <obs-per-patient>` before relying on it.
+- **Subscriptions:** R4 rest-hook and websocket, best-effort delivery (a few retries,
+  no persistent queue).
+- **Auth:** API keys, Basic, JWT (HS256/RS256/JWKS) with SMART scopes, SMART Backend
+  Services. No built-in OAuth authorization server for user login (use an external IdP).
+
 ---
 
 ## Quick Start — run a FHIR server in 30 seconds
@@ -614,6 +639,12 @@ Three separate SQLite databases for clean separation of concerns:
 - **`search_index.fts.sqlite`** — Full text for `_text` / `_content` (derived data, like the index; kept in its own file because FTS writes in the shared file made every write ~10× slower)
 - **`audit.sqlite`** — Audit log entries
 
+### Upgrading
+
+See [UPGRADING.md](UPGRADING.md) (back up, replace the binary, watch the first start)
+and [CHANGELOG.md](CHANGELOG.md) for what changed in each version, including behavior
+changes.
+
 ### Monitoring
 
 `GET /metrics` serves Prometheus metrics: requests and latency by method,
@@ -749,6 +780,8 @@ CC0-1.0 — see [NOTICE.md](NOTICE.md) for provenance and attribution.
 
 sazare は **FHIR の学習、試作・PoC、ローカル開発、小規模な運用**向けです。Java のアプリケーションサーバーと RDBMS を用意するより、データベース内蔵のバイナリ1つで済むことを重視しています。大規模な本番運用、R4 以外のバージョン、本格的なターミノロジーサービスが必要なら、[HAPI FHIR](https://hapifhir.io/) などの成熟したサーバーを使ってください。比較表は英語版の「Where sazare fits」にあります。
 
+制限事項（詳細は英語版の「Limitations」）: FHIR R4 のみ／検索は主要な型（string・token・date・reference・number）とチェーン4段・`_has` 1段まで（quantity・`_filter` などは未対応。組み込みの定義がある種別では未知のパラメータは 400）／custom search parameters は FHIRPath のサブセット／バリデーションは HL7 公式バリデーターの代替ではなく、ターミノロジーサービスもなし／1プロセス＋SQLite で書き込みは直列（ベンチマークで確認済みなのは6万件まで。それ以上は `bench/run.sh` で測ってから）／Subscription の配信はベストエフォート／ユーザーログイン用の認可サーバーは内蔵していません（外部の IdP を使います）。
+
 ### クイックスタート — 30秒で FHIR サーバーを動かす
 
 ファイルを1つ落として実行するだけ。Docker も JVM もデータベースも設定も不要です。
@@ -854,6 +887,10 @@ curl "http://localhost:8080/Patient?jp-kana-sort=ヤマダ"
 ```
 
 Docker での使い方、検索パラメータ一覧は [`examples/jp-core/README.md`](examples/jp-core/README.md) を参照してください。
+
+### アップグレード
+
+手順（バックアップ → バイナリの差し替え → 初回起動のログを確認）は [UPGRADING.md](UPGRADING.md)、各バージョンの変更点と挙動の変更は [CHANGELOG.md](CHANGELOG.md) にまとめています。
 
 ### バックアップと復元
 
