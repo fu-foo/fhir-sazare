@@ -33,8 +33,9 @@ authorization gaps the 0.11.0 hardening missed.
   patient compartment (Practitioner, Organization, Medication, ...). Reading them for
   reference resolution still works.
 - SMART scopes are read with their context and per permission:
-  - The patient-compartment restriction is decided per resource type, so a token mixing
-    `patient/` and `user/` scopes no longer escapes it for the patient-scoped types.
+  - The patient-compartment restriction is decided per resource type and permission, so
+    a token mixing `patient/` and `user/` scopes (e.g. `patient/Observation.rs
+    user/Observation.c`) no longer escapes it for what it may do only as the patient.
   - Bulk Data (`$export`, `$import`) requires a `system/` scope; `user/*.read`/`write`
     no longer passes.
   - SMART v2 permissions (`.c` `.r` `.u` `.d` `.s` and combinations such as `.rs`,
@@ -59,8 +60,13 @@ authorization gaps the 0.11.0 hardening missed.
   without `kid` is accepted only when the JWKS has a single key.
 - Async `$export` jobs expire an hour after finishing, and at most 8 are held at once
   (429 with `Retry-After` beyond that); the export is built off the async worker threads.
-- `$browse` pages are capped at 100; `public_key_file` is read once, not per request;
-  Subscription criteria are checked against the changed resource only.
+- `$browse` pages are capped at 100; `public_key_file` is read once, not per request.
+- Subscription criteria are evaluated against the changed resource alone (an in-memory
+  index of just that resource), so a write no longer costs a search over the whole type;
+  criteria with chains or `_has` still use the full index.
+- The TLS accept task stops — and releases the port — as soon as the server stops.
+- Expired export jobs are dropped on any lookup (status/file → 404), not only when the
+  next export starts; the synchronous export also runs off the async worker threads.
 
 ### Fixed
 - Patient-scoped searches narrow to the compartment before paging, so `total`, the page and
@@ -78,8 +84,8 @@ authorization gaps the 0.11.0 hardening missed.
 - `PATCH` can't change `resourceType` / `id` (422), validates a patched Subscription,
   stamps `meta` even when the patch removed it, and is a compare-and-swap (409 when the
   resource changed meanwhile).
-- Subscriptions written through batch/transaction or `$import` get the same validation as
-  through REST.
+- Subscriptions written through batch/transaction, conditional update or `$import` get
+  the same validation as through REST.
 - A history Bundle without versions omits `entry` instead of sending `[]`; audit entries
   record PATCH as an update.
 

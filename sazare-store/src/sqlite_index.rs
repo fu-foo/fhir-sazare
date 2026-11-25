@@ -259,9 +259,13 @@ impl SearchIndex {
             path.with_extension("fts.sqlite")
         };
         let mut text = Connection::open(&text_path)?;
+        // Wait up to 5 s for a lock (e.g. a WAL checkpoint, --backup) instead of
+        // failing with SQLITE_BUSY. rusqlite's default too; stated so it's not lost.
+        text.busy_timeout(std::time::Duration::from_secs(5))?;
         text.execute_batch("PRAGMA journal_mode=WAL;")?;
         crate::migrate::run_migrations(&mut text, Self::TEXT_MIGRATIONS)?;
         let mut conn = Connection::open(path)?;
+        conn.busy_timeout(std::time::Duration::from_secs(5))?;
         conn.execute_batch("PRAGMA journal_mode=WAL;")?;
         crate::migrate::run_migrations(&mut conn, Self::MIGRATIONS)?;
         // Refresh planner statistics where they are missing or stale. Bounded by

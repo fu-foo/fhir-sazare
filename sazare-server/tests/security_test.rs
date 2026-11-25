@@ -353,6 +353,21 @@ async fn mixed_scopes_keep_the_compartment_for_patient_types() {
 }
 
 #[tokio::test]
+async fn mixed_permissions_on_one_type_keep_the_compartment_for_reads() {
+    let (c, _t, _d) = two_patients().await;
+    // Unrestricted create, but reading only within the compartment.
+    let t = jwt("patient/Observation.rs user/Observation.c", Some("p1"));
+    assert_eq!(c.get("/Observation/o-p1", &t).await.0, 200);
+    assert_eq!(c.get("/Observation/o-p2", &t).await.0, 403);
+    let (_, b) = c.get("/Observation", &t).await;
+    assert_eq!(ids_of(&b, "Observation"), vec!["o-p1"]);
+    // The user/ create permission does apply to creates.
+    let other = json!({"resourceType": "Observation", "status": "final", "code": {"text": "x"},
+                       "subject": {"reference": "Patient/p2"}});
+    assert_eq!(c.post("/Observation", &t, other, &[]).await.0, 201);
+}
+
+#[tokio::test]
 async fn scopes_are_read_with_context_and_v2_permissions() {
     let (c, _t, _d) = two_patients().await;
     // v2 read+search: may search with POST, may not create.
@@ -472,6 +487,15 @@ async fn static_apps_are_served_under_apps_only() {
     assert_eq!(list["apps"][0]["path"], "/apps/demo-app/");
     // Path traversal stays refused.
     assert_eq!(get("/apps/demo-app/..%2F..%2Fetc%2Fpasswd").await.unwrap().status(), 400);
+    // A symlink inside an app is not followed.
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink("/etc/hostname", apps.path().join("demo-app/leak")).unwrap();
+        assert_eq!(get("/apps/demo-app/leak").await.unwrap().status(), 403);
+    }
+    // Unknown names aren't redirected as if they existed (with credentials: 404).
+    let r = http.get(format!("{base}/apps/nope")).basic_auth("ops", Some("ops-password")).send().await.unwrap();
+    assert_eq!(r.status(), 404);
 }
 
 #[tokio::test]

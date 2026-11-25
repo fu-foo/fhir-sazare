@@ -123,8 +123,7 @@ impl ExportJobs {
     /// `false` when [`MAX_JOBS`] are still held (the export output lives in
     /// memory, so the number of jobs is what bounds it).
     async fn start(&self, id: String, transaction_time: String, request_url: String) -> bool {
-        let mut jobs = self.jobs.lock().await;
-        jobs.retain(|_, j| j.finished_at.is_none_or(|t| t.elapsed() < JOB_RETENTION));
+        let mut jobs = self.live().await;
         if jobs.len() >= MAX_JOBS {
             return false;
         }
@@ -154,6 +153,14 @@ impl ExportJobs {
             job.status = JobStatus::Failed(err);
             job.finished_at = Some(std::time::Instant::now());
         }
+    }
+
+    /// Lock the job table with finished jobs past their retention dropped, so
+    /// an expired job is gone (404, memory freed) whoever looks next.
+    async fn live(&self) -> tokio::sync::MutexGuard<'_, HashMap<String, ExportJob>> {
+        let mut jobs = self.jobs.lock().await;
+        jobs.retain(|_, j| j.finished_at.is_none_or(|t| t.elapsed() < JOB_RETENTION));
+        jobs
     }
 
     async fn remove(&self, id: &str) -> bool {
@@ -356,7 +363,13 @@ async fn run_export(
 
     // Legacy synchronous path: concatenate everything into one NDJSON body.
     if !want_async {
-        return match build_export_files(&state, &scope, &type_filter, &params._since) {
+        // Off the async workers: this reads the whole store synchronously.
+        let st = state.clone();
+        let since = params._since.clone();
+        let built = tokio::task::spawn_blocking(move || build_export_files(&st, &scope, &type_filter, &since))
+            .await
+            .unwrap_or_else(|e| Err(format!("export task failed: {e}")));
+        return match built {
             Ok(files) => {
                 let body: String = files.into_iter().map(|(_, n)| n).collect();
                 (
@@ -515,7 +528,7 @@ pub async fn export_status(
     if let Err(resp) = authorize_bulk(&auth, "read") {
         return resp;
     }
-    let jobs = state.export_jobs.jobs.lock().await;
+    let jobs = state.export_jobs.live().await;
     let Some(job) = jobs.get(&job_id) else {
         return (
             StatusCode::NOT_FOUND,
@@ -590,7 +603,7 @@ pub async fn export_file(
     if let Err(resp) = authorize_bulk(&auth, "read") {
         return resp;
     }
-    let jobs = state.export_jobs.jobs.lock().await;
+    let jobs = state.export_jobs.live().await;
     let ndjson = jobs
         .get(&job_id)
         .and_then(|j| j.files.iter().find(|(t, _)| t == &rtype))

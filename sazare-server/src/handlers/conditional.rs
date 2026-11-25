@@ -101,7 +101,7 @@ pub async fn conditional_update(
     };
 
     // Compartment check
-    check_compartment_write(auth_user.as_ref(), &state.compartment_def, &resource_type, &body_value)?;
+    check_compartment_write(auth_user.as_ref(), &state.compartment_def, &resource_type, &body_value, 'u')?;
 
     // Validate
     if let Err(outcome) = validate_resource_all_phases(
@@ -110,6 +110,16 @@ pub async fn conditional_update(
         &state.terminology_registry,
     ) {
         return Err((StatusCode::BAD_REQUEST, Json(json!(outcome))));
+    }
+
+    // Same Subscription rules as every other write path.
+    if resource_type == "Subscription"
+        && let Err(e) = crate::subscription::validate_subscription(&body_value, &state.search_param_registry)
+    {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!(OperationOutcome::error(IssueType::Invalid, e))),
+        ));
     }
 
     let mut resource: Resource = serde_json::from_value(body_value).map_err(|e| {
@@ -146,7 +156,7 @@ pub async fn conditional_update(
         let version_id = match state.store.get(&resource_type, &id) {
             Ok(Some(data)) => {
                 let existing: Value = serde_json::from_slice(&data).unwrap_or_default();
-                check_compartment_write(auth_user.as_ref(), &state.compartment_def, &resource_type, &existing)?;
+                check_compartment_write(auth_user.as_ref(), &state.compartment_def, &resource_type, &existing, 'u')?;
                 let current: i32 = existing
                     .get("meta")
                     .and_then(|m| m.get("versionId"))
@@ -197,7 +207,7 @@ pub async fn conditional_update(
             Ok(Some(data)) => {
                 let existing: Value = serde_json::from_slice(&data).unwrap_or_default();
                 // The matched resource must be the caller's to replace.
-                check_compartment_write(auth_user.as_ref(), &state.compartment_def, &resource_type, &existing)?;
+                check_compartment_write(auth_user.as_ref(), &state.compartment_def, &resource_type, &existing, 'u')?;
                 let current_ver: i32 = existing
                     .get("meta")
                     .and_then(|m| m.get("versionId"))
@@ -305,7 +315,7 @@ pub async fn conditional_delete(
 
             // Compartment check
             if let Some(ref resource) = resource_to_check {
-                check_compartment_write(auth_user.as_ref(), &state.compartment_def, &resource_type, resource)?;
+                check_compartment_write(auth_user.as_ref(), &state.compartment_def, &resource_type, resource, 'd')?;
             }
 
             state.store.delete(&resource_type, id).map_err(|e| {

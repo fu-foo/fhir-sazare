@@ -33,7 +33,13 @@ impl TlsListener {
                 let Ok(permit) = slots.clone().acquire_owned().await else {
                     return;
                 };
-                let (stream, addr) = match tcp.accept().await {
+                // Stop (and release the port) as soon as the listener is
+                // dropped, not only after the next connection arrives.
+                let accepted = tokio::select! {
+                    _ = tx.closed() => return,
+                    accepted = tcp.accept() => accepted,
+                };
+                let (stream, addr) = match accepted {
                     Ok(conn) => conn,
                     Err(e) => {
                         tracing::error!("TCP accept error: {}", e);
@@ -41,9 +47,6 @@ impl TlsListener {
                         continue;
                     }
                 };
-                if tx.is_closed() {
-                    return;
-                }
                 let acceptor = acceptor.clone();
                 let conn_tx = tx.clone();
                 tokio::spawn(async move {
@@ -69,7 +72,7 @@ impl axum::serve::Listener for TlsListener {
     async fn accept(&mut self) -> (Self::Io, Self::Addr) {
         match self.ready.recv().await {
             Some(conn) => conn,
-            // The accept task only ends when the listener is dropped.
+            // The accept task ends only once this listener is dropped.
             None => std::future::pending().await,
         }
     }

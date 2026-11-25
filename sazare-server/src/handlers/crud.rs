@@ -57,7 +57,7 @@ pub async fn create(
     let (headers, body) = extract_body(request).await?;
 
     // Compartment check: patient-scoped tokens can only create resources in their compartment
-    check_compartment_write(auth_user.as_ref(), &state.compartment_def, &resource_type, &body)?;
+    check_compartment_write(auth_user.as_ref(), &state.compartment_def, &resource_type, &body, 'c')?;
 
     // Conditional create: If-None-Exist header
     if let Some(if_none_exist) = headers.get("If-None-Exist").and_then(|v| v.to_str().ok()) {
@@ -211,13 +211,9 @@ pub async fn create(
             )
         })?;
     if !created {
-        // Put the index back to the stored resource it was just overwritten for.
-        if let Ok(Some(data)) = state.store.get(&resource_type, &id)
-            && let Ok(existing) = serde_json::from_slice::<Value>(&data)
-        {
-            let index = state.index.lock().await;
-            update_search_index(&index, &state.search_param_registry, &resource_type, &id, &existing);
-        }
+        // Put the index back to what is stored (or nothing, if the winner of
+        // the race was since deleted).
+        restore_index(&state, &resource_type, &id).await;
         return Err((
             StatusCode::CONFLICT,
             Json(json!(OperationOutcome::error(
@@ -307,7 +303,7 @@ pub async fn update(
 
     // The new content must be in the caller's compartment too (the existing
     // version is checked below) — this also covers update-as-create.
-    check_compartment_write(auth_user.as_ref(), &state.compartment_def, &resource_type, &body)?;
+    check_compartment_write(auth_user.as_ref(), &state.compartment_def, &resource_type, &body, 'u')?;
 
     // Validate
     if let Err(outcome) = validate_resource_all_phases(
@@ -375,7 +371,7 @@ pub async fn update(
             let existing: Value = serde_json::from_slice(&data).unwrap_or_default();
 
             // Compartment check on existing resource
-            check_compartment_write(auth_user.as_ref(), &state.compartment_def, &resource_type, &existing)?;
+            check_compartment_write(auth_user.as_ref(), &state.compartment_def, &resource_type, &existing, 'u')?;
 
             let current_ver_str = existing
                 .get("meta")
@@ -466,14 +462,7 @@ pub async fn update(
             )
         })?;
     if !written {
-        let index = state.index.lock().await;
-        if let Ok(Some(cur)) = state.store.get(&resource_type, &id) {
-            if let Ok(cur_val) = serde_json::from_slice::<Value>(&cur) {
-                update_search_index(&index, &state.search_param_registry, &resource_type, &id, &cur_val);
-            }
-        } else {
-            let _ = index.remove_index(&resource_type, &id);
-        }
+        restore_index(&state, &resource_type, &id).await;
         return Err((
             StatusCode::CONFLICT,
             Json(json!(OperationOutcome::error(
@@ -539,7 +528,7 @@ pub async fn patch_resource(
     })?;
 
     // Compartment check on existing resource
-    check_compartment_write(auth_user.as_ref(), &state.compartment_def, &resource_type, &resource)?;
+    check_compartment_write(auth_user.as_ref(), &state.compartment_def, &resource_type, &resource, 'u')?;
 
     // If-Match check
     let if_match = headers
@@ -596,7 +585,7 @@ pub async fn patch_resource(
     }
 
     // The patched result must stay in the caller's compartment.
-    check_compartment_write(auth_user.as_ref(), &state.compartment_def, &resource_type, &resource)?;
+    check_compartment_write(auth_user.as_ref(), &state.compartment_def, &resource_type, &resource, 'u')?;
 
     // Same rules for a patched Subscription as for a PUT one.
     if resource_type == "Subscription"
@@ -654,12 +643,7 @@ pub async fn patch_resource(
             )
         })?;
     if !written {
-        if let Ok(Some(data)) = state.store.get(&resource_type, &id)
-            && let Ok(current) = serde_json::from_slice::<Value>(&data)
-        {
-            let index = state.index.lock().await;
-            update_search_index(&index, &state.search_param_registry, &resource_type, &id, &current);
-        }
+        restore_index(&state, &resource_type, &id).await;
         return Err((
             StatusCode::CONFLICT,
             Json(json!(OperationOutcome::error(
@@ -701,7 +685,7 @@ pub async fn delete_resource(
     if let Ok(Some(data)) = state.store.get(&resource_type, &id)
         && let Ok(resource) = serde_json::from_slice::<Value>(&data)
     {
-        check_compartment_write(auth_user.as_ref(), &state.compartment_def, &resource_type, &resource)?;
+        check_compartment_write(auth_user.as_ref(), &state.compartment_def, &resource_type, &resource, 'd')?;
     }
 
     match state.store.delete(&resource_type, &id) {
@@ -722,5 +706,23 @@ pub async fn delete_resource(
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!(OperationOutcome::storage_error(e.to_string()))),
         )),
+    }
+}
+
+/// After a lost compare-and-swap: make the index match what is stored again —
+/// the stored resource's entries, or none if it no longer exists.
+async fn restore_index(state: &Arc<AppState>, resource_type: &str, id: &str) {
+    let stored = state
+        .store
+        .get(resource_type, id)
+        .ok()
+        .flatten()
+        .and_then(|data| serde_json::from_slice::<Value>(&data).ok());
+    let index = state.index.lock().await;
+    match stored {
+        Some(current) => update_search_index(&index, &state.search_param_registry, resource_type, id, &current),
+        None => {
+            let _ = index.remove_index(resource_type, id);
+        }
     }
 }

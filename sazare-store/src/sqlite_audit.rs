@@ -61,6 +61,9 @@ impl AuditLog {
     /// Open the audit log (create if not exists)
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
         let mut conn = Connection::open(path)?;
+        // Wait up to 5 s for a lock (e.g. a WAL checkpoint, --backup) instead of
+        // failing with SQLITE_BUSY. rusqlite's default too; stated so it's not lost.
+        conn.busy_timeout(std::time::Duration::from_secs(5))?;
         conn.execute_batch("PRAGMA journal_mode=WAL;")?;
         crate::migrate::run_migrations(&mut conn, Self::MIGRATIONS)?;
         Ok(Self { conn })

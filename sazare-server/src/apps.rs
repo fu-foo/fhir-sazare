@@ -95,8 +95,8 @@ pub fn app_routes() -> Router<Arc<AppState>> {
     Router::new()
         .route(
             "/apps/{name}",
-            get(|Path(name): Path<String>| async move {
-                if is_valid_app_name(&name) {
+            get(|state: State<Arc<AppState>>, Path(name): Path<String>| async move {
+                if state.app_names.iter().any(|n| n == &name) {
                     Redirect::permanent(&format!("{PREFIX}/{name}/")).into_response()
                 } else {
                     StatusCode::NOT_FOUND.into_response()
@@ -151,17 +151,20 @@ async fn serve_app_file(State(state): State<Arc<AppState>>, name: String, file_p
 
     let target = app_dir.join(&file_path);
 
+    // Refuse symlinks anywhere below the app directory. (Checked on the path
+    // as requested: after canonicalize() a link is already resolved.)
+    let mut walked = app_dir.clone();
+    for part in std::path::Path::new(&file_path).components() {
+        walked.push(part);
+        if std::fs::symlink_metadata(&walked).is_ok_and(|m| m.file_type().is_symlink()) {
+            return (StatusCode::FORBIDDEN, "Forbidden").into_response();
+        }
+    }
+
     // Canonicalize and verify the target stays inside the app dir
     if let Ok(canonical) = target.canonicalize() {
         if !canonical.starts_with(&app_dir) {
             return (StatusCode::BAD_REQUEST, "Invalid path").into_response();
-        }
-
-        // Reject symlinks
-        if let Ok(meta) = std::fs::symlink_metadata(&canonical)
-            && meta.file_type().is_symlink()
-        {
-            return (StatusCode::FORBIDDEN, "Forbidden").into_response();
         }
 
         if canonical.is_file() {

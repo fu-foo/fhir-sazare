@@ -55,6 +55,9 @@ impl SqliteStore {
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
         let mut conn = Connection::open(path)?;
+        // Wait up to 5 s for a lock (e.g. a WAL checkpoint, --backup) instead of
+        // failing with SQLITE_BUSY. rusqlite's default too; stated so it's not lost.
+        conn.busy_timeout(std::time::Duration::from_secs(5))?;
 
         // Enable WAL mode for read-write concurrency
         conn.execute_batch("PRAGMA journal_mode=WAL;")?;

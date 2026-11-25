@@ -1,5 +1,5 @@
 use sazare_core::{SearchParamRegistry, SearchQuery};
-use sazare_store::SearchExecutor;
+use sazare_store::{SearchExecutor, SearchIndex};
 use serde_json::Value;
 use std::sync::Arc;
 use tracing::{debug, warn};
@@ -187,7 +187,7 @@ impl SubscriptionManager {
         subscription: &Value,
         resource_type: &str,
         resource_id: &str,
-        _resource: &Value,
+        resource: &Value,
     ) -> Result<(), String> {
         // Parse criteria (e.g. "Observation?code=85354-9")
         let criteria = subscription
@@ -208,17 +208,26 @@ impl SubscriptionManager {
 
         // If there are query params, check if the resource matches
         if !criteria_query.is_empty() {
-            // Only "does this one resource match?" matters: narrow the search
-            // to its id instead of evaluating the criteria over the whole type.
-            let narrowed = format!("{criteria_query}&_id={}", urlencoding_id(resource_id));
-            let query = SearchQuery::parse_with_registry(&narrowed, Some(criteria_type), &state.search_param_registry)
+            let query = SearchQuery::parse_with_registry(criteria_query, Some(criteria_type), &state.search_param_registry)
                 .map_err(|e| e.to_string())?;
 
-            let index = state.index.lock().await;
-            let executor = SearchExecutor::new(&state.store, &index);
-            let ids = executor.search(resource_type, &query)?;
-
-            if !ids.contains(&resource_id.to_string()) {
+            let matched = if query.chain_parameters.is_empty() && query.has_parameters.is_empty() {
+                // Only "does this one resource match?" matters: judge it on an
+                // in-memory index holding just its own entries, so the cost
+                // doesn't grow with the size of the database (nor take the
+                // shared index lock).
+                let one = SearchIndex::open(":memory:").map_err(|e| e.to_string())?;
+                let update = crate::handlers::index_update(&state.search_param_registry, resource_type, resource_id, resource);
+                one.replace_many(&[update]).map_err(|e| e.to_string())?;
+                let executor = SearchExecutor::new(&state.store, &one);
+                executor.search(resource_type, &query)?.iter().any(|id| id == resource_id)
+            } else {
+                // Chains and _has look at other resources: use the real index.
+                let index = state.index.lock().await;
+                let executor = SearchExecutor::new(&state.store, &index);
+                executor.search(resource_type, &query)?.iter().any(|id| id == resource_id)
+            };
+            if !matched {
                 return Ok(());
             }
         }
@@ -613,13 +622,3 @@ mod delivery_tests {
     }
 }
 
-/// Percent-encode the characters of a resource id that are special in a query
-/// string (FHIR ids are `[A-Za-z0-9\-.]`, but don't rely on it here).
-fn urlencoding_id(id: &str) -> String {
-    id.chars()
-        .map(|c| match c {
-            'A'..='Z' | 'a'..='z' | '0'..='9' | '-' | '.' => c.to_string(),
-            other => other.to_string().bytes().map(|b| format!("%{b:02X}")).collect(),
-        })
-        .collect()
-}

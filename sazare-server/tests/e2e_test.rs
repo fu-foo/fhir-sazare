@@ -1189,7 +1189,20 @@ async fn test_websocket_subscription_ping() {
     ws.send(Message::text("bind no-such-subscription")).await.unwrap();
     assert!(next_text(&mut ws).await.starts_with("error no-such-subscription"));
 
-    // A matching create triggers a ping.
+    // A create that doesn't match the criteria sends nothing...
+    create(
+        &client,
+        &base_url,
+        "Observation",
+        &json!({
+            "resourceType": "Observation",
+            "status": "preliminary",
+            "code": {"coding": [{"system": "http://loinc.org", "code": "9999-9"}]}
+        }),
+    )
+    .await;
+
+    // ...a matching create triggers a ping.
     create(
         &client,
         &base_url,
@@ -1207,6 +1220,9 @@ async fn test_websocket_subscription_ping() {
         format!("ping {sub_id}"),
         "matching create should ping the bound websocket client"
     );
+    // Exactly one ping: the non-matching create didn't produce one.
+    let extra = tokio::time::timeout(std::time::Duration::from_millis(500), ws.next()).await;
+    assert!(extra.is_err(), "unexpected frame: {extra:?}");
 }
 
 #[tokio::test]

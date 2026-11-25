@@ -97,7 +97,7 @@ pub fn visible_matches(
     resource_type: &str,
     ids: Vec<String>,
 ) -> Result<Vec<String>, String> {
-    if !auth_user.is_some_and(|u| u.compartment_restricted(resource_type)) {
+    if !auth_user.is_some_and(|u| u.compartment_restricted(resource_type, 's')) {
         return Ok(ids);
     }
     // In chunks, keeping only ids, so a broad match set isn't held in memory.

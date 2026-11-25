@@ -21,11 +21,24 @@ pub fn check_compartment_access(
     resource_type: &str,
     resource: &Value,
 ) -> Result<(), (StatusCode, Json<Value>)> {
+    check_compartment_access_for(auth_user, compartment, resource_type, resource, 'r')
+}
+
+/// [`check_compartment_access`] for a given SMART permission (c, r, u, d, s):
+/// the compartment applies when that permission comes only from `patient/`
+/// scopes.
+pub fn check_compartment_access_for(
+    auth_user: Option<&AuthUser>,
+    compartment: &CompartmentDef,
+    resource_type: &str,
+    resource: &Value,
+    perm: char,
+) -> Result<(), (StatusCode, Json<Value>)> {
     let Some(user) = auth_user else {
         return Ok(());
     };
 
-    if !user.compartment_restricted(resource_type) {
+    if !user.compartment_restricted(resource_type, perm) {
         return Ok(());
     }
 
@@ -65,9 +78,10 @@ pub fn check_compartment_write(
     compartment: &CompartmentDef,
     resource_type: &str,
     resource: &Value,
+    perm: char,
 ) -> Result<(), (StatusCode, Json<Value>)> {
     if let Some(user) = auth_user
-        && user.compartment_restricted(resource_type)
+        && user.compartment_restricted(resource_type, perm)
         && !compartment.is_in_compartment(resource_type)
     {
         return Err((
@@ -77,7 +91,7 @@ pub fn check_compartment_write(
             )))),
         ));
     }
-    check_compartment_access(auth_user, compartment, resource_type, resource)
+    check_compartment_access_for(auth_user, compartment, resource_type, resource, perm)
 }
 
 /// Filter a list of resources by compartment membership.
@@ -94,7 +108,8 @@ pub fn filter_by_compartment(
         return resources;
     };
 
-    if !user.compartment_restricted(resource_type) {
+    // Search results: the 's' permission decides.
+    if !user.compartment_restricted(resource_type, 's') {
         return resources;
     }
 

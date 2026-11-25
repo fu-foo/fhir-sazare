@@ -148,19 +148,15 @@ impl AuthUser {
         }
     }
 
-    /// Whether access to `resource_type` is limited to the patient
-    /// compartment: the user's access to it comes only from `patient/`
-    /// scopes. Decided per type, so `patient/Observation.rs user/Practitioner.rs`
-    /// restricts Observations and not Practitioners.
-    pub fn compartment_restricted(&self, resource_type: &str) -> bool {
-        if self.auth_type != AuthType::Jwt {
-            return false;
-        }
-        let scopes = parsed_scopes(&self.scopes);
-        let covers = |s: &&Scope| s.resource_type == "*" || s.resource_type == resource_type;
-        let unrestricted = scopes.iter().filter(covers).any(|s| s.context != Context::Patient);
-        let patient = scopes.iter().any(|s| s.context == Context::Patient);
-        patient && !unrestricted
+    /// Whether this user's `perm` access to `resource_type` is limited to the
+    /// patient compartment: no `user/` or `system/` scope grants exactly that
+    /// permission on that type. Decided per type *and* permission, so
+    /// `patient/Observation.r user/Observation.c` reads Observations only in
+    /// the compartment, and `patient/Observation.rs user/Practitioner.rs`
+    /// restricts Observations, not Practitioners. Operators (API key, Basic)
+    /// are never restricted.
+    pub fn compartment_restricted(&self, resource_type: &str, perm: char) -> bool {
+        self.grant(resource_type, perm) != Some(Grant::Full)
     }
 }
 
@@ -649,7 +645,7 @@ pub fn is_admin(user: &AuthUser) -> bool {
 /// scopes match: Subscriptions fire for every patient's data, so creating one
 /// would reach beyond the patient's compartment.
 pub fn patient_scope_may(user: &AuthUser, resource_type: &str, perm: char) -> Result<(), String> {
-    if resource_type == "Subscription" && user.compartment_restricted("Subscription") && perm != 'r' && perm != 's' {
+    if resource_type == "Subscription" && perm != 'r' && perm != 's' && user.compartment_restricted("Subscription", perm) {
         return Err("Patient-scoped tokens may not create or change Subscriptions".to_string());
     }
     Ok(())
@@ -971,20 +967,29 @@ mod tests {
     }
 
     #[test]
-    fn test_compartment_restriction_is_per_type() {
+    fn test_compartment_restriction_is_per_type_and_permission() {
         let u = AuthUser::with_scopes(
             "t".into(),
             AuthType::Jwt,
             sc(&["patient/Observation.rs", "user/Practitioner.rs"]),
         );
-        assert!(u.compartment_restricted("Observation"));
-        assert!(!u.compartment_restricted("Practitioner"));
-        // A type no unrestricted scope covers stays restricted.
-        assert!(u.compartment_restricted("Encounter"));
+        assert!(u.compartment_restricted("Observation", 'r'));
+        assert!(!u.compartment_restricted("Practitioner", 'r'));
+        // A type no scope covers stays restricted.
+        assert!(u.compartment_restricted("Encounter", 'r'));
         let u = AuthUser::with_scopes("t".into(), AuthType::Jwt, sc(&["patient/*.rs", "user/*.rs"]));
-        assert!(!u.compartment_restricted("Observation"));
+        assert!(!u.compartment_restricted("Observation", 'r'));
+        // Mixed per permission on one type: user/ create doesn't lift the
+        // patient/ restriction on reading.
+        let u = AuthUser::with_scopes(
+            "t".into(),
+            AuthType::Jwt,
+            sc(&["patient/Observation.r", "user/Observation.c"]),
+        );
+        assert!(u.compartment_restricted("Observation", 'r'));
+        assert!(!u.compartment_restricted("Observation", 'c'));
         let u = AuthUser::new("k".into(), AuthType::ApiKey);
-        assert!(!u.compartment_restricted("Observation"));
+        assert!(!u.compartment_restricted("Observation", 'r'));
     }
 
     // --- extract_resource_action tests ---

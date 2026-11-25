@@ -75,3 +75,24 @@ async fn a_stalled_handshake_does_not_block_other_clients() {
     assert_eq!(resp.status(), 200);
     drop(stalled);
 }
+
+#[tokio::test]
+async fn dropping_the_listener_releases_the_port() {
+    let fixtures = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures");
+    let acceptor = sazare_server::tls::load_tls_acceptor(
+        &format!("{fixtures}/test-cert.pem"),
+        &format!("{fixtures}/test-key.pem"),
+    )
+    .unwrap();
+    let tcp = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = tcp.local_addr().unwrap();
+    drop(sazare_server::tls::TlsListener::new(tcp, acceptor));
+    // The accept task notices and closes the socket; binding again succeeds.
+    for _ in 0..50 {
+        if tokio::net::TcpListener::bind(addr).await.is_ok() {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    panic!("port {addr} still held after the listener was dropped");
+}

@@ -258,7 +258,7 @@ async fn do_search(
     // A compartment-restricted user's matches are narrowed to the compartment
     // *before* paging, so `total`, the page and the `next` link describe what
     // they may see (filtering a page afterwards loses later matches).
-    let (ids, total) = if auth_user.as_ref().is_some_and(|u| u.compartment_restricted(&resource_type)) {
+    let (ids, total) = if auth_user.as_ref().is_some_and(|u| u.compartment_restricted(&resource_type, 's')) {
         let mut all = query.clone();
         all.count = None;
         all.offset = None;

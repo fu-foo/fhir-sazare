@@ -69,7 +69,7 @@ pub async fn ws_handler(
     ws: Result<WebSocketUpgrade, axum::extract::ws::rejection::WebSocketUpgradeRejection>,
 ) -> Response {
     use axum::response::IntoResponse;
-    if auth_user.is_some_and(|axum::extract::Extension(u)| u.compartment_restricted("Subscription")) {
+    if auth_user.is_some_and(|axum::extract::Extension(u)| u.compartment_restricted("Subscription", 'r')) {
         return (
             axum::http::StatusCode::FORBIDDEN,
             axum::Json(sazare_core::OperationOutcome::forbidden(

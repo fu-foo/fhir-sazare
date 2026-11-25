@@ -172,14 +172,14 @@ fn authorize_entries(state: &AppState, user: &AuthUser, entries: &[BundleEntry])
         if let Some(body) = &e.resource
             && matches!(e.method.as_str(), "POST" | "PUT")
         {
-            check_compartment_write(Some(user), &state.compartment_def, rt, body).map_err(to_resp)?;
+            check_compartment_write(Some(user), &state.compartment_def, rt, body, perm).map_err(to_resp)?;
         }
         if let Some(id) = &e.id
             && let Ok(Some(data)) = state.store.get(rt, id)
             && let Ok(existing) = serde_json::from_slice::<Value>(&data)
         {
             if writes {
-                check_compartment_write(Some(user), &state.compartment_def, rt, &existing).map_err(to_resp)?;
+                check_compartment_write(Some(user), &state.compartment_def, rt, &existing, perm).map_err(to_resp)?;
             } else {
                 check_compartment_access(Some(user), &state.compartment_def, rt, &existing).map_err(to_resp)?;
             }
