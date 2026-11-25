@@ -254,6 +254,14 @@ impl SearchQuery {
                 && mod_str.contains('.')
                 && let Some(chain) = parse_chain(&param_name, mod_str, raw_value, registry)
             {
+                // Each hop is a search plus a reference lookup; an unbounded
+                // chain lets one request do unbounded work.
+                if chain.links.len() > MAX_CHAIN_DEPTH {
+                    return Err(format!(
+                        "Chained search '{key}' has {} levels; at most {MAX_CHAIN_DEPTH} are supported",
+                        chain.links.len()
+                    ));
+                }
                 chain_parameters.push(chain);
                 continue;
             }
@@ -307,6 +315,10 @@ impl SearchQuery {
         self.parameters.iter().filter(|p| p.name == name).collect()
     }
 }
+
+/// Most reference hops a chained search may take
+/// (`subject:Patient.organization:Organization.partof:Organization.name` is 3).
+pub const MAX_CHAIN_DEPTH: usize = 4;
 
 /// Parse a (possibly multi-level) chained search parameter.
 ///
@@ -649,6 +661,18 @@ mod tests {
         // Nested _has is out of scope for now and is dropped, not mis-parsed.
         let nested = SearchQuery::parse("_has:Group:member:_has=y").unwrap();
         assert!(nested.has_parameters.is_empty());
+    }
+
+    #[test]
+    fn test_parse_chain_depth_is_limited() {
+        // 4 hops: accepted.
+        let ok = "subject:Patient.organization:Organization.partof:Organization.partof:Organization.name=x";
+        let q = SearchQuery::parse_for_resource(ok, Some("Observation")).unwrap();
+        assert_eq!(q.chain_parameters[0].links.len(), 4);
+        // 5 hops: rejected with a clear message.
+        let deep = "subject:Patient.organization:Organization.partof:Organization.partof:Organization.partof:Organization.name=x";
+        let err = SearchQuery::parse_for_resource(deep, Some("Observation")).unwrap_err();
+        assert!(err.contains("at most 4"), "{err}");
     }
 
     #[test]

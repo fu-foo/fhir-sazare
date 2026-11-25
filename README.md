@@ -351,7 +351,7 @@ an older version gets its full text on the first start.
 
 ### Chain Search
 
-Search by referenced resource attributes (multi-level, type required at each hop):
+Search by referenced resource attributes (multi-level up to 4 hops, type required at each hop):
 
 ```bash
 # Find Observations where the subject (Patient) has name "Doe"

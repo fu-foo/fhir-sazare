@@ -1700,3 +1700,14 @@ async fn test_full_text_search_and_total_none() {
     assert!(b.get("total").is_none());
     assert_eq!(b["entry"].as_array().unwrap().len(), 1);
 }
+
+#[tokio::test]
+async fn test_chain_depth_limit_is_a_400() {
+    let (base_url, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let deep = "subject:Patient.organization:Organization.partof:Organization.partof:Organization.partof:Organization.name=x";
+    let resp = client.get(format!("{}/Observation?{}", base_url, deep)).send().await.unwrap();
+    assert_eq!(resp.status(), 400);
+    let body: Value = resp.json().await.unwrap();
+    assert!(body.to_string().contains("at most 4"), "{body}");
+}
