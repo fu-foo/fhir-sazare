@@ -36,6 +36,7 @@ auth:
 
 async fn start(config: ServerConfig) -> (String, TempDir) {
     let dir = TempDir::new().unwrap();
+    let app_names = sazare_server::apps::discover_app_names(&config);
     let state = Arc::new(AppState {
         store: SqliteStore::open(dir.path().join("r.sqlite")).unwrap(),
         index: Mutex::new(SearchIndex::open(dir.path().join("i.sqlite")).unwrap()),
@@ -46,7 +47,7 @@ async fn start(config: ServerConfig) -> (String, TempDir) {
         search_param_registry: SearchParamRegistry::new(),
         compartment_def: CompartmentDef::patient_compartment(),
         jwk_cache: tokio::sync::RwLock::new(sazare_server::auth::JwkCache::new()),
-        plugin_names: Vec::new(),
+        app_names,
         ws_registry: Arc::new(sazare_server::websocket::WsRegistry::new()),
         webhook: Arc::new(sazare_server::webhook::WebhookManager::new(Default::default())),
         export_jobs: Arc::new(sazare_server::bulk_export::ExportJobs::new()),
@@ -440,4 +441,42 @@ async fn browse_is_for_operators_and_the_dashboard_escapes() {
     let html = c.http.get(format!("{}/", c.base)).basic_auth("ops", Some("ops-password")).send().await.unwrap().text().await.unwrap();
     assert!(html.contains("function esc("));
     assert!(!html.contains("onclick=\"showResource"), "no stored values in inline handlers");
+}
+
+#[tokio::test]
+async fn static_apps_are_served_under_apps_only() {
+    let apps = TempDir::new().unwrap();
+    std::fs::create_dir(apps.path().join("demo-app")).unwrap();
+    std::fs::write(apps.path().join("demo-app/index.html"), "<h1>app</h1>").unwrap();
+    std::fs::write(apps.path().join("demo-app/app.js"), "1").unwrap();
+    let mut config = secured_config();
+    config.apps.dir = Some(apps.path().to_path_buf());
+    let (base, _d) = start(config).await;
+    let http = reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()).build().unwrap();
+    let get = |p: &str| http.get(format!("{base}{p}")).send();
+
+    // App files are public (no credentials), under /apps/ only.
+    let r = get("/apps/demo-app/").await.unwrap();
+    assert_eq!(r.status(), 200);
+    assert_eq!(r.text().await.unwrap(), "<h1>app</h1>");
+    let r = get("/apps/demo-app/app.js").await.unwrap();
+    assert_eq!(r.headers()["content-type"], "application/javascript; charset=utf-8");
+    // SPA fallback.
+    assert_eq!(get("/apps/demo-app/some/route").await.unwrap().text().await.unwrap(), "<h1>app</h1>");
+    assert_eq!(get("/apps/demo-app").await.unwrap().status(), 308);
+    // Not at the top level any more; unknown apps aren't public.
+    assert_eq!(get("/demo-app/").await.unwrap().status(), 401);
+    assert_eq!(get("/apps/other/").await.unwrap().status(), 401);
+    // Listing.
+    let list: Value = get("/$apps").await.unwrap().json().await.unwrap();
+    assert_eq!(list["apps"][0]["path"], "/apps/demo-app/");
+    // Path traversal stays refused.
+    assert_eq!(get("/apps/demo-app/..%2F..%2Fetc%2Fpasswd").await.unwrap().status(), 400);
+}
+
+#[tokio::test]
+async fn no_apps_unless_configured() {
+    let (base, _d) = start(secured_config()).await;
+    let list: Value = reqwest::get(format!("{base}/$apps")).await.unwrap().json().await.unwrap();
+    assert_eq!(list["apps"], json!([]));
 }

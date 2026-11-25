@@ -10,6 +10,8 @@ pub struct ServerConfig {
     pub storage: StorageSettings,
     pub log: LogSettings,
     pub webhook: WebhookSettings,
+    pub apps: AppsSettings,
+    /// Deprecated: the former name of `apps` (still read, with a warning).
     pub plugins: PluginSettings,
     pub validation: ValidationSettings,
     pub subscription: SubscriptionSettings,
@@ -157,6 +159,15 @@ pub enum DefaultProfileModeSetting {
     Warn,
 }
 
+/// Static app hosting under `/apps/<name>/` (see `apps.rs`). Off unless `dir`
+/// is set.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AppsSettings {
+    pub dir: Option<PathBuf>,
+}
+
+/// Deprecated alias of [`AppsSettings`] (`plugins.dir`).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct PluginSettings {
@@ -226,7 +237,10 @@ impl ServerConfig {
             config.storage.data_dir = PathBuf::from(data_dir);
         }
 
-        if let Ok(plugin_dir) = std::env::var("SAZARE_PLUGIN_DIR") {
+        if let Ok(apps_dir) = std::env::var("SAZARE_APPS_DIR") {
+            config.apps.dir = Some(PathBuf::from(apps_dir));
+        } else if let Ok(plugin_dir) = std::env::var("SAZARE_PLUGIN_DIR") {
+            // Deprecated name.
             config.plugins.dir = Some(PathBuf::from(plugin_dir));
         }
 
@@ -248,16 +262,15 @@ impl ServerConfig {
         self.storage.data_dir.join(&self.storage.audit_db)
     }
 
-    /// Get the resolved plugin directory path, if configured and the directory exists.
-    pub fn plugin_dir(&self) -> Option<PathBuf> {
-        match &self.plugins.dir {
-            Some(dir) if dir.is_dir() => Some(dir.clone()),
-            Some(_) => None,
-            None => {
-                let default = PathBuf::from("plugins");
-                default.is_dir().then_some(default)
-            }
-        }
+    /// The apps directory, if configured (`apps.dir`, or the deprecated
+    /// `plugins.dir`) and existing. There is no implicit default: nothing is
+    /// served unless the operator asks for it.
+    pub fn apps_dir(&self) -> Option<PathBuf> {
+        self.apps
+            .dir
+            .clone()
+            .or_else(|| self.plugins.dir.clone())
+            .filter(|d| d.is_dir())
     }
 }
 

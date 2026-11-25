@@ -43,6 +43,10 @@ into `data_dir`, delete the two `search_index*` files, start the older binary).
 
 ### To 0.13.0 (security release)
 
+- Plugins became static apps: move links from `/<name>/` to `/apps/<name>/`, and
+  `/$plugins` to `/$apps`. Set `apps.dir` (or `SAZARE_APPS_DIR`) — a `./plugins`
+  directory is no longer picked up on its own. Rename `plugins.dir` to `apps.dir` when
+  convenient (the old key still works, with a warning).
 - SMART Backend Services clients need `allowed_scopes` in the configuration; a client
   without it is now granted nothing.
 - Bulk Data with JWTs needs a `system/` scope (`system/*.read` for export,

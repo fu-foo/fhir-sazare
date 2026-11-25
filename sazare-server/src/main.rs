@@ -11,7 +11,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use sazare_server::{build_router, config::ServerConfig, handlers::reindex::perform_reindex, plugins, AppState};
+use sazare_server::{apps, build_router, config::ServerConfig, handlers::reindex::perform_reindex, AppState};
 
 #[tokio::main]
 async fn main() {
@@ -222,7 +222,7 @@ async fn main() {
         );
     }
 
-    let plugin_names = plugins::discover_plugin_names(&config);
+    let app_names = apps::discover_app_names(&config);
 
     let state = Arc::new(AppState {
         store,
@@ -234,7 +234,7 @@ async fn main() {
         search_param_registry,
         compartment_def: CompartmentDef::patient_compartment(),
         jwk_cache: tokio::sync::RwLock::new(sazare_server::auth::JwkCache::new()),
-        plugin_names,
+        app_names,
         ws_registry: Arc::new(sazare_server::websocket::WsRegistry::new()),
         webhook: Arc::new(sazare_server::webhook::WebhookManager::new(
             config.webhook.clone(),
@@ -282,13 +282,16 @@ async fn main() {
         }
     );
 
-    if state.plugin_names.is_empty() {
-        tracing::info!("Plugins: disabled (no plugin directory found)");
+    if config.plugins.dir.is_some() {
+        tracing::warn!("`plugins.dir` / SAZARE_PLUGIN_DIR is deprecated: use `apps.dir` / SAZARE_APPS_DIR");
+    }
+    if state.app_names.is_empty() {
+        tracing::info!("Apps: none (set apps.dir to serve static apps under /apps/)");
     } else {
         tracing::info!(
-            "Plugins: {} plugin(s) → /{}",
-            state.plugin_names.len(),
-            state.plugin_names.join("/, /")
+            "Apps: {} → /apps/{}/",
+            state.app_names.len(),
+            state.app_names.join("/, /apps/")
         );
     }
 

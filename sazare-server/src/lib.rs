@@ -8,12 +8,12 @@ pub mod bulk;
 pub mod bulk_export;
 pub mod bundle;
 pub mod compartment_check;
+pub mod apps;
 pub mod config;
 pub mod dashboard;
 pub mod demo;
 pub mod handlers;
 pub mod metrics;
-pub mod plugins;
 pub mod smart;
 pub mod subscription;
 pub mod tls;
@@ -51,8 +51,8 @@ pub struct AppState {
     pub search_param_registry: SearchParamRegistry,
     pub compartment_def: CompartmentDef,
     pub jwk_cache: tokio::sync::RwLock<auth::JwkCache>,
-    /// Discovered plugin names (for auth bypass and routing)
-    pub plugin_names: Vec<String>,
+    /// Discovered static apps (served under /apps/, without auth)
+    pub app_names: Vec<String>,
     /// Live WebSocket clients bound to Subscriptions (R4 websocket channel)
     pub ws_registry: Arc<websocket::WsRegistry>,
     /// Lifecycle webhook dispatcher (BundleCreated / TaskCompleted)
@@ -165,12 +165,12 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         ])
         .allow_headers(Any);
 
-    // Build plugin routes (explicit per-plugin paths, e.g. /sample-patient-register/)
-    let plugin_router = plugins::plugin_routes(&state);
+    // Static apps under /apps/<name>/
+    let app_router = apps::app_routes();
 
     // Optional UI: served from SAZARE_UI_DIR if set and exists
     let ui_dir = std::env::var("SAZARE_UI_DIR").ok().filter(|p| std::path::Path::new(p).is_dir());
-    let mut router = plugin_router;
+    let mut router = app_router;
     if let Some(dir) = ui_dir.as_ref() {
         tracing::info!("UI: serving static files from {} at /ui", dir);
         router = router.nest_service("/ui", ServeDir::new(dir));
@@ -192,8 +192,8 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         // NOT auth-exempt — when auth is enabled it requires a credential like
         // any other write; in the default (auth-off) local mode it just works.
         .route("/$demo", post(demo::load_demo))
-        // Plugin listing
-        .route("/$plugins", get(plugins::list_plugins))
+        // Static app listing
+        .route("/$apps", get(apps::list_apps))
         // Bulk operations — async Bulk Data IG export (with sync fallback) + import
         .route("/$export", get(bulk_export::export))
         .route("/Patient/$export", get(bulk_export::patient_export))

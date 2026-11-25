@@ -23,7 +23,7 @@
 - **US Core conformance** — Passes the Inferno US Core v7 & v8 FHIR API test suites (`examples/us-core-seed.json` for v7, `examples/us-core-v8-seed.json` for v8; the TLS test requires an HTTPS deployment)
 - **Custom search parameters** — Drop FHIR `SearchParameter` resources into a `searchparameters/` directory; their FHIRPath `expression` is compiled by a bounded evaluator (unsupported expressions are rejected at load, never mis-evaluated)
 - **Bulk data** — NDJSON `$import`, and `$export` both synchronous and async (FHIR Bulk Data Access IG: `Prefer: respond-async` kick-off, status poll, manifest, `_type`/`_since`/`_outputFormat`)
-- **Plugin system** — Serve domain-specific SPAs at top-level paths (e.g. `/sample-patient-register/`)
+- **Static app hosting** — Serve single-page apps that use the API, same-origin, at `/apps/<name>/`
 - **Web dashboard** — Built-in console at `/`: browse resources, a search builder that shows the generated FHIR URL, one-click sample data — no build step, served from the binary
 - **Audit logging** — All operations recorded to dedicated SQLite database
 - **PATCH** — JSON Patch (RFC 6902)
@@ -320,13 +320,13 @@ If no `config.yaml` is found, the server runs with sensible defaults (port 8080,
 | `GET` | `/` | Web dashboard (browser) |
 | `GET` | `/$status` | Server status JSON API |
 
-### Plugins
+### Static apps
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/$plugins` | List installed plugins (JSON) |
-| `GET` | `/{name}/` | Serve plugin SPA |
-| `GET` | `/{name}/{path}` | Serve plugin static files (SPA fallback) |
+| `GET` | `/$apps` | List hosted apps (JSON) |
+| `GET` | `/apps/{name}/` | Serve an app's `index.html` |
+| `GET` | `/apps/{name}/{path}` | Serve an app's files (SPA fallback) |
 
 ---
 
@@ -569,46 +569,39 @@ curl -X POST http://localhost:8080/\$import \
 
 ---
 
-## Plugins
+## Static apps
 
-sazare can serve domain-specific SPAs (Single Page Applications) as plugins. Each plugin is a directory under the plugin directory containing static files (HTML, JS, CSS). Plugins are served at top-level URLs (e.g. `http://localhost:8080/my-app/`) — the internal `plugins/` directory path is not exposed. Plugins access FHIR data through sazare's REST API on the same origin, so no CORS configuration is needed.
+sazare can host static web apps — typically single-page apps that use its FHIR API — at
+`/apps/<name>/`. Because they are served from the same origin as the API, they need no
+CORS setup. This is file hosting, not a plugin system: an app can't change what the server
+does, and it reaches data only through the FHIR API and its authorization.
 
-### Configuration
+Nothing is served unless you configure a directory:
 
 ```yaml
-plugins:
-  dir: "plugins"    # Directory containing plugin subdirectories
+apps:
+  dir: "apps"    # each subdirectory is one app
 ```
 
-Or via environment variable: `SAZARE_PLUGIN_DIR=./plugins`
-
-If no `plugins` section is configured, sazare looks for a `./plugins` directory by default.
-
-### Directory Structure
+or `SAZARE_APPS_DIR=./apps`. (The Docker image sets it to the bundled `/apps`.)
 
 ```
-plugins/
-  my-app/           → served at /my-app/
+apps/
+  my-app/           → served at /apps/my-app/
     index.html      # Entry point
     style.css
     app.js
-  another-app/      → served at /another-app/
-    index.html
-    ...
 ```
 
-### Behavior
+- **SPA fallback** — paths that don't name a file return the app's `index.html`
+- **Cache-Control** — `index.html` with `no-cache`; other files with `max-age=604800`
+- **No authentication** for the files themselves; the app's API calls are authorized as usual
+- **Safety** — app names are `[A-Za-z0-9_-]`; path traversal and symlinks are refused; apps
+  live under `/apps/`, so they can never shadow a FHIR or server route
+- **Listing** — `GET /$apps`
 
-- **Top-level routing** — Each plugin directory name becomes a top-level URL path (e.g. `plugins/my-app/` → `/my-app/`)
-- **SPA fallback** — Requests for non-existent paths return `index.html` (client-side routing)
-- **Cache-Control** — `index.html` is served with `no-cache`; other assets with `max-age=604800` (1 week)
-- **No authentication** — Plugin static files are served without auth; data access goes through FHIR API which has its own auth
-- **Security** — Path traversal is blocked; symlinks are rejected
-- **Plugin listing** — `GET /$plugins` returns a JSON list of installed plugins
-
-### Sample Plugin
-
-A sample plugin (`plugins/sample-patient-register/`) is included that demonstrates a Patient registration form with a list view. Access it at `http://localhost:8080/sample-patient-register/`.
+A sample app (`apps/sample-patient-register/`), a Patient registration form with a list,
+is included: run with `SAZARE_APPS_DIR=apps` and open `/apps/sample-patient-register/`.
 
 ---
 
@@ -771,7 +764,7 @@ CC0-1.0 — see [NOTICE.md](NOTICE.md) for provenance and attribution.
 - US Core 適合 — Inferno US Core v7 & v8 の FHIR API テストスイートをパス（v7: `examples/us-core-seed.json` / v8: `examples/us-core-v8-seed.json`。TLS テストは HTTPS デプロイが前提）
 - カスタム検索パラメータ — FHIR `SearchParameter` を `searchparameters/` に置くと、その FHIRPath `expression` を限定評価器がコンパイル（対応外の式はロード時に拒否、誤評価しない）
 - NDJSON 形式での一括エクスポート / インポート
-- プラグインシステム（SPA をトップレベル URL で配信、例: `/sample-patient-register/`）
+- 静的アプリ配信（API を使う SPA を同一オリジンの `/apps/<name>/` で配信。`apps.dir` を設定したときだけ有効）
 - ブラウザで確認できる Web ダッシュボード
 - 監査ログ（全操作を SQLite に記録）
 - API キー / Basic 認証 / JWT (HS256/RS256/JWK URL) / SMART on FHIR スコープ

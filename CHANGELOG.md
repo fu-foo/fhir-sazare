@@ -9,6 +9,13 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
 Security release: a second review (an external model's, verified line by line) found
 authorization gaps the 0.11.0 hardening missed.
 
+### Changed
+- **Plugins are now "static apps", served under `/apps/<name>/`** instead of at the top
+  level, and only when a directory is configured (`apps.dir` / `SAZARE_APPS_DIR`; there
+  is no implicit `./plugins` any more). Apps can no longer collide with FHIR or server
+  routes, so the reserved-name rules are gone. The listing moved from `/$plugins` to
+  `/$apps`. `plugins.dir` / `SAZARE_PLUGIN_DIR` still work, with a deprecation warning.
+
 ### Security
 - Dashboard: values from stored resources and the audit log (names, ids, resource types)
   are HTML-escaped, and click targets no longer embed them in inline JavaScript. A

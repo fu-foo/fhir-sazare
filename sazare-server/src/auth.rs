@@ -275,12 +275,10 @@ pub async fn auth_middleware(
 
     // Allow public endpoints without auth (FHIR spec requirements)
     let path = request.uri().path();
-    if path == "/health" || path == "/metadata" || path == "/$plugins"
+    if path == "/health" || path == "/metadata" || path == "/$apps"
         || path == "/token"
         || path.starts_with("/.well-known/")
-        || state.plugin_names.iter().any(|name| {
-            path == format!("/{name}") || path.starts_with(&format!("/{name}/"))
-        })
+        || crate::apps::is_app_path(&state, path)
     {
         return Ok(next.run(request).await);
     }
@@ -676,7 +674,8 @@ fn extract_resource_action(method: &Method, path: &str) -> Option<(String, char)
             | "$import"
             | "$status"
             | ".well-known"
-            | "plugins"
+            | "apps"
+            | "$apps"
     ) {
         return None;
     }
@@ -801,7 +800,7 @@ mod tests {
             search_param_registry: sazare_core::SearchParamRegistry::new(),
             compartment_def: sazare_core::CompartmentDef::patient_compartment(),
             jwk_cache: RwLock::new(JwkCache::new()),
-            plugin_names: Vec::new(),
+            app_names: Vec::new(),
             ws_registry: Arc::new(crate::websocket::WsRegistry::new()),
             webhook: Arc::new(crate::webhook::WebhookManager::new(Default::default())),
             export_jobs: Arc::new(crate::bulk_export::ExportJobs::new()),

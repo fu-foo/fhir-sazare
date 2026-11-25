@@ -25,7 +25,7 @@ async fn start_https() -> (String, TempDir) {
         search_param_registry: SearchParamRegistry::new(),
         compartment_def: CompartmentDef::patient_compartment(),
         jwk_cache: tokio::sync::RwLock::new(sazare_server::auth::JwkCache::new()),
-        plugin_names: Vec::new(),
+        app_names: Vec::new(),
         ws_registry: Arc::new(sazare_server::websocket::WsRegistry::new()),
         webhook: Arc::new(sazare_server::webhook::WebhookManager::new(Default::default())),
         export_jobs: Arc::new(sazare_server::bulk_export::ExportJobs::new()),
