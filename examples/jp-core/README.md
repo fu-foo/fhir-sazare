@@ -14,7 +14,8 @@ JP Core は sazare に同梱していません（CC0-1.0 で公開されてい�
 > code systems) to download JP Core into `profiles/`, `searchparameters/` and
 > `terminology/`, start sazare from that directory, and run
 > `load_examples.sh` to load the package's 76 examples and check the JP Core
-> searches and validation. Existing data needs one `POST /$reindex`.
+> searches and validation. Existing data is reindexed automatically on the
+> next start.
 
 ## 1. パッケージを取得する
 
@@ -82,12 +83,9 @@ volumes:
 
 ### すでにデータがある場合
 
-検索インデックスは保存時に作られます。検索パラメータを後から追加したときは、
-既存データにも効くように一度だけインデックスを作り直してください。
-
-```bash
-curl -X POST http://localhost:8080/\$reindex
-```
+検索パラメータを後から追加・変更しても、次の起動時にサーバーが定義の変化に気づき、
+既存データのインデックスを自動で作り直します（ログに `was built with different search parameters; rebuilding` と出ます）。
+起動し直さずに反映したいときは `curl -X POST http://localhost:8080/\$reindex` でも作り直せます。
 
 ## 3. サンプルデータで試す
 

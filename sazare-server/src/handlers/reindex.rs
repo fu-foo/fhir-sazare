@@ -11,6 +11,17 @@ pub struct ReindexSummary {
     pub entries_written: usize,
 }
 
+/// `index_meta` key holding [`index_fingerprint`].
+pub const FINGERPRINT_KEY: &str = "param_fingerprint";
+
+/// What an index built now would be made from: the index format plus every
+/// search parameter definition. A stored fingerprint that differs means the
+/// index is stale (e.g. new built-in parameters after an upgrade, or a
+/// changed `searchparameters/` directory).
+pub fn index_fingerprint(registry: &SearchParamRegistry) -> String {
+    format!("format={}\n{}", sazare_store::INDEX_FORMAT, registry.fingerprint())
+}
+
 /// Rebuild the search index from the resource store in-place.
 /// Clears existing entries, then re-extracts indices for every resource.
 pub fn perform_reindex(
@@ -44,6 +55,10 @@ pub fn perform_reindex(
         resources_indexed += 1;
     }
 
+    // Record which definitions built this index (see `index_fingerprint`).
+    if let Err(e) = index.set_meta(FINGERPRINT_KEY, &index_fingerprint(registry)) {
+        tracing::warn!("could not record the index fingerprint: {e}");
+    }
     Ok(ReindexSummary { resources_indexed, entries_written })
 }
 

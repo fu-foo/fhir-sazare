@@ -1711,3 +1711,56 @@ async fn test_chain_depth_limit_is_a_400() {
     let body: Value = resp.json().await.unwrap();
     assert!(body.to_string().contains("at most 4"), "{body}");
 }
+
+#[tokio::test]
+async fn test_revinclude_through_standard_reference_params() {
+    let (base_url, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    let put = |path: &str, body: Value| {
+        let client = client.clone();
+        let url = format!("{}/{}", base_url, path);
+        async move {
+            client.put(url).header("Content-Type", "application/fhir+json").body(body.to_string()).send().await.unwrap()
+        }
+    };
+    put("Practitioner/dr1", json!({"resourceType": "Practitioner", "id": "dr1"})).await;
+    put("Medication/med1", json!({"resourceType": "Medication", "id": "med1"})).await;
+    put("Observation/o1", json!({"resourceType": "Observation", "id": "o1", "status": "final",
+        "code": {"text": "x"}, "performer": [{"reference": "Practitioner/dr1"}]})).await;
+    put("MedicationRequest/mr1", json!({"resourceType": "MedicationRequest", "id": "mr1", "status": "active",
+        "intent": "order", "subject": {"reference": "Patient/p1"},
+        "medicationReference": {"reference": "Medication/med1"}})).await;
+
+    let ids = |q: &'static str| {
+        let client = client.clone();
+        let url = format!("{}/{}", base_url, q);
+        async move {
+            let b: Value = client.get(url).send().await.unwrap().json().await.unwrap();
+            b["entry"].as_array().map(|a| a.iter()
+                .map(|e| format!("{}/{}", e["resource"]["resourceType"].as_str().unwrap(), e["resource"]["id"].as_str().unwrap()))
+                .collect::<Vec<_>>()).unwrap_or_default()
+        }
+    };
+    assert_eq!(ids("Practitioner?_id=dr1&_revinclude=Observation:performer").await,
+        vec!["Practitioner/dr1", "Observation/o1"]);
+    assert_eq!(ids("Medication?_id=med1&_revinclude=MedicationRequest:medication").await,
+        vec!["Medication/med1", "MedicationRequest/mr1"]);
+    // Chaining through the new parameters works too.
+    assert_eq!(ids("MedicationRequest?medication=Medication/med1").await, vec!["MedicationRequest/mr1"]);
+
+    // An unknown parameter is a 400, not a silently empty include.
+    let r = client.get(format!("{}/Practitioner?_revinclude=Observation:nope", base_url)).send().await.unwrap();
+    assert_eq!(r.status(), 400);
+    let r = client.get(format!("{}/Observation?_include=Observation:status", base_url)).send().await.unwrap();
+    assert_eq!(r.status(), 400, "status is not a reference parameter");
+}
+
+#[tokio::test]
+async fn test_reindex_records_the_parameter_fingerprint() {
+    let (base_url, dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+    assert!(client.post(format!("{}/$reindex", base_url)).send().await.unwrap().status().is_success());
+    let index = SearchIndex::open(dir.path().join("search_index.sqlite")).unwrap();
+    let stored = index.get_meta(sazare_server::handlers::reindex::FINGERPRINT_KEY).unwrap().unwrap();
+    assert_eq!(stored, sazare_server::handlers::reindex::index_fingerprint(&SearchParamRegistry::new()));
+}

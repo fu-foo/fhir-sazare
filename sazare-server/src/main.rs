@@ -169,14 +169,33 @@ async fn main() {
     // Also rebuild once when the full-text table is empty but the index
     // isn't — an index built before `_text`/`_content` existed.
     let text_missing = index.text_row_count().map(|n| n == 0).unwrap_or(false);
+    // Rebuild too when the search parameter definitions changed since the
+    // index was built (new built-ins after an upgrade, an edited
+    // searchparameters/ directory) — otherwise existing data stays invisible
+    // to the new parameters until someone runs $reindex.
+    let fingerprint = sazare_server::handlers::reindex::index_fingerprint(&search_param_registry);
+    let params_changed = index
+        .get_meta(sazare_server::handlers::reindex::FINGERPRINT_KEY)
+        .ok()
+        .flatten()
+        .is_none_or(|stored| stored != fingerprint);
     match index.row_count() {
-        Ok(n) if n == 0 || text_missing => {
+        Ok(n) if n == 0 || text_missing || params_changed => {
             // An existence check, not a full load of every resource.
             let store_has_data = store.has_any().unwrap_or(false);
+            if !store_has_data {
+                let _ = index.set_meta(sazare_server::handlers::reindex::FINGERPRINT_KEY, &fingerprint);
+            }
             if store_has_data {
                 tracing::info!(
                     "Search index {}; rebuilding from resource store...",
-                    if n == 0 { "is empty" } else { "has no full text yet (_text/_content)" }
+                    if n == 0 {
+                        "is empty"
+                    } else if text_missing {
+                        "has no full text yet (_text/_content)"
+                    } else {
+                        "was built with different search parameters"
+                    }
                 );
                 match perform_reindex(&store, &index, &search_param_registry) {
                     Ok(s) => tracing::info!(

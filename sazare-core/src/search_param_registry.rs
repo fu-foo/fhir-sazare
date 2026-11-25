@@ -112,6 +112,22 @@ impl SearchParamRegistry {
         definitions.insert("DocumentReference".to_string(), document_reference_definitions());
         definitions.insert("QuestionnaireResponse".to_string(), questionnaire_response_definitions());
 
+        // Standard R4 reference parameters (for chaining, _include and
+        // _revinclude) that the per-type lists above don't define yet.
+        for (rt, name, path, mode) in STANDARD_REFERENCE_PARAMS {
+            if let Some(defs) = definitions.get_mut(*rt)
+                && !defs.iter().any(|d| d.name == *name)
+            {
+                defs.push(SearchParamDef {
+                    name: name.to_string(),
+                    param_type: SearchParamType::Reference,
+                    path: path.iter().map(|s| s.to_string()).collect(),
+                    extraction: mode.clone(),
+                    aliases: vec![],
+                });
+            }
+        }
+
         // Append FHIR-common parameters (e.g. _profile) to every resource-specific list
         let common = common_fhir_params();
         for defs in definitions.values_mut() {
@@ -133,6 +149,23 @@ impl SearchParamRegistry {
             .get(resource_type)
             .map(|v| v.as_slice())
             .unwrap_or(&COMMON)
+    }
+
+    /// A canonical description of every definition (built-in and custom),
+    /// stable for the same set of parameters. Stored with the search index so
+    /// a changed set (new built-ins after an upgrade, an added or edited
+    /// `searchparameters/` file) is noticed and the index rebuilt.
+    pub fn fingerprint(&self) -> String {
+        let mut lines: Vec<String> = Vec::new();
+        let describe = |rt: &str, d: &SearchParamDef| {
+            format!("{rt}|{}|{:?}|{}|{:?}|{}", d.name, d.param_type, d.path.join("."), d.extraction, d.aliases.join(","))
+        };
+        for (rt, defs) in &self.definitions {
+            lines.extend(defs.iter().map(|d| describe(rt, d)));
+        }
+        lines.extend(common_definitions().iter().map(|d| describe("*", d)));
+        lines.sort();
+        lines.join("\n")
     }
 
     /// Check if a resource type has explicit definitions in the registry.
@@ -511,6 +544,91 @@ fn condition_definitions() -> Vec<SearchParamDef> {
         },
     ]
 }
+
+/// R4 reference search parameters: (resource type, code, path, extraction).
+/// `Reference` follows `path` to a Reference or an array of them;
+/// `NestedReference` reads `path[1]` on each element of the array `path[0]`.
+const STANDARD_REFERENCE_PARAMS: &[(&str, &str, &[&str], ExtractionMode)] = {
+    use ExtractionMode::{NestedReference as N, Reference as R};
+    &[
+        ("Patient", "general-practitioner", &["generalPractitioner"], R),
+        ("Patient", "organization", &["managingOrganization"], R),
+        ("Patient", "link", &["link", "other"], N),
+        ("Observation", "performer", &["performer"], R),
+        ("Observation", "encounter", &["encounter"], R),
+        ("Observation", "based-on", &["basedOn"], R),
+        ("Observation", "has-member", &["hasMember"], R),
+        ("Observation", "derived-from", &["derivedFrom"], R),
+        ("Observation", "part-of", &["partOf"], R),
+        ("Observation", "specimen", &["specimen"], R),
+        ("Observation", "device", &["device"], R),
+        ("Observation", "focus", &["focus"], R),
+        ("Encounter", "participant", &["participant", "individual"], N),
+        ("Encounter", "practitioner", &["participant", "individual"], N),
+        ("Encounter", "service-provider", &["serviceProvider"], R),
+        ("Encounter", "episode-of-care", &["episodeOfCare"], R),
+        ("Encounter", "based-on", &["basedOn"], R),
+        ("Encounter", "part-of", &["partOf"], R),
+        ("Encounter", "diagnosis", &["diagnosis", "condition"], N),
+        ("Condition", "asserter", &["asserter"], R),
+        ("MedicationRequest", "medication", &["medicationReference"], R),
+        ("MedicationRequest", "requester", &["requester"], R),
+        ("MedicationRequest", "intended-performer", &["performer"], R),
+        ("Procedure", "encounter", &["encounter"], R),
+        ("Procedure", "performer", &["performer", "actor"], N),
+        ("Procedure", "based-on", &["basedOn"], R),
+        ("Procedure", "part-of", &["partOf"], R),
+        ("Procedure", "location", &["location"], R),
+        ("Procedure", "reason-reference", &["reasonReference"], R),
+        ("AllergyIntolerance", "asserter", &["asserter"], R),
+        ("AllergyIntolerance", "recorder", &["recorder"], R),
+        ("DiagnosticReport", "performer", &["performer"], R),
+        ("DiagnosticReport", "results-interpreter", &["resultsInterpreter"], R),
+        ("DiagnosticReport", "encounter", &["encounter"], R),
+        ("DiagnosticReport", "result", &["result"], R),
+        ("DiagnosticReport", "specimen", &["specimen"], R),
+        ("DiagnosticReport", "based-on", &["basedOn"], R),
+        ("Immunization", "performer", &["performer", "actor"], N),
+        ("Immunization", "location", &["location"], R),
+        ("ServiceRequest", "performer", &["performer"], R),
+        ("ServiceRequest", "specimen", &["specimen"], R),
+        ("CarePlan", "encounter", &["encounter"], R),
+        ("CarePlan", "care-team", &["careTeam"], R),
+        ("CarePlan", "based-on", &["basedOn"], R),
+        ("CarePlan", "part-of", &["partOf"], R),
+        ("CareTeam", "encounter", &["encounter"], R),
+        ("CareTeam", "participant", &["participant", "member"], N),
+        ("Specimen", "parent", &["parent"], R),
+        ("Provenance", "agent", &["agent", "who"], N),
+        ("PractitionerRole", "organization", &["organization"], R),
+        ("PractitionerRole", "location", &["location"], R),
+        ("Goal", "subject", &["subject"], R),
+        ("Coverage", "payor", &["payor"], R),
+        ("Coverage", "beneficiary", &["beneficiary"], R),
+        ("Coverage", "subscriber", &["subscriber"], R),
+        ("Device", "organization", &["owner"], R),
+        ("Device", "location", &["location"], R),
+        ("MedicationDispense", "medication", &["medicationReference"], R),
+        ("MedicationDispense", "performer", &["performer", "actor"], N),
+        ("MedicationDispense", "prescription", &["authorizingPrescription"], R),
+        ("MedicationDispense", "receiver", &["receiver"], R),
+        ("DocumentReference", "author", &["author"], R),
+        ("DocumentReference", "custodian", &["custodian"], R),
+        ("DocumentReference", "encounter", &["context", "encounter"], R),
+        ("DocumentReference", "related", &["context", "related"], R),
+        ("QuestionnaireResponse", "author", &["author"], R),
+        ("QuestionnaireResponse", "encounter", &["encounter"], R),
+        ("Location", "organization", &["managingOrganization"], R),
+        ("Location", "partof", &["partOf"], R),
+        ("Organization", "partof", &["partOf"], R),
+        ("Appointment", "actor", &["participant", "actor"], N),
+        ("Task", "encounter", &["encounter"], R),
+        ("Task", "based-on", &["basedOn"], R),
+        ("Task", "part-of", &["partOf"], R),
+        ("Task", "requester", &["requester"], R),
+        ("Task", "focus", &["focus"], R),
+    ]
+};
 
 fn medication_request_definitions() -> Vec<SearchParamDef> {
     vec![
@@ -1633,5 +1751,29 @@ mod tests {
             registry.lookup_param_type("Specimen", "patient"),
             Some(SearchParamType::Reference)
         );
+    }
+
+    #[test]
+    fn test_standard_reference_params_registered_once() {
+        let reg = SearchParamRegistry::new();
+        for (rt, name) in [("Observation", "performer"), ("MedicationRequest", "medication"),
+                           ("Patient", "general-practitioner"), ("Encounter", "participant")] {
+            assert_eq!(reg.lookup_param_type(rt, name), Some(SearchParamType::Reference), "{rt}.{name}");
+        }
+        // Existing definitions are not duplicated (e.g. ServiceRequest.requester).
+        let n = reg.get_definitions("ServiceRequest").iter().filter(|d| d.name == "requester").count();
+        assert_eq!(n, 1);
+    }
+
+    #[test]
+    fn test_fingerprint_changes_with_custom_params() {
+        let a = SearchParamRegistry::new();
+        let mut b = SearchParamRegistry::new();
+        assert_eq!(a.fingerprint(), b.fingerprint());
+        b.register_search_parameter(&serde_json::json!({
+            "resourceType": "SearchParameter", "code": "x", "base": ["Patient"], "type": "token",
+            "expression": "Patient.gender"
+        })).unwrap();
+        assert_ne!(a.fingerprint(), b.fingerprint());
     }
 }

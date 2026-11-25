@@ -382,6 +382,9 @@ binary; its `expression` (FHIRPath) is compiled at startup by a bounded
 evaluator, and the parameter then works like any built-in one. This is also how
 an Implementation Guide's search params are supplied — e.g. JP Core's kana-name
 search alongside its profiles in `profiles/`, with nothing baked into the core.
+When the set of parameters changes (a file added or edited, or new built-ins
+after an upgrade), the next start rebuilds the index automatically so existing
+data is covered; `POST /$reindex` does the same without a restart.
 
 ```jsonc
 // searchparameters/name-kana.json
@@ -414,7 +417,7 @@ load — never silently mis-evaluated into wrong results.
 `--terminology` also fills `terminology/` (CodeSystems/ValueSets) so required
 bindings to JP code systems are validated. See
 [`examples/jp-core/README.md`](examples/jp-core/README.md) (Japanese) for
-Docker, reindexing existing data and the full parameter list.
+Docker and the full parameter list.
 
 ### Conditional Create
 
@@ -831,7 +834,7 @@ bash examples/jp-core/load_examples.sh  # サンプル76件を投入して JP Co
 curl "http://localhost:8080/Patient?jp-kana-sort=ヤマダ"
 ```
 
-Docker での使い方、既存データへの `$reindex`、検索パラメータ一覧は [`examples/jp-core/README.md`](examples/jp-core/README.md) を参照してください。
+Docker での使い方、検索パラメータ一覧は [`examples/jp-core/README.md`](examples/jp-core/README.md) を参照してください。
 
 ### バックアップと復元
 

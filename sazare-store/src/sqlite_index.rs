@@ -219,6 +219,14 @@ impl SearchIndex {
         CREATE INDEX IF NOT EXISTS idx_sp_number
             ON search_index(resource_type, param_name, value_number, resource_id);
         "#,
+        // v4 — small key/value store for facts about the index itself (e.g.
+        // which search parameter definitions built it).
+        r#"
+        CREATE TABLE IF NOT EXISTS index_meta (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+        "#,
     ];
 
     /// Schema of the full-text database (see [`SearchIndex::text`]).
@@ -434,6 +442,24 @@ impl SearchIndex {
             |row| row.get(0),
         )?;
         Ok(count as usize)
+    }
+
+    /// Read a value from the index's metadata.
+    pub fn get_meta(&self, key: &str) -> Result<Option<String>> {
+        Ok(self
+            .conn
+            .query_row("SELECT value FROM index_meta WHERE key = ?1", params![key], |r| r.get(0))
+            .optional()?)
+    }
+
+    /// Store a value in the index's metadata.
+    pub fn set_meta(&self, key: &str, value: &str) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO index_meta (key, value) VALUES (?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![key, value],
+        )?;
+        Ok(())
     }
 
     /// Number of resources with full text indexed (to detect an index built

@@ -166,6 +166,32 @@ async fn do_search(
         }
     }
 
+    // `_include` / `_revinclude` must name a reference parameter this server
+    // indexes — otherwise they silently included nothing.
+    let registry = &state.search_param_registry;
+    let specs = query.include.iter().map(|s| ("_include", s)).chain(query.revinclude.iter().map(|s| ("_revinclude", s)));
+    for (kind, spec) in specs {
+        let mut parts = spec.split(':');
+        let (Some(source), Some(param)) = (parts.next(), parts.next()) else {
+            return Err(bad_request(format!("{kind}={spec}: expected Type:param[:TargetType]")));
+        };
+        if param == "*" || !registry.has_resource_type(source) {
+            continue; // wildcard, or a type without a built-in parameter list
+        }
+        if registry.lookup_param_type(source, param) != Some(sazare_core::SearchParamType::Reference) {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(json!(OperationOutcome::error(
+                    IssueType::NotSupported,
+                    format!(
+                        "{kind}={spec}: '{param}' is not a reference search parameter of {source}. \
+                         Open GET /metadata to see the parameters {source} supports."
+                    )
+                ))),
+            ));
+        }
+    }
+
     // `_sort` keys must be sortable: `_id`, `_lastUpdated`, or a search
     // parameter of this type (an unknown key would silently not sort).
     for key in &query.sort {
@@ -395,4 +421,8 @@ async fn do_search(
         obj.remove("total");
     }
     Ok(super::fhir_json(StatusCode::OK, bundle))
+}
+
+fn bad_request(msg: String) -> (StatusCode, Json<Value>) {
+    (StatusCode::BAD_REQUEST, Json(json!(OperationOutcome::error(IssueType::Invalid, msg))))
 }

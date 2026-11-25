@@ -72,5 +72,5 @@ if [[ "$TERMINOLOGY" == 1 ]]; then
 fi
 echo
 echo "Next: start sazare from $DIR (it logs 'Loading N custom profiles')."
-echo "If the server already holds data, rebuild the index once so the new"
-echo "search parameters cover it:  curl -X POST http://localhost:8080/\$reindex"
+echo "Existing data is reindexed automatically on that start, so the new"
+echo "search parameters cover it."

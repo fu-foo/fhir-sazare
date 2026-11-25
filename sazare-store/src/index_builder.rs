@@ -4,6 +4,10 @@ use serde_json::Value;
 /// Extract search indices from a FHIR resource
 pub struct IndexBuilder;
 
+/// Bump when the way resources are turned into index rows changes (not just
+/// the parameter set), so existing indexes are rebuilt on upgrade.
+pub const INDEX_FORMAT: u32 = 1;
+
 impl IndexBuilder {
     /// Extract all searchable indices from a resource using a registry.
     /// Returns Vec<(param_name, param_type, value, system)>
