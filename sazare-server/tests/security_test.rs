@@ -240,3 +240,40 @@ async fn cross_site_basic_auth_writes_are_refused() {
         .header("Sec-Fetch-Site", "cross-site").send().await.unwrap();
     assert_eq!(r.status().as_u16(), 200);
 }
+
+fn bundle(kind: &str, entries: Vec<Value>) -> Value {
+    json!({"resourceType": "Bundle", "type": kind, "entry": entries})
+}
+
+#[tokio::test]
+async fn bundles_accept_api_credentials_and_authorize_each_entry() {
+    let (c, t, _d) = two_patients().await;
+    let get = |id: &str| json!({"request": {"method": "GET", "url": format!("Observation/{id}")}});
+    let post_obs = |subject: &str| json!({
+        "resource": {"resourceType": "Observation", "status": "final", "code": {"text": "x"},
+                     "subject": {"reference": subject}},
+        "request": {"method": "POST", "url": "Observation"}
+    });
+
+    // Bearer credentials work on POST / (it used to accept only Basic).
+    let (s, b) = c.send(reqwest::Method::POST, "/", ADMIN_KEY, Some(bundle("batch", vec![get("o-p2")]))).await;
+    assert_eq!(s, 200, "{b}");
+
+    // Patient token: own data passes, anything else refuses the whole Bundle.
+    let ok = |b: Value| async { c.send(reqwest::Method::POST, "/", &t, Some(b)).await.0 };
+    assert_eq!(ok(bundle("batch", vec![get("o-p1")])).await, 200);
+    assert_eq!(ok(bundle("batch", vec![get("o-p1"), get("o-p2")])).await, 403);
+    assert_eq!(ok(bundle("transaction", vec![post_obs("Patient/p1")])).await, 200);
+    assert_eq!(ok(bundle("transaction", vec![post_obs("Patient/p2")])).await, 403);
+    let del = json!({"request": {"method": "DELETE", "url": "Observation/o-p2"}});
+    assert_eq!(ok(bundle("batch", vec![del])).await, 403);
+    let sub = json!({"resource": subscription("https://example.org/h"), "request": {"method": "POST", "url": "Subscription"}});
+    assert_eq!(ok(bundle("transaction", vec![sub])).await, 403);
+    // Scopes apply per entry too.
+    let read_only = jwt("patient/Observation.read", Some("p1"));
+    let (s, _) = c.send(reqwest::Method::POST, "/", &read_only,
+        Some(bundle("transaction", vec![post_obs("Patient/p1")]))).await;
+    assert_eq!(s, 403);
+    // p2's Observation still exists.
+    assert_eq!(c.get("/Observation/o-p2", ADMIN_KEY).await.0, 200);
+}

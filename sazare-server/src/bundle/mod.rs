@@ -112,6 +112,44 @@ fn parse_entries(bundle: &Value) -> Result<Vec<BundleEntry>, OperationOutcome> {
 }
 
 /// Recursively resolve urn:uuid references in a JSON value.
+/// Apply the per-request authorization rules to each Bundle entry: JWT scopes
+/// (and the patient-token restrictions), then the patient compartment for the
+/// entry's body and for the existing resource it reads, replaces or deletes.
+fn authorize_entries(state: &AppState, user: &AuthUser, entries: &[BundleEntry]) -> Result<(), OperationOutcome> {
+    use crate::auth::{check_scope, patient_scope_may, AuthType};
+    use crate::compartment_check::check_compartment_access;
+
+    let deny = |i: usize, why: String| {
+        OperationOutcome::error(IssueType::Forbidden, format!("entry[{i}]: {why}"))
+    };
+    for (i, e) in entries.iter().enumerate() {
+        // `Type?query` (conditional/search URLs) authorizes as `Type`.
+        let rt = e.resource_type.split('?').next().unwrap_or("");
+        let action = if e.method == "GET" { "read" } else { "write" };
+
+        if user.auth_type == AuthType::Jwt {
+            if !check_scope(&user.scopes, rt, action) {
+                return Err(deny(i, format!("insufficient scope for {rt}.{action}")));
+            }
+            patient_scope_may(user, rt, action).map_err(|m| deny(i, m))?;
+        }
+
+        let to_resp = |_| deny(i, "resource is not in the patient compartment".to_string());
+        if let Some(body) = &e.resource
+            && matches!(e.method.as_str(), "POST" | "PUT")
+        {
+            check_compartment_access(Some(user), &state.compartment_def, rt, body).map_err(to_resp)?;
+        }
+        if let Some(id) = &e.id
+            && let Ok(Some(data)) = state.store.get(rt, id)
+            && let Ok(existing) = serde_json::from_slice::<Value>(&data)
+        {
+            check_compartment_access(Some(user), &state.compartment_def, rt, &existing).map_err(to_resp)?;
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn resolve_references(value: &mut Value, ref_map: &HashMap<String, String>) {
     match value {
         Value::Object(map) => {
@@ -151,7 +189,8 @@ pub async fn process_bundle(
     auth_user: Option<axum::extract::Extension<AuthUser>>,
     Json(bundle): Json<Value>,
 ) -> impl IntoResponse {
-    let user_id = auth_user.map(|u| u.user_id.clone());
+    let auth_user = auth_user.map(|axum::extract::Extension(u)| u);
+    let user_id = auth_user.as_ref().map(|u| u.user_id.clone());
     let audit_ctx = AuditContext::new(user_id, addr.ip().to_string());
 
     // Validate top-level structure
@@ -180,6 +219,14 @@ pub async fn process_bundle(
             return (StatusCode::BAD_REQUEST, Json(json!(outcome))).into_response();
         }
     };
+
+    // Every entry is authorized up front, exactly like the equivalent direct
+    // request; one refused entry refuses the whole Bundle.
+    if let Some(user) = auth_user.as_ref()
+        && let Err(outcome) = authorize_entries(&state, user, &entries)
+    {
+        return (StatusCode::FORBIDDEN, Json(json!(outcome))).into_response();
+    }
 
     let response = if bundle_type == "transaction" {
         transaction::process_transaction(&state, &audit_ctx, entries).await

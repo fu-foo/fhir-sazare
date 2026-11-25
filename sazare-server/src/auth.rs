@@ -165,7 +165,10 @@ pub async fn auth_middleware(
         return Ok(next.run(request).await);
     }
 
-    let is_dashboard = path == "/" || path == "/$status" || path.starts_with("/$browse")
+    // `GET /` is the dashboard page; `POST /` is the FHIR system endpoint
+    // (transaction/batch Bundles) and takes the same credentials as any API call.
+    let is_dashboard = (path == "/" && request.method() == Method::GET)
+        || path == "/$status" || path.starts_with("/$browse")
         || path == "/ui" || path.starts_with("/ui/");
 
     // Extract authorization header
