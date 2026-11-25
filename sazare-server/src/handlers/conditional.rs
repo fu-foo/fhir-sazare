@@ -137,7 +137,23 @@ pub async fn conditional_update(
             .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
         resource.id = Some(id.clone());
 
-        let version_id = "1".to_string();
+        // A body id can name a resource that exists but didn't match the
+        // criteria: it is then an update of that resource — held to the same
+        // compartment check, and its version continues instead of resetting.
+        let version_id = match state.store.get(&resource_type, &id) {
+            Ok(Some(data)) => {
+                let existing: Value = serde_json::from_slice(&data).unwrap_or_default();
+                check_compartment_access(auth_user.as_ref(), &state.compartment_def, &resource_type, &existing)?;
+                let current: i32 = existing
+                    .get("meta")
+                    .and_then(|m| m.get("versionId"))
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(0);
+                (current + 1).to_string()
+            }
+            _ => "1".to_string(),
+        };
         // Preserve caller-provided meta (profile, source, …); only stamp the
         // server-managed versionId/lastUpdated.
         let mut meta = resource.meta.take().unwrap_or_default();
@@ -177,6 +193,8 @@ pub async fn conditional_update(
         let new_version = match state.store.get(&resource_type, &id) {
             Ok(Some(data)) => {
                 let existing: Value = serde_json::from_slice(&data).unwrap_or_default();
+                // The matched resource must be the caller's to replace.
+                check_compartment_access(auth_user.as_ref(), &state.compartment_def, &resource_type, &existing)?;
                 let current_ver: i32 = existing
                     .get("meta")
                     .and_then(|m| m.get("versionId"))

@@ -89,6 +89,22 @@ pub fn filter_by_compartment(
         .collect()
 }
 
+/// [`filter_by_compartment`] for a mixed list (e.g. `_include` /
+/// `_revinclude` results), judging each resource by its own `resourceType`.
+pub fn filter_mixed_by_compartment(
+    auth_user: Option<&AuthUser>,
+    compartment: &CompartmentDef,
+    resources: Vec<Value>,
+) -> Vec<Value> {
+    resources
+        .into_iter()
+        .filter(|r| {
+            let rt = r.get("resourceType").and_then(|v| v.as_str()).unwrap_or("");
+            check_compartment_access(auth_user, compartment, rt, r).is_ok()
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -195,6 +211,26 @@ mod tests {
 
         let filtered = filter_by_compartment(Some(&user), &comp, "Observation", resources);
         assert_eq!(filtered.len(), 2);
+    }
+
+    #[test]
+    fn test_filter_mixed_by_compartment_judges_each_type() {
+        let comp = CompartmentDef::patient_compartment();
+        let user = patient_scoped_user("p123");
+        let mixed = vec![
+            json!({"resourceType": "Practitioner", "id": "dr"}),
+            json!({"resourceType": "MedicationRequest", "id": "mine", "subject": {"reference": "Patient/p123"}}),
+            json!({"resourceType": "MedicationRequest", "id": "theirs", "subject": {"reference": "Patient/other"}}),
+            json!({"resourceType": "Patient", "id": "other"}),
+        ];
+        let kept: Vec<String> = filter_mixed_by_compartment(Some(&user), &comp, mixed)
+            .iter()
+            .map(|r| r["id"].as_str().unwrap().to_string())
+            .collect();
+        assert_eq!(kept, vec!["dr", "mine"]);
+        // Not patient-scoped: everything passes.
+        let all = vec![json!({"resourceType": "Patient", "id": "other"})];
+        assert_eq!(filter_mixed_by_compartment(None, &comp, all).len(), 1);
     }
 
     #[test]

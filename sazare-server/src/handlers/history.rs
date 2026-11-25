@@ -7,6 +7,8 @@ use sazare_core::{operation_outcome::IssueType, OperationOutcome};
 use serde_json::{json, Value};
 use std::sync::Arc;
 
+use crate::auth::AuthUser;
+use crate::compartment_check::check_compartment_access;
 use crate::AppState;
 use super::{base_url_from_headers, response_with_etag};
 
@@ -14,8 +16,10 @@ use super::{base_url_from_headers, response_with_etag};
 pub async fn history(
     State(state): State<Arc<AppState>>,
     Path((resource_type, id)): Path<(String, String)>,
+    auth_user: Option<axum::extract::Extension<AuthUser>>,
     headers: HeaderMap,
 ) -> Result<Response, (StatusCode, Json<Value>)> {
+    let auth_user = auth_user.map(|axum::extract::Extension(u)| u);
     let versions = state
         .store
         .list_versions(&resource_type, &id)
@@ -32,6 +36,10 @@ pub async fn history(
         if let Ok(Some(data)) = state.store.get_version(&resource_type, &id, &ver)
             && let Ok(resource) = serde_json::from_slice::<Value>(&data)
         {
+            // Every version is held to the same compartment rule as a read:
+            // a version outside the caller's compartment denies the whole
+            // history (a resource's subject can change between versions).
+            check_compartment_access(auth_user.as_ref(), &state.compartment_def, &resource_type, &resource)?;
             let last_updated = resource
                 .get("meta")
                 .and_then(|m| m.get("lastUpdated"))
@@ -72,7 +80,9 @@ pub async fn history(
 pub async fn vread(
     State(state): State<Arc<AppState>>,
     Path((resource_type, id, vid)): Path<(String, String, String)>,
+    auth_user: Option<axum::extract::Extension<AuthUser>>,
 ) -> Result<Response, (StatusCode, Json<Value>)> {
+    let auth_user = auth_user.map(|axum::extract::Extension(u)| u);
     match state.store.get_version(&resource_type, &id, &vid) {
         Ok(Some(data)) => {
             let resource: Value = serde_json::from_slice(&data).map_err(|e| {
@@ -81,6 +91,7 @@ pub async fn vread(
                     Json(json!(OperationOutcome::storage_error(e.to_string()))),
                 )
             })?;
+            check_compartment_access(auth_user.as_ref(), &state.compartment_def, &resource_type, &resource)?;
             Ok(response_with_etag(StatusCode::OK, resource).into_response())
         }
         Ok(None) => Err((

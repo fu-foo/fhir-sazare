@@ -277,6 +277,10 @@ pub async fn update(
     let auth_user = request.extensions().get::<AuthUser>().cloned();
     let (headers, body) = extract_body(request).await?;
 
+    // The new content must be in the caller's compartment too (the existing
+    // version is checked below) — this also covers update-as-create.
+    check_compartment_access(auth_user.as_ref(), &state.compartment_def, &resource_type, &body)?;
+
     // Validate
     if let Err(outcome) = validate_resource_all_phases(
         &body,
@@ -515,6 +519,9 @@ pub async fn patch_resource(
             ))),
         )
     })?;
+
+    // The patched result must stay in the caller's compartment.
+    check_compartment_access(auth_user.as_ref(), &state.compartment_def, &resource_type, &resource)?;
 
     // Validate patched resource
     if let Err(outcome) = validate_resource_all_phases(

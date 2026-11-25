@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 use crate::audit::{self, AuditContext};
 use crate::auth::AuthUser;
-use crate::compartment_check::filter_by_compartment;
+use crate::compartment_check::{filter_by_compartment, filter_mixed_by_compartment};
 use crate::AppState;
 
 /// Default page size per FHIR spec
@@ -255,6 +255,9 @@ async fn do_search(
         total
     };
 
+    // Included resources are held to the same compartment rule as matches —
+    // a resource outside the compartment can't be reached through a
+    // reference (or reverse reference) from one inside it.
     // Process _include
     let included = if !query.include.is_empty() {
         executor
@@ -272,6 +275,8 @@ async fn do_search(
     } else {
         Vec::new()
     };
+    let included = filter_mixed_by_compartment(auth_user.as_ref(), &state.compartment_def, included);
+    let revincluded = filter_mixed_by_compartment(auth_user.as_ref(), &state.compartment_def, revincluded);
 
     // Apply _summary / _elements filtering
     for resource in &mut resources {
