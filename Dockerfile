@@ -10,7 +10,9 @@ RUN cargo build --release --bin sazare-server
 # ---- Runtime stage ----
 FROM alpine:3.21
 
-RUN apk add --no-cache ca-certificates
+RUN apk add --no-cache ca-certificates su-exec \
+    && addgroup -S -g 10001 sazare \
+    && adduser -S -D -H -u 10001 -G sazare sazare
 
 ARG CONFIG_FILE=config.example.yaml
 
@@ -19,7 +21,9 @@ COPY config.example.yaml /etc/sazare/config.example.yaml
 COPY ${CONFIG_FILE} /etc/sazare/config.yaml
 COPY apps/ /apps/
 
-RUN mkdir -p /data
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+
+RUN mkdir -p /data && chown sazare:sazare /data
 
 ENV SAZARE_DATA_DIR=/data
 ENV SAZARE_HOST=0.0.0.0
@@ -32,4 +36,6 @@ VOLUME ["/data"]
 
 WORKDIR /etc/sazare
 
-ENTRYPOINT ["sazare-server"]
+# Runs the server as the unprivileged `sazare` user (uid 10001); arguments are
+# passed to sazare-server, e.g. `docker run ... --demo`.
+ENTRYPOINT ["docker-entrypoint.sh"]

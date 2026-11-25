@@ -43,6 +43,9 @@ into `data_dir`, delete the two `search_index*` files, start the older binary).
 
 ### To 0.13.0 (security release)
 
+- Docker: the server now runs as user `sazare` (uid 10001). Existing volumes are
+  handed over automatically on the first start. If you bind-mount a host directory and
+  start with `--user`, make sure that user can write it.
 - Plugins became static apps: move links from `/<name>/` to `/apps/<name>/`, and
   `/$plugins` to `/$apps`. Set `apps.dir` (or `SAZARE_APPS_DIR`) — a `./plugins`
   directory is no longer picked up on its own. Rename `plugins.dir` to `apps.dir` when

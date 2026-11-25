@@ -68,3 +68,40 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release
       - run: bash ci/backup_roundtrip.sh
+
+  # The image runs as an unprivileged user. Upgrade path: a data volume written
+  # by an older (root) image must keep working without manual steps.
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: sazare:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Root-owned volume from an older image → non-root server
+        run: |
+          set -eux
+          docker volume create olddata
+          # What a pre-0.13 image left behind: root-owned files.
+          docker run --rm -v olddata:/data alpine sh -c 'touch /data/resources.sqlite && chown -R 0:0 /data'
+          docker run -d --name s -p 8080:8080 -v olddata:/data sazare:ci
+          for i in $(seq 60); do curl -sf localhost:8080/health && break; sleep 1; done
+          curl -sf localhost:8080/health
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X PUT localhost:8080/Patient/p1 \
+            -H 'Content-Type: application/fhir+json' -d '{"resourceType":"Patient","id":"p1"}')" = 201
+          # The server process is not root, and the data is its.
+          test "$(docker exec s ps -o user= -o comm= | awk '$2=="sazare-server"{print $1}')" = sazare
+          test "$(docker exec s stat -c %U /data/resources.sqlite)" = sazare
+          # The bundled sample app is served.
+          test "$(curl -s -o /dev/null -w '%{http_code}' localhost:8080/apps/sample-patient-register/)" = 200
+          docker restart s
+          for i in $(seq 60); do curl -sf localhost:8080/health && break; sleep 1; done
+          test "$(curl -s -o /dev/null -w '%{http_code}' localhost:8080/Patient/p1)" = 200
+      - name: Server log
+        if: always()
+        run: docker logs s || true

@@ -16,6 +16,11 @@ authorization gaps the 0.11.0 hardening missed.
   routes, so the reserved-name rules are gone. The listing moved from `/$plugins` to
   `/$apps`. `plugins.dir` / `SAZARE_PLUGIN_DIR` still work, with a deprecation warning.
 
+- **The Docker image runs the server as an unprivileged user** (`sazare`, uid 10001). On
+  start, the entrypoint hands the data directory to that user — volumes written by
+  earlier images (as root) keep working with no manual step — and then drops root.
+  Started with `--user`, it runs as that user and leaves ownership alone.
+
 ### Security
 - Dashboard: values from stored resources and the audit log (names, ids, resource types)
   are HTML-escaped, and click targets no longer embed them in inline JavaScript. A
