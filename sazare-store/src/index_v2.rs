@@ -433,8 +433,8 @@ impl IndexV2 {
                 )?;
             }
             "quantity" => {
-                // "<number>|<code>|<unit>" (IndexBuilder::quantity_row).
-                let mut parts = value.splitn(3, '|');
+                // number, code, unit (IndexBuilder::quantity_row).
+                let mut parts = value.splitn(3, crate::index_builder::QUANTITY_SEP);
                 let Some(v) = parts.next().and_then(|n| n.parse::<f64>().ok()).filter(|v| v.is_finite()) else {
                     return Ok(false);
                 };
@@ -538,7 +538,7 @@ impl IndexV2 {
             } else if matches!(p.param_type, SearchParamType::Number | SearchParamType::Quantity)
                 && !matches!(p.name.as_str(), "_text" | "_content")
             {
-                for v in p.value.split(',').map(str::trim).filter(|v| !v.is_empty()) {
+                for (_, v) in sazare_core::search_param::prefixed_alternatives(p) {
                     if v.split('|').next().unwrap_or("").trim().parse::<f64>().is_err() {
                         return Err(format!("Invalid number '{}' for parameter '{}'", v, p.name));
                     }
@@ -992,13 +992,15 @@ impl IndexV2 {
             _ => {}
         }
         let Some((pid, kind)) = pid else { return Ok(none) };
-        let values: Vec<&str> = p.value.split(',').map(str::trim).filter(|v| !v.is_empty()).collect();
         let mut sets = Vec::new();
         let mut probes = Vec::new();
         let mut seekable = true;
         let mut alternatives = Vec::new();
-        for v in values {
-            alternatives.extend(self.condition(pid, &kind, p, v)?);
+        // Each alternative with its own prefix (`gt140,lt90`).
+        for (prefix, v) in sazare_core::search_param::prefixed_alternatives(p) {
+            let alt = SearchParameter { prefix, ..p.clone() };
+            let v = v.as_str();
+            alternatives.extend(self.condition(pid, &kind, &alt, v)?);
             if kind == "reference" && !v.contains(['/', ':', '#']) {
                 // A bare id also matches the bare-id copy of an absolute URL.
                 alternatives.push(("v_ref_text", "value = ?".to_string(), vec![Arg::Text(v.into())], None, true));

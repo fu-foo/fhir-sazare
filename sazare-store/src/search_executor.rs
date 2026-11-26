@@ -462,19 +462,18 @@ impl<'a> V1Executor<'a> {
             return Ok(all.into_iter().filter(|id| !matched.contains(id)).collect());
         }
 
-        let values: Vec<&str> = param.value.split(',').collect();
-        if values.len() == 1 {
+        // Each alternative with its own prefix (`ge2020,lt2019`); one alone
+        // is searched as written.
+        let alts = sazare_core::search_param::prefixed_alternatives(param);
+        if !param.value.contains(',') {
             return self.search_parameter_single(resource_type, param, &param.value);
         }
 
         // Multi-value: union results across each value
         let mut union: std::collections::HashSet<String> = std::collections::HashSet::new();
-        for v in values {
-            let v = v.trim();
-            if v.is_empty() {
-                continue;
-            }
-            let ids = self.search_parameter_single(resource_type, param, v)?;
+        for (prefix, v) in alts {
+            let alt = SearchParameter { prefix, ..param.clone() };
+            let ids = self.search_parameter_single(resource_type, &alt, &v)?;
             union.extend(ids);
         }
         Ok(union.into_iter().collect())

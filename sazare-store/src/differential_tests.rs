@@ -197,7 +197,31 @@ fn param_matches(entries: &Entries, p: &SearchParameter) -> bool {
         }
         _ => {}
     }
-    p.value.split(',').map(str::trim).filter(|v| !v.is_empty()).any(|v| {
+    // The model's own reading of the alternatives (not the shared helper):
+    // the first's prefix was parsed off; each later one has its own, `eq`
+    // when it starts with a digit (or a sign / point for numbers).
+    let model_alternatives: Vec<(Option<String>, String)> = p
+        .value
+        .split(',')
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .enumerate()
+        .map(|(i, v)| {
+            let prefixed = matches!(p.param_type, SearchParamType::Date | SearchParamType::Number | SearchParamType::Quantity);
+            if i == 0 || !prefixed {
+                return (p.prefix.clone(), v.to_string());
+            }
+            let (head, tail) = v.split_at(v.len().min(2));
+            if head.chars().all(|c| c.is_ascii_lowercase()) && head.len() == 2 {
+                (Some(head.to_string()), tail.to_string())
+            } else {
+                (Some("eq".to_string()), v.to_string())
+            }
+        })
+        .collect();
+    model_alternatives.into_iter().any(|(prefix, v)| {
+        let v = v.as_str();
+        let p = &SearchParameter { prefix, ..p.clone() };
         entries.iter().filter(|(n, _, _, _)| *n == p.name).any(|(_, _, value, system)| match p.param_type {
             SearchParamType::Token => match v.split_once('|') {
                 Some(("", code)) => value == code && system.is_none(),
@@ -238,8 +262,8 @@ fn param_matches(entries: &Entries, p: &SearchParameter) -> bool {
             }
             SearchParamType::Number => false,
             SearchParamType::Quantity => {
-                // Index rows: "<number>|<code>|<unit>" + system.
-                let mut row = value.splitn(3, '|');
+                // Index rows: number, code, unit (U+001F between) + system.
+                let mut row = value.splitn(3, '\u{1F}');
                 let val: f64 = row.next().unwrap().parse().unwrap();
                 let (code, unit) = (row.next().unwrap_or(""), row.next().unwrap_or(""));
                 let mut q = v.splitn(3, '|');
@@ -356,13 +380,28 @@ fn query(rng: &mut Rng, resource_type: &str, patients: usize) -> String {
                 0 => format!("subject:Patient.family={}", rng.pick(&["smi", "Gar", "ng", "o'b"])),
                 _ => format!("subject:Patient.gender={}", rng.pick(GENDERS)),
             },
-            (_, 4) if rng.chance(50) => format!(
-                "value-quantity={}{}{}",
-                rng.pick(&["", "ge", "le", "gt", "lt", "ne", "ap", "sa", "eb"]),
-                rng.pick(&["120", "120.0", "80", "98.6", "7.25", "140", "0.5", "1e2"]),
-                rng.pick(&["", "|http://unitsofmeasure.org|mm[Hg]", "||mm[Hg]", "||mmHg", "|http://unitsofmeasure.org|", "|http://example.org/units|mm[Hg]", "||kg"]),
-            ),
-            (_, 4) => format!("date={}{}", rng.pick(&["", "ge", "le", "gt", "lt", "ne", "ap", "sa", "eb"]), date(rng)),
+            (_, 4) if rng.chance(50) => {
+                let one = |rng: &mut Rng| {
+                    format!(
+                        "{}{}{}",
+                        rng.pick(&["", "ge", "le", "gt", "lt", "ne", "ap", "sa", "eb"]),
+                        rng.pick(&["120", "120.0", "80", "98.6", "7.25", "140", "0.5", "1e2"]),
+                        rng.pick(&["", "|http://unitsofmeasure.org|mm[Hg]", "||mm[Hg]", "||mmHg", "|http://unitsofmeasure.org|", "|http://example.org/units|mm[Hg]", "||kg"]),
+                    )
+                };
+                // Sometimes an OR of two, each with its own prefix.
+                let first = one(rng);
+                if rng.chance(30) { format!("value-quantity={first},{}", one(rng)) } else { format!("value-quantity={first}") }
+            }
+            (_, 4) => {
+                let prefixes = ["", "ge", "le", "gt", "lt", "ne", "ap", "sa", "eb"];
+                let first = format!("{}{}", rng.pick(&prefixes), date(rng));
+                if rng.chance(30) {
+                    format!("date={first},{}{}", rng.pick(&prefixes), date(rng))
+                } else {
+                    format!("date={first}")
+                }
+            }
             (_, _) => format!("{}:{}", rng.pick(&["status", "category", "date", "subject", "value-quantity"]), rng.pick(&["missing=true", "missing=false", "not=final"]))
                 .replace("category:not=final", "category:not=laboratory")
                 .replace("date:not=final", "date:missing=true")
@@ -475,7 +514,7 @@ fn sort_key(entries: &Entries, param: &str, descending: bool) -> Option<String> 
         if t == "reference" {
             v.clone()
         } else if t == "quantity" {
-            let val: f64 = v.split('|').next().unwrap().parse().unwrap();
+            let val: f64 = v.split('\u{1F}').next().unwrap().parse().unwrap();
             format!("{:020.6}", val)
         } else if t == "date" {
             let start = v.split('/').next().and_then(fhir_date_range).map(|r| r.0).unwrap_or(i64::MIN);
