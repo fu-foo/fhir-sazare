@@ -4,6 +4,13 @@ All notable changes to sazare. Versions follow [Semantic Versioning](https://sem
 until 1.0, a minor version (0.x.0) may change behavior — those changes are listed under
 **Behavior changes**. See [UPGRADING.md](UPGRADING.md) for how to upgrade.
 
+## Unreleased
+
+### Behavior changes
+- String `:exact` is case-sensitive, as FHIR defines it: `family:exact=Sato` no longer
+  matches `SATO` or `sato`. (It compared lower-cased values.) Plain and `:contains`
+  string searches stay case-insensitive.
+
 ## 0.14.0 — 2026-11-26
 
 ### Performance

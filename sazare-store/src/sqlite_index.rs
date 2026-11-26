@@ -67,7 +67,7 @@ pub(crate) fn fhir_date_range(value: &str) -> Option<(i64, i64)> {
 pub enum StringMatch {
     /// Default FHIR string search: case-insensitive prefix match.
     Prefix,
-    /// `:exact` — exact (case-insensitive on the stored lowercased value) match.
+    /// `:exact` — exact match on the stored value (case- and accent-sensitive, as FHIR defines it).
     Exact,
     /// `:contains` — case-insensitive substring match.
     Contains,
@@ -669,10 +669,12 @@ impl SearchIndex {
             );
         }
         let (sql, bound): (&str, String) = match mode {
+            // `:exact` is exact (FHIR): case and accents matter, so compare the
+            // value as stored (idx_sp_string), not the lower-cased copy.
             StringMatch::Exact => (
                 "SELECT resource_id FROM search_index \
-                 WHERE resource_type = ?1 AND param_name = ?2 AND value_string_lower = ?3",
-                lower,
+                 WHERE resource_type = ?1 AND param_name = ?2 AND value_string = ?3",
+                value.to_string(),
             ),
             StringMatch::Prefix => unreachable!("handled above"),
             StringMatch::Contains => (
@@ -1033,6 +1035,17 @@ mod tests {
             .unwrap();
 
         assert_eq!(results.len(), 2);
+
+        // `:exact` is exact: case matters (prefix search stays case-insensitive).
+        let exact = |v: &str| index.search_string("Patient", "family", v, StringMatch::Exact).unwrap();
+        assert_eq!(exact("Doe"), vec!["123"]);
+        assert!(exact("doe").is_empty());
+        assert!(exact("DOE").is_empty());
+        assert!(exact("Do").is_empty());
+        assert_eq!(
+            index.search_string("Patient", "family", "DOE", StringMatch::Prefix).unwrap(),
+            vec!["123"]
+        );
     }
 
     #[test]
