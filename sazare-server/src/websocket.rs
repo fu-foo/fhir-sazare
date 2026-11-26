@@ -14,16 +14,24 @@ use axum::{
     extract::State,
     response::Response,
 };
+use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::{mpsc, Mutex};
 use tracing::debug;
 
 use crate::AppState;
 
+/// Messages queued for one client. A ping carries no data (it means "search
+/// again"), so a client this far behind loses nothing when more are dropped.
+const QUEUE: usize = 64;
+/// How often an idle connection is pinged; one that answered nothing within
+/// two of these is gone (a dropped NAT mapping, a sleeping laptop).
+const KEEPALIVE: std::time::Duration = std::time::Duration::from_secs(30);
+
 /// Tracks live WebSocket clients bound to Subscription ids.
 #[derive(Default)]
 pub struct WsRegistry {
     /// subscription id -> outbound channel for every client bound to it
-    bound: Mutex<HashMap<String, Vec<mpsc::UnboundedSender<Message>>>>,
+    bound: Mutex<HashMap<String, Vec<mpsc::Sender<Message>>>>,
 }
 
 impl WsRegistry {
@@ -32,7 +40,7 @@ impl WsRegistry {
     }
 
     /// Bind a client's outbound channel to a subscription id.
-    async fn bind(&self, sub_id: &str, tx: mpsc::UnboundedSender<Message>) {
+    async fn bind(&self, sub_id: &str, tx: mpsc::Sender<Message>) {
         self.bound
             .lock()
             .await
@@ -42,14 +50,15 @@ impl WsRegistry {
     }
 
     /// Send `ping <sub_id>` to every client bound to the subscription, pruning
-    /// any whose channel has closed. Returns the number of clients notified.
+    /// any whose channel has closed (a full queue skips the ping). Returns the
+    /// number of clients still bound.
     pub async fn ping(&self, sub_id: &str) -> usize {
         let mut bound = self.bound.lock().await;
         let Some(senders) = bound.get_mut(sub_id) else {
             return 0;
         };
         let msg = format!("ping {sub_id}");
-        senders.retain(|tx| tx.send(Message::Text(msg.clone().into())).is_ok());
+        senders.retain(|tx| !matches!(tx.try_send(Message::Text(msg.clone().into())), Err(TrySendError::Closed(_))));
         let n = senders.len();
         if n == 0 {
             bound.remove(sub_id);
@@ -87,10 +96,23 @@ pub async fn ws_handler(
 async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
     // Outbound queue: pings from the registry and our handshake replies are
     // funneled here and written to the socket by the select loop below.
-    let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
+    let (tx, mut rx) = mpsc::channel::<Message>(QUEUE);
+    let mut keepalive = tokio::time::interval(KEEPALIVE);
+    keepalive.tick().await; // the first tick is immediate
+    let mut heard = true;
 
     loop {
         tokio::select! {
+            _ = keepalive.tick() => {
+                if !heard {
+                    debug!("websocket client silent for {}s, closing", 2 * KEEPALIVE.as_secs());
+                    break;
+                }
+                heard = false;
+                if socket.send(Message::Ping(Default::default())).await.is_err() {
+                    break;
+                }
+            }
             outbound = rx.recv() => {
                 match outbound {
                     Some(msg) => {
@@ -102,6 +124,7 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
                 }
             }
             incoming = socket.recv() => {
+                heard = true;
                 match incoming {
                     Some(Ok(Message::Text(text))) => {
                         if let Some(sub_id) = text.trim().strip_prefix("bind ") {
@@ -118,13 +141,13 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
                                     s.pointer("/channel/type").and_then(|t| t.as_str()) == Some("websocket")
                                 });
                             if !is_ws_subscription {
-                                let _ = tx.send(Message::Text(
+                                let _ = tx.try_send(Message::Text(
                                     format!("error {sub_id}: no websocket Subscription with this id").into(),
                                 ));
                                 continue;
                             }
                             state.ws_registry.bind(&sub_id, tx.clone()).await;
-                            let _ = tx.send(Message::Text(format!("bound {sub_id}").into()));
+                            let _ = tx.try_send(Message::Text(format!("bound {sub_id}").into()));
                             debug!("websocket bound to subscription {sub_id}");
                         }
                     }
@@ -150,7 +173,7 @@ mod tests {
     #[tokio::test]
     async fn test_bind_then_ping_delivers() {
         let reg = WsRegistry::new();
-        let (tx, mut rx) = mpsc::unbounded_channel();
+        let (tx, mut rx) = mpsc::channel(QUEUE);
         reg.bind("sub-1", tx).await;
 
         assert_eq!(reg.ping("sub-1").await, 1);
@@ -166,12 +189,28 @@ mod tests {
     #[tokio::test]
     async fn test_ping_prunes_closed_clients() {
         let reg = WsRegistry::new();
-        let (tx, rx) = mpsc::unbounded_channel();
+        let (tx, rx) = mpsc::channel(QUEUE);
         reg.bind("sub-1", tx).await;
         drop(rx); // client disconnected
 
         assert_eq!(reg.ping("sub-1").await, 0, "closed client pruned");
         // Entry removed, so a second ping still reports zero.
         assert_eq!(reg.ping("sub-1").await, 0);
+    }
+
+    #[tokio::test]
+    async fn a_client_that_reads_nothing_holds_a_bounded_queue() {
+        let reg = WsRegistry::new();
+        let (tx, mut rx) = mpsc::channel(QUEUE);
+        reg.bind("sub-1", tx).await;
+        for _ in 0..QUEUE * 3 {
+            // Still bound: a full queue skips the ping, it doesn't drop the client.
+            assert_eq!(reg.ping("sub-1").await, 1);
+        }
+        let mut queued = 0;
+        while rx.try_recv().is_ok() {
+            queued += 1;
+        }
+        assert_eq!(queued, QUEUE);
     }
 }

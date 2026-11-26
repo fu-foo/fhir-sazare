@@ -225,6 +225,11 @@ impl SearchParamRegistry {
     }
 
     /// Check if a resource type has explicit definitions in the registry.
+    /// The resource types with search parameters.
+    pub fn resource_types(&self) -> impl Iterator<Item = &str> {
+        self.definitions.keys().map(String::as_str)
+    }
+
     pub fn has_resource_type(&self, resource_type: &str) -> bool {
         self.definitions.contains_key(resource_type)
     }

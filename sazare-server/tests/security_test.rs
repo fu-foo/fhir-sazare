@@ -624,3 +624,14 @@ async fn patient_scoped_searches_on_an_index_without_compartments() {
     let (s, _) = c.get("/Observation?_sort=-value-quantity", ADMIN_KEY).await;
     assert_eq!(s, 503);
 }
+
+/// A refusal from the auth layer is a FHIR answer too.
+#[tokio::test]
+async fn refusals_are_fhir_json() {
+    let (base, _dir) = start(secured_config()).await;
+    let r = reqwest::get(format!("{base}/Patient")).await.unwrap();
+    assert_eq!(r.status(), 401);
+    assert_eq!(r.headers()["content-type"], "application/fhir+json; charset=utf-8");
+    let b: Value = r.json().await.unwrap();
+    assert_eq!(b["resourceType"], "OperationOutcome");
+}

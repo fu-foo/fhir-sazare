@@ -15,6 +15,19 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
   it, so `latest` (used by `docker-compose.yml`) could be an unreleased build; the newest
   `main` is now the `edge` tag.
 
+- FHIR answers are `application/fhir+json`. `/metadata` and every error (400, 401, 403,
+  404, …) were `application/json`, which strict clients refuse. `/health`, `/token`,
+  `/.well-known/smart-configuration` and the dashboard keep `application/json`.
+- The CapabilityStatement lists Appointment (it was stored and searchable, but not
+  listed).
+- A request handler that panics answers 500 with an OperationOutcome (and is counted in
+  `/metrics`) instead of dropping the connection.
+- Long-running servers: the SQLite write-ahead logs are cut back to 64 MiB after a
+  checkpoint (an `$import` or a rebuild left them at gigabytes for good); a `/ws` client
+  that reads nothing holds at most 64 queued notifications, more are dropped (a
+  notification only says "search again"); the server pings each `/ws` connection every
+  30 s and closes one that answered nothing for a minute.
+
 ### Added
 - **Quantity search parameters**: `[prefix]number|system|code`, `number||code` (the code
   or the unit, any system) or the number alone, with FHIR's implicit precision and the
@@ -27,6 +40,9 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
   until the new one is ready.
 
 ### Performance
+- **Faster index writes**: a rebuild and `$import` no longer clear rows a new resource
+  can't have, and reuse their SQL statements. 300k resources: `$import` 72 s → 50 s, a
+  rebuild 49 s → 27 s.
 - **Patient-scoped searches narrow in the index.** A token limited to one patient's
   compartment used to read every match of a search and test each resource for the
   compartment before paging — every Observation of the server for a bare

@@ -46,6 +46,7 @@ pub const SUPPORTED_RESOURCE_TYPES: &[&str] = &[
     "ServiceRequest",
     "Specimen",
     "QuestionnaireResponse",
+    "Appointment",
     "Group",
 ];
 
@@ -343,4 +344,17 @@ fn get_search_params_from_registry(registry: &SearchParamRegistry, resource_type
         }
     }
     params
+}
+
+#[cfg(test)]
+mod capability_tests {
+    /// A type with search parameters is a supported type: the
+    /// CapabilityStatement lists it (Appointment was missing).
+    #[test]
+    fn every_searchable_type_is_listed() {
+        let registry = sazare_core::SearchParamRegistry::new();
+        let missing: Vec<&str> =
+            registry.resource_types().filter(|t| !super::SUPPORTED_RESOURCE_TYPES.contains(t)).collect();
+        assert!(missing.is_empty(), "not in SUPPORTED_RESOURCE_TYPES: {missing:?}");
+    }
 }

@@ -172,10 +172,10 @@ impl IndexV2 {
         let path = path.as_ref();
         let conn = Connection::open(path)?;
         conn.busy_timeout(std::time::Duration::from_secs(5))?;
-        conn.execute_batch("PRAGMA journal_mode=WAL;")?;
+        conn.execute_batch(crate::WAL_PRAGMAS)?;
         conn.execute_batch(SCHEMA)?;
         Self::attach_text(&conn, path)?;
-        conn.execute_batch("PRAGMA fts.journal_mode=WAL;")?;
+        conn.execute_batch("PRAGMA fts.journal_mode=WAL; PRAGMA fts.journal_size_limit=67108864;")?;
         conn.execute_batch(TEXT_SCHEMA)?;
         let index = Self::with(conn)?;
         // A new (empty) index is in this release's format; one without the

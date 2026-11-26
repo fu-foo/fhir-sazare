@@ -380,10 +380,15 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/{resource_type}/{id}/_history/{vid}", get(handlers::history::vread))
         )
         // Middleware
+        // A handler that panics answers 500 (counted by `metrics::track`)
+        // instead of dropping the connection.
+        .layer(tower_http::catch_panic::CatchPanicLayer::custom(panic_response))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             auth::auth_middleware,
         ))
+        // Outside auth, so its 401 / 403 are FHIR too.
+        .layer(axum::middleware::from_fn(fhir_content_type))
         // Outside auth, so refused requests are counted too.
         .layer(axum::middleware::from_fn(metrics::track))
         // One configurable cap for every request body. axum's extractors also
@@ -395,4 +400,54 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .layer(cors)
         .layer(TraceLayer::new_for_http())
         .with_state(state)
+}
+
+/// The 500 for a handler that panicked: an OperationOutcome, the details in
+/// the log only.
+fn panic_response(panic: Box<dyn std::any::Any + Send + 'static>) -> axum::response::Response {
+    let what = panic
+        .downcast_ref::<String>()
+        .map(String::as_str)
+        .or_else(|| panic.downcast_ref::<&str>().copied())
+        .unwrap_or("(no message)");
+    tracing::error!("request handler panicked: {what}");
+    handlers::fhir_json(
+        axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+        serde_json::json!(sazare_core::OperationOutcome::error(
+            sazare_core::operation_outcome::IssueType::Exception,
+            "Internal server error (the server log has the details)"
+        )),
+    )
+}
+
+/// FHIR responses are `application/fhir+json`, errors and `/metadata`
+/// included: handlers answer with axum's `Json` (`application/json`), and
+/// strict clients refuse that. Endpoints that aren't FHIR keep theirs.
+async fn fhir_content_type(req: axum::extract::Request, next: axum::middleware::Next) -> axum::response::Response {
+    const NOT_FHIR: [&str; 7] = ["/health", "/$status", "/$browse/", "/$apps", "/.well-known/", "/token", "/ui/"];
+    let path = req.uri().path();
+    let fhir = !NOT_FHIR.iter().any(|p| path == p.trim_end_matches('/') || path.starts_with(p));
+    let mut res = next.run(req).await;
+    if fhir
+        && res
+            .headers()
+            .get(axum::http::header::CONTENT_TYPE)
+            .is_some_and(|v| v.as_bytes() == b"application/json")
+    {
+        res.headers_mut().insert(
+            axum::http::header::CONTENT_TYPE,
+            axum::http::HeaderValue::from_static("application/fhir+json; charset=utf-8"),
+        );
+    }
+    res
+}
+
+#[cfg(test)]
+mod panic_tests {
+    #[test]
+    fn a_panic_answers_500_with_an_operation_outcome() {
+        let r = super::panic_response(Box::new("boom"));
+        assert_eq!(r.status(), axum::http::StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(r.headers()["content-type"], "application/fhir+json; charset=utf-8");
+    }
 }

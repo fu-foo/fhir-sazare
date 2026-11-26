@@ -19,3 +19,8 @@ pub use sqlite_index::{IndexUpdate, ResourceText, V1Index};
 pub use sqlite_audit::{AuditLog, Operation};
 pub use search_executor::{SearchExecutor, V1Executor, INDEX_NOT_READY};
 pub use index_builder::{resource_text, IndexBuilder, COMPARTMENT_PARAM, INDEX_FORMAT};
+
+/// WAL mode for each database, with the log cut back to 64 MiB after a
+/// checkpoint: an `$import` or a rebuild grows it to gigabytes, and SQLite
+/// otherwise keeps the file at its largest size.
+pub(crate) const WAL_PRAGMAS: &str = "PRAGMA journal_mode=WAL; PRAGMA journal_size_limit=67108864;";

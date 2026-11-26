@@ -2128,3 +2128,25 @@ async fn test_quantity_search() {
     let vq = obs["searchParam"].as_array().unwrap().iter().find(|p| p["name"] == "value-quantity").cloned();
     assert_eq!(vq.map(|p| p["type"].clone()), Some(json!("quantity")));
 }
+
+/// FHIR answers — `/metadata`, errors — are `application/fhir+json`; the
+/// endpoints that aren't FHIR keep `application/json`.
+#[tokio::test]
+async fn test_fhir_content_type() {
+    let (base, _dir) = start_test_server().await;
+    let c = reqwest::Client::new();
+    let ct = |r: &reqwest::Response| r.headers()["content-type"].to_str().unwrap().to_string();
+    for (path, want) in [
+        ("/metadata", "application/fhir+json; charset=utf-8"),
+        ("/Patient/missing", "application/fhir+json; charset=utf-8"),
+        ("/Patient?_sort=nope", "application/fhir+json; charset=utf-8"),
+        ("/health", "application/json"),
+        ("/.well-known/smart-configuration", "application/json"),
+    ] {
+        let r = c.get(format!("{base}{path}")).send().await.unwrap();
+        assert_eq!(ct(&r), want, "{path} ({})", r.status());
+    }
+    let caps: Value = c.get(format!("{base}/metadata")).send().await.unwrap().json().await.unwrap();
+    let types: Vec<&str> = caps["rest"][0]["resource"].as_array().unwrap().iter().map(|r| r["type"].as_str().unwrap()).collect();
+    assert!(types.contains(&"Appointment"), "{types:?}");
+}

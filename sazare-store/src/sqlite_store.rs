@@ -60,7 +60,7 @@ impl SqliteStore {
         conn.busy_timeout(std::time::Duration::from_secs(5))?;
 
         // Enable WAL mode for read-write concurrency
-        conn.execute_batch("PRAGMA journal_mode=WAL;")?;
+        conn.execute_batch(crate::WAL_PRAGMAS)?;
 
         crate::migrate::run_migrations(&mut conn, Self::MIGRATIONS)?;
 
