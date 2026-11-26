@@ -498,6 +498,7 @@ async fn serve(args: Vec<String>) {
     }
 
     // Build router
+    let rebuild = state.clone();
     let app = build_router(state);
 
     // Bind TCP listener
@@ -593,6 +594,15 @@ async fn serve(args: Vec<String>) {
         });
     }
 
+    // A background index build would otherwise keep the process alive until
+    // it is done (an hour at 10M resources): stop it at its next page, and
+    // wait for it to clean up (delete the partial index, log) while the
+    // runtime still runs it.
+    rebuild.rebuild.cancel();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    while rebuild.rebuild.is_running() && std::time::Instant::now() < deadline {
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
     tracing::info!("Server shut down gracefully");
 }
 

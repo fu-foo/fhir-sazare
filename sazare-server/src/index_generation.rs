@@ -127,7 +127,14 @@ pub fn mark_ready(index: &SearchIndex) {
 #[derive(Default)]
 pub struct RebuildStatus {
     inner: Mutex<Option<Progress>>,
+    /// Set when the server shuts down: a build in progress stops at its next
+    /// page instead of keeping the process alive until it is done (the
+    /// runtime waits for blocking tasks on exit).
+    cancelled: std::sync::atomic::AtomicBool,
 }
+
+/// The error a rebuild ends with when the server shuts down under it.
+const CANCELLED: &str = "the server is shutting down";
 
 #[derive(Clone)]
 struct Progress {
@@ -138,7 +145,20 @@ struct Progress {
 }
 
 impl RebuildStatus {
+    /// Stop any build in progress (the partial generation is deleted; the
+    /// next start builds again). Further rebuilds don't start.
+    pub fn cancel(&self) {
+        self.cancelled.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    fn cancelled(&self) -> bool {
+        self.cancelled.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
     fn begin(&self, total: u64, reason: &str) -> bool {
+        if self.cancelled() {
+            return false;
+        }
         let mut g = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         if g.is_some() {
             return false;
@@ -210,6 +230,11 @@ fn fill(state: &AppState, index: &SearchIndex) -> Result<u64, String> {
     for (rt, _) in state.store.count_by_type().map_err(|e| e.to_string())? {
         let mut after = String::new();
         loop {
+            if state.rebuild.cancelled() {
+                // Logged here: on shutdown the async caller doesn't run again.
+                tracing::info!("Index rebuild stopped after {n} resources: {CANCELLED}; the partial index is deleted");
+                return Err(CANCELLED.to_string());
+            }
             let page = state.store.list_page(&rt, &after, BATCH).map_err(|e| e.to_string())?;
             let Some((last, _)) = page.last() else { break };
             after = last.clone();
@@ -267,7 +292,9 @@ async fn run_begun(state: Arc<AppState>) -> Result<(), String> {
     let result = rebuild_inner(&state).await;
     state.rebuild.end();
     if let Err(e) = &result {
-        tracing::error!("Index rebuild failed: {e}");
+        if e != CANCELLED {
+            tracing::error!("Index rebuild failed: {e}");
+        }
         state.index.lock().await.stop_journal();
     }
     result
@@ -305,8 +332,16 @@ async fn build_and_switch(state: &Arc<AppState>, old_path: PathBuf, new_path: Pa
     let np = new_path.clone();
     let (new_index, n) = tokio::task::spawn_blocking(move || -> Result<(SearchIndex, u64), String> {
         let index = SearchIndex::open(&np).map_err(|e| e.to_string())?;
-        let n = fill(&st, &index)?;
-        Ok((index, n))
+        match fill(&st, &index) {
+            Ok(n) => Ok((index, n)),
+            Err(e) => {
+                // Here, not in the async caller: on shutdown the runtime waits
+                // for this blocking task but drops async tasks unfinished.
+                drop(index);
+                delete_files(&np);
+                Err(e)
+            }
+        }
     })
     .await
     .map_err(|e| e.to_string())??;
