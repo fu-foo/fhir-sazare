@@ -47,7 +47,9 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
 
 - A background server (`sazare-server start`) turns its log over at 50 MB while it runs
   (`logs/sazare.log.1` holds the one before). It used to do so only when started, so a
-  server that ran for months grew one file without end.
+  server that ran for months grew one file without end. `SAZARE_LOG_FILE=<path>` gives
+  `run` the same (for launchd and Homebrew's service, which keep stdout in one file); the
+  Docker examples cap the log Docker keeps.
 
 ### Added
 - `SECURITY.md`: how to report a vulnerability, and what a deployment must take care of.

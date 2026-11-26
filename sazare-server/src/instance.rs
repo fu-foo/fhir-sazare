@@ -402,7 +402,9 @@ fn open_log(path: &Path) -> std::io::Result<std::fs::File> {
     std::fs::OpenOptions::new().create(true).append(true).open(path)
 }
 
-/// Set by `start` for the server it runs: the log file to write.
+/// The log file a server writes itself, turned over as it grows: set by
+/// `start` for the server it runs, or by hand for `run` under a service
+/// manager that would otherwise keep stdout in one growing file.
 pub const LOG_FILE_ENV: &str = "SAZARE_LOG_FILE";
 /// A log file this large is turned over (`.log.1`, the one before replaced).
 const LOG_MAX: u64 = 50 * 1024 * 1024;

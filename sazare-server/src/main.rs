@@ -110,9 +110,22 @@ fn init_tracing() {
     use std::io::IsTerminal;
     let filter = tracing_subscriber::EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
-    // A background server (`start`) writes its log file itself, turning it over.
-    let log_file = std::env::var_os(instance::LOG_FILE_ENV)
-        .and_then(|p| instance::RotatingLog::open(std::path::Path::new(&p)).ok());
+    // A log file the server writes itself, turning it over: set by `start`,
+    // or by a service manager that keeps stdout (launchd, Homebrew). `~/` is
+    // the home directory (launchd doesn't expand it).
+    let log_file = std::env::var(instance::LOG_FILE_ENV).ok().filter(|p| !p.is_empty()).and_then(|p| {
+        let path = match (p.strip_prefix("~/"), std::env::var_os("HOME")) {
+            (Some(rest), Some(home)) => std::path::PathBuf::from(home).join(rest),
+            _ => std::path::PathBuf::from(p),
+        };
+        match instance::RotatingLog::open(&path) {
+            Ok(log) => Some(log),
+            Err(e) => {
+                eprintln!("Cannot open the log file {}: {e}; logging to stdout", path.display());
+                None
+            }
+        }
+    });
     match log_file {
         Some(log) => tracing_subscriber::registry()
             .with(tracing_subscriber::fmt::layer().with_ansi(false).with_writer(log))

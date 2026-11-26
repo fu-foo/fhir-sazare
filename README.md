@@ -135,8 +135,11 @@ Each release also has `SHA256SUMS` (check a download with `sha256sum -c SHA256SU
 [`docker-compose.yml`](docker-compose.yml), or
 
 ```bash
-docker run -p 8080:8080 -v sazare-data:/data ghcr.io/fu-foo/fhir-sazare:0.16
+docker run -p 8080:8080 -v sazare-data:/data --log-opt max-size=50m --log-opt max-file=2 \
+  ghcr.io/fu-foo/fhir-sazare:0.16
 ```
+
+(The `--log-opt`s cap the log Docker keeps; `docker-compose.yml` sets the same.)
 
 Tags: `latest` is the newest release, `0.16` the newest 0.16.x, `0.16.0` exactly that
 release, and `edge` the newest `main` (unreleased).
@@ -301,6 +304,9 @@ Let the system's service manager run `sazare-server run`:
   <plist version="1.0"><dict>
     <key>Label</key><string>dev.sazare</string>
     <key>ProgramArguments</key><array><string>/usr/local/bin/sazare-server</string><string>run</string></array>
+    <key>EnvironmentVariables</key><dict>
+      <key>SAZARE_LOG_FILE</key><string>~/Library/Logs/sazare.log</string>
+    </dict>
     <key>RunAtLoad</key><true/>
     <key>KeepAlive</key><true/>
   </dict></plist>
@@ -313,6 +319,12 @@ Let the system's service manager run `sazare-server run`:
   ```
 
 With the user configuration file in place, none of these need a `--config`.
+
+**Logs** stay bounded each way: `start` writes `logs/sazare.log` in the data directory
+and turns it over at 50 MB (`sazare.log.1` keeps the one before); `run` writes to stdout,
+for journald or Docker to keep (see the Docker options above). Set `SAZARE_LOG_FILE` to
+have `run` write a file itself, turned over the same way — what the launchd example
+does, and Homebrew's service (`$(brew --prefix)/var/log/sazare.log`).
 
 ## Configuration
 
