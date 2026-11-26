@@ -886,7 +886,8 @@ impl IndexV2 {
         // the large equality sets (~0.4 µs a row) beats probing each of the
         // driver's rows against the others (~2.5 µs a probe) when the sets
         // are of similar size. Size them (capped) to decide.
-        let driver_large = best.is_some_and(|(_, n, _)| n >= PROBE_CAP);
+        // Only when the total is wanted (`_total=none` skips it).
+        let driver_large = !query.omit_total && best.is_some_and(|(_, n, _)| n >= PROBE_CAP);
         if driver_large && large.len() >= 2 {
             let mut sized: Vec<(usize, i64)> = Vec::new();
             for &i in &large {
