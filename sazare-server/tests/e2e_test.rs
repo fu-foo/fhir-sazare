@@ -2043,6 +2043,24 @@ async fn test_r4_parameters_from_the_definitions() {
     let mut with = vec![format!("Appointment/{appt}"), pat(&p1)];
     with.sort();
     assert_eq!(ids(&format!("Appointment?_id={appt}&_include=Appointment:patient")).await, with);
+    // `_include` of another type's parameter adds nothing (not the Appointment's patient).
+    assert_eq!(ids(&format!("Patient?_id={p1}&_include=Appointment:patient")).await, [pat(&p1)]);
+    // Choice elements named without their type in the R4 expressions.
+    let sr = create(&c, &base, "ServiceRequest", &json!({"resourceType": "ServiceRequest", "status": "active", "intent": "order",
+        "subject": {"reference": format!("Patient/{p1}")}, "occurrencePeriod": {"start": "2024-03-01", "end": "2024-03-31"}})).await;
+    let sp = create(&c, &base, "Specimen", &json!({"resourceType": "Specimen",
+        "collection": {"collectedDateTime": "2024-05-02T10:00:00Z"}})).await;
+    let cp = create(&c, &base, "CarePlan", &json!({"resourceType": "CarePlan", "status": "active", "intent": "plan",
+        "subject": {"reference": format!("Patient/{p1}")},
+        "activity": [{"detail": {"status": "scheduled", "scheduledPeriod": {"start": "2024-07-01"}}}]})).await;
+    assert_eq!(ids("ServiceRequest?occurrence=2024-03").await, [format!("ServiceRequest/{sr}")]);
+    assert_eq!(ids("Specimen?collected=2024-05-02").await, [format!("Specimen/{sp}")]);
+    assert_eq!(ids("CarePlan?activity-date=ge2024-06").await, [format!("CarePlan/{cp}")]);
+    // An embedded resource as a reference: Bundle.composition (the document's first entry).
+    let bundle = create(&c, &base, "Bundle", &json!({"resourceType": "Bundle", "type": "document",
+        "entry": [{"resource": {"resourceType": "Composition", "id": "comp-1", "status": "final",
+            "type": {"text": "note"}, "date": "2024-01-01", "author": [{"display": "x"}], "title": "t"}}]})).await;
+    assert_eq!(ids("Bundle?composition=Composition/comp-1").await, [format!("Bundle/{bundle}")]);
     // Advertised in the CapabilityStatement.
     let meta: Value = c.get(format!("{base}/metadata")).send().await.unwrap().json().await.unwrap();
     let patient = meta["rest"][0]["resource"].as_array().unwrap().iter().find(|r| r["type"] == "Patient").unwrap().clone();

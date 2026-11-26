@@ -25,6 +25,24 @@ impl IndexBuilder {
         indices
     }
 
+    /// The index rows of one parameter (by name or alias) of a resource:
+    /// only its definitions are evaluated.
+    pub fn extract_param(
+        registry: &SearchParamRegistry,
+        resource_type: &str,
+        resource: &Value,
+        name: &str,
+    ) -> Vec<(String, String, String, Option<String>)> {
+        let mut indices = Vec::new();
+        for def in registry.get_definitions(resource_type) {
+            if def.name == name || def.aliases.iter().any(|a| a == name) {
+                Self::extract_by_definition(resource, def, &mut indices);
+            }
+        }
+        indices.retain(|(n, _, _, _)| n == name);
+        indices
+    }
+
     /// Extract all searchable indices using a default registry (backward compatible).
     /// Returns Vec<(param_name, param_type, value, system)>
     pub fn extract_indices(
@@ -104,7 +122,7 @@ impl IndexBuilder {
             }
             ExtractionMode::Deceased => {
                 let deceased = resource.get("deceasedBoolean").and_then(Value::as_bool) == Some(true)
-                    || resource.get("deceasedDateTime").is_some();
+                    || resource.get("deceasedDateTime").and_then(Value::as_str).is_some();
                 indices.push((def.name.clone(), param_type_str.to_string(), deceased.to_string(), None));
             }
         }
@@ -157,10 +175,17 @@ impl IndexBuilder {
                     }
                 }
                 SearchParamType::Reference => {
+                    // An embedded resource (`Bundle.entry[0].resource`) is
+                    // referenced by its type and id.
+                    let embedded = match (node.get("resourceType").and_then(Value::as_str), node.get("id").and_then(Value::as_str)) {
+                        (Some(t), Some(id)) => Some(format!("{t}/{id}")),
+                        _ => None,
+                    };
                     let r = node
                         .get("reference")
                         .and_then(|v| v.as_str())
-                        .or_else(|| node.as_str());
+                        .or_else(|| node.as_str())
+                        .or(embedded.as_deref());
                     if let Some(r) = r {
                         push(r.to_string(), None);
                         // Bare id too (ignoring /_history/..), so `?param=123`

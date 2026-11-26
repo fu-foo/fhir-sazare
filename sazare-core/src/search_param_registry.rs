@@ -82,6 +82,11 @@ pub struct SearchParamDef {
 /// the FHIRPath subset can't evaluate are left out, except the ones with a
 /// dedicated extraction.
 fn r4_definitions() -> Vec<(String, SearchParamDef)> {
+    static PARSED: std::sync::LazyLock<Vec<(String, SearchParamDef)>> = std::sync::LazyLock::new(parse_r4_definitions);
+    PARSED.clone()
+}
+
+fn parse_r4_definitions() -> Vec<(String, SearchParamDef)> {
     const R4: &str = include_str!("../search-parameters/r4.tsv");
     let mut out = Vec::new();
     for line in R4.lines().filter(|l| !l.starts_with('#') && !l.is_empty()) {

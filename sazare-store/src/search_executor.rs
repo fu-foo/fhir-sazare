@@ -156,10 +156,14 @@ impl<'a> SearchExecutor<'a> {
                 .any(|d| d.param_type == SearchParamType::Reference && (d.name == search_param || d.aliases.iter().any(|a| a == search_param)));
 
             for resource in resources {
+                // `Observation:patient` applies to Observations only.
+                if resource.get("resourceType").and_then(Value::as_str) != Some(source_type) {
+                    continue;
+                }
                 let references: Vec<String> = if known {
-                    crate::IndexBuilder::extract_indices_with_registry(registry, source_type, resource)
+                    crate::IndexBuilder::extract_param(registry, source_type, resource, search_param)
                         .into_iter()
-                        .filter(|(n, t, _, _)| n == search_param && t == "reference")
+                        .filter(|(_, t, _, _)| t == "reference")
                         .map(|(_, _, v, _)| v)
                         .collect()
                 } else {

@@ -441,9 +441,15 @@ fn apply<'a>(step: &Step, nodes: &[&'a Value], anchor: bool) -> Vec<&'a Value> {
         Step::Member(name) => {
             for n in nodes {
                 // A leading resource-type identifier (`Patient.name`) is an
-                // anchor: it returns the context node, not a child field.
-                if anchor && n.get("resourceType").and_then(Value::as_str) == Some(name.as_str()) {
-                    out.push(*n);
+                // anchor: the context node when it is of that type (or the
+                // abstract `Resource` / `DomainResource`), else nothing —
+                // `Observation.code` in a union evaluated on a Patient.
+                // (FHIR element names never start upper-case.)
+                if anchor && name.starts_with(char::is_uppercase) {
+                    let ty = n.get("resourceType").and_then(Value::as_str);
+                    if ty == Some(name.as_str()) || matches!(name.as_str(), "Resource" | "DomainResource") {
+                        out.push(*n);
+                    }
                 } else {
                     navigate(n, name, &mut out);
                 }
@@ -502,13 +508,37 @@ fn reference_target_type(reference: &str) -> Option<&str> {
 }
 
 fn navigate<'a>(node: &'a Value, field: &str, out: &mut Vec<&'a Value>) {
+    let mut push = |v: &'a Value| match v.as_array() {
+        Some(arr) => out.extend(arr.iter()),
+        None => out.push(v),
+    };
     if let Some(v) = node.get(field) {
-        match v.as_array() {
-            Some(arr) => out.extend(arr.iter()),
-            None => out.push(v),
+        push(v);
+        return;
+    }
+    // A choice element named without its type (`ServiceRequest.occurrence`,
+    // as several R4 expressions do) is stored as `<field><Type>` in JSON
+    // (`occurrenceDateTime`). Only known type names: `performer` must not
+    // pick up `performerType`.
+    if let Some(obj) = node.as_object() {
+        for (k, v) in obj {
+            if k.strip_prefix(field).is_some_and(|ty| CHOICE_TYPES.contains(&ty)) {
+                push(v);
+            }
         }
     }
 }
+
+/// The type suffixes of FHIR R4 choice (`[x]`) elements in JSON.
+const CHOICE_TYPES: &[&str] = &[
+    "Base64Binary", "Boolean", "Canonical", "Code", "Date", "DateTime", "Decimal", "Id", "Instant",
+    "Integer", "Markdown", "Oid", "PositiveInt", "String", "Time", "UnsignedInt", "Uri", "Url",
+    "Uuid", "Address", "Age", "Annotation", "Attachment", "CodeableConcept", "Coding",
+    "ContactPoint", "Count", "Distance", "Duration", "HumanName", "Identifier", "Money", "Period",
+    "Quantity", "Range", "Ratio", "Reference", "SampledData", "Signature", "Timing",
+    "ContactDetail", "Contributor", "DataRequirement", "Expression", "ParameterDefinition",
+    "RelatedArtifact", "TriggerDefinition", "UsageContext", "Dosage", "Meta",
+];
 
 fn capitalize(s: &str) -> String {
     let mut chars = s.chars();
@@ -707,6 +737,36 @@ mod tests {
 /// where each line is `source<TAB>id<TAB>expression` (e.g. extracted from the
 /// R4 `search-parameters.json` and an IG package). Prints the acceptance rate
 /// and every rejected expression with its reason.
+#[cfg(test)]
+mod choice_and_anchor {
+    use super::*;
+    use serde_json::json;
+
+    fn eval(expr: &str, r: &Value) -> Vec<Value> {
+        evaluate(&parse(expr).unwrap(), r).into_iter().cloned().collect()
+    }
+
+    #[test]
+    fn a_choice_element_without_its_type_finds_the_typed_key() {
+        let sr = json!({"resourceType": "ServiceRequest", "occurrencePeriod": {"start": "2020"}, "performerType": {"text": "x"}});
+        assert_eq!(eval("ServiceRequest.occurrence", &sr), [json!({"start": "2020"})]);
+        // Not a type name: no match.
+        assert!(eval("ServiceRequest.performer", &sr).is_empty());
+        let sp = json!({"resourceType": "Specimen", "collection": {"collectedDateTime": "2021-01-01"}});
+        assert_eq!(eval("Specimen.collection.collected", &sp), [json!("2021-01-01")]);
+        // The exact key wins.
+        let o = json!({"resourceType": "Observation", "status": "final", "statusReason": "x"});
+        assert_eq!(eval("Observation.status", &o), [json!("final")]);
+    }
+
+    #[test]
+    fn another_types_branch_of_a_union_is_empty() {
+        let p = json!({"resourceType": "Patient", "identifier": [{"value": "p"}], "Observation": {"identifier": "trap"}});
+        assert_eq!(eval("Observation.identifier | Patient.identifier", &p), [json!({"value": "p"})]);
+        assert_eq!(eval("Resource.id", &json!({"resourceType": "Patient", "id": "1"})), [json!("1")]);
+    }
+}
+
 #[cfg(test)]
 mod corpus {
     #[test]

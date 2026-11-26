@@ -36,6 +36,9 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
   `GET /metadata`; existing data is indexed for them by the background rebuild.
 - `_include` works for every reference parameter, including those defined by an
   expression (e.g. `Appointment:patient`).
+- Search parameter expressions (built-in and custom) may name a choice element without its
+  type, as several R4 definitions do: `ServiceRequest.occurrence` finds
+  `occurrenceDateTime` / `occurrencePeriod`.
 
 ### Behavior changes
 - Unsorted search results come back in index order (insertion order for an unfiltered
