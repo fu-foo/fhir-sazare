@@ -52,23 +52,38 @@ def get(path):
         return json.load(r)
 
 
+def index_state():
+    return get("health").get("index", {}).get("state")
+
+
+def read_all(q):
+    sep = "&" if "?" in q else "?"
+    ids, url = set(), f"{q}{sep}_count=1000"
+    total = None
+    while url:
+        b = get(url)
+        total = b.get("total") if total is None else total
+        ids.update(e["resource"]["id"] for e in b.get("entry", []) if e.get("search", {}).get("mode", "match") == "match")
+        nxt = [l["url"] for l in b.get("link", []) if l["relation"] == "next"]
+        if nxt:
+            u = urllib.parse.urlsplit(nxt[0])
+            url = u.path.lstrip("/") + "?" + u.query
+        else:
+            url = None
+    return total, ids
+
+
 def snapshot():
     out = {}
     for q in QUERIES:
-        sep = "&" if "?" in q else "?"
-        ids, url = set(), f"{q}{sep}_count=1000"
-        total = None
-        while url:
-            b = get(url)
-            total = b.get("total") if total is None else total
-            ids.update(e["resource"]["id"] for e in b.get("entry", []) if e.get("search", {}).get("mode", "match") == "match")
-            nxt = [l["url"] for l in b.get("link", []) if l["relation"] == "next"]
-            if nxt:
-                u = urllib.parse.urlsplit(nxt[0])
-                url = u.path.lstrip("/") + "?" + u.query
-            else:
-                url = None
-        out[q] = (total, ids)
+        # Pages read across the switch to the new index come from two indexes
+        # whose order of equal results differs: read such a search again.
+        while True:
+            state = index_state()
+            out[q] = read_all(q)
+            if index_state() == state:
+                break
+            print(f"  {q}: the index switched while paging; read again")
     return out
 
 
