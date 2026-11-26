@@ -334,7 +334,7 @@ pub async fn auth_middleware(
     let auth_user = if is_dashboard {
         // Dashboard only accepts Basic auth (browser dialog)
         if auth_header.starts_with("Basic ") {
-            authenticate_basic(&state.config, auth_header).map_err(|_| {
+            authenticate_basic(&state.config, auth_header).await.map_err(|_| {
                 fail(
                     Response::builder()
                         .status(StatusCode::UNAUTHORIZED)
@@ -353,7 +353,7 @@ pub async fn auth_middleware(
     } else if auth_header.starts_with("Bearer ") {
         authenticate_bearer(&state, auth_header).await.map_err(fail)?
     } else if auth_header.starts_with("Basic ") {
-        authenticate_basic(&state.config, auth_header).map_err(fail)?
+        authenticate_basic(&state.config, auth_header).await.map_err(fail)?
     } else {
         let outcome =
             OperationOutcome::unauthorized("Invalid Authorization header format. Use 'Bearer <token>' or 'Basic <credentials>'");
@@ -561,7 +561,7 @@ async fn authenticate_jwt(
 
 /// Authenticate using Basic authentication
 #[allow(clippy::result_large_err)]
-fn authenticate_basic(config: &ServerConfig, auth_header: &str) -> Result<AuthUser, Response> {
+async fn authenticate_basic(config: &ServerConfig, auth_header: &str) -> Result<AuthUser, Response> {
     let credentials = auth_header.trim_start_matches("Basic ").trim();
 
     // Decode base64 credentials
@@ -591,7 +591,7 @@ fn authenticate_basic(config: &ServerConfig, auth_header: &str) -> Result<AuthUs
             continue;
         }
         let ok = match (&user.password, &user.password_hash) {
-            (_, Some(hash)) => credentials::verify_password(username, password, hash),
+            (_, Some(hash)) => credentials::verify_password_async(username, password, hash).await,
             (Some(plain), None) => ct_eq(plain, password),
             (None, None) => false,
         };
@@ -618,12 +618,50 @@ pub mod credentials {
     }
 
     /// An Argon2id hash (PHC string) of `password`, for `password_hash`.
-    pub fn hash_password(password: &str) -> String {
+    pub fn hash_password(password: &str) -> Result<String, String> {
         let salt = SaltString::generate(&mut OsRng);
         Argon2::default()
             .hash_password(password.as_bytes(), &salt)
             .map(|h| h.to_string())
-            .unwrap_or_default()
+            .map_err(|e| e.to_string())
+    }
+
+    /// Whether `hash` is a well-formed Argon2 PHC string (checked at startup, so
+    /// a truncated hash fails there rather than at every login).
+    pub fn is_argon2_hash(hash: &str) -> bool {
+        PasswordHash::new(hash).is_ok_and(|h| {
+            h.algorithm.as_str().starts_with("argon2") && h.salt.is_some() && h.hash.is_some_and(|o| o.len() >= 16)
+        })
+    }
+
+    /// Argon2 verifications running at once. Each takes tens of milliseconds of
+    /// CPU and ~19 MB of memory; unbounded, a burst of bad logins could
+    /// exhaust both.
+    const MAX_CONCURRENT_VERIFY: usize = 4;
+
+    /// [`verify_password`] off the async worker threads (Argon2 is CPU-bound on
+    /// purpose), at most [`MAX_CONCURRENT_VERIFY`] at a time.
+    pub async fn verify_password_async(user: &str, password: &str, hash: &str) -> bool {
+        static SLOTS: OnceLock<tokio::sync::Semaphore> = OnceLock::new();
+        let (user, password, hash) = (user.to_string(), password.to_string(), hash.to_string());
+        if remembered(&user, &password, &hash) {
+            return true;
+        }
+        let Ok(_slot) = SLOTS.get_or_init(|| tokio::sync::Semaphore::new(MAX_CONCURRENT_VERIFY)).acquire().await else {
+            return false;
+        };
+        tokio::task::spawn_blocking(move || verify_password(&user, &password, &hash))
+            .await
+            .unwrap_or(false)
+    }
+
+    fn cache_key(user: &str, password: &str, hash: &str) -> (String, String) {
+        (user.to_string(), sha256_hex(&format!("{hash}\0{password}")))
+    }
+
+    fn remembered(user: &str, password: &str, hash: &str) -> bool {
+        let c = cache().lock().unwrap_or_else(|e| e.into_inner());
+        c.get(&cache_key(user, password, hash)).is_some_and(|t| t.elapsed() < REMEMBER)
     }
 
     /// A new random API key (256 bits, hex).
@@ -648,12 +686,9 @@ pub mod credentials {
     /// (keyed by user and a SHA-256 of hash+password, never the password) for
     /// [`REMEMBER`]; failures are not.
     pub fn verify_password(user: &str, password: &str, hash: &str) -> bool {
-        let key = (user.to_string(), sha256_hex(&format!("{hash}\0{password}")));
-        {
-            let c = cache().lock().unwrap_or_else(|e| e.into_inner());
-            if c.get(&key).is_some_and(|t| t.elapsed() < REMEMBER) {
-                return true;
-            }
+        let key = cache_key(user, password, hash);
+        if remembered(user, password, hash) {
+            return true;
         }
         let ok = PasswordHash::new(hash)
             .map(|h| Argon2::default().verify_password(password.as_bytes(), &h).is_ok())
@@ -674,12 +709,30 @@ pub mod credentials {
 
         #[test]
         fn password_hash_round_trip() {
-            let h = hash_password("correct horse");
+            let h = hash_password("correct horse").unwrap();
+            assert!(is_argon2_hash(&h));
+            assert!(!is_argon2_hash("$argon2id$garbage"));
+            assert!(!is_argon2_hash("$argon2id$v=19$broken"));
+            assert!(!is_argon2_hash("$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ"));
             assert!(h.starts_with("$argon2id$"));
             assert!(verify_password("u", "correct horse", &h));
             assert!(verify_password("u", "correct horse", &h)); // cached
             assert!(!verify_password("u", "wrong", &h));
             assert!(!verify_password("u", "correct horse", "not a hash"));
+        }
+
+        #[tokio::test]
+        async fn async_verification_is_off_thread_and_correct() {
+            let h = hash_password("another password").unwrap();
+            // Many concurrent bad attempts: all refused, none blocks the runtime.
+            let bad: Vec<_> = (0..8).map(|i| {
+                let h = h.clone();
+                tokio::spawn(async move { verify_password_async("v", &format!("wrong{i}"), &h).await })
+            }).collect();
+            for t in bad {
+                assert!(!t.await.unwrap());
+            }
+            assert!(verify_password_async("v", "another password", &h).await);
         }
 
         #[test]
@@ -927,22 +980,22 @@ mod tests {
         assert!(result.is_err());
     }
 
-    #[test]
-    fn test_authenticate_basic_valid() {
+    #[tokio::test]
+    async fn test_authenticate_basic_valid() {
         let config = test_config();
         let credentials = STANDARD.encode("admin:admin123");
-        let result = authenticate_basic(&config, &format!("Basic {}", credentials));
+        let result = authenticate_basic(&config, &format!("Basic {}", credentials)).await;
         assert!(result.is_ok());
         let auth_user = result.unwrap();
         assert_eq!(auth_user.user_id, "admin");
         assert_eq!(auth_user.auth_type, AuthType::BasicAuth);
     }
 
-    #[test]
-    fn test_authenticate_basic_invalid() {
+    #[tokio::test]
+    async fn test_authenticate_basic_invalid() {
         let config = test_config();
         let credentials = STANDARD.encode("admin:wrongpass");
-        let result = authenticate_basic(&config, &format!("Basic {}", credentials));
+        let result = authenticate_basic(&config, &format!("Basic {}", credentials)).await;
         assert!(result.is_err());
     }
 

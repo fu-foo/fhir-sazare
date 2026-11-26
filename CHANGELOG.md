@@ -4,6 +4,20 @@ All notable changes to sazare. Versions follow [Semantic Versioning](https://sem
 until 1.0, a minor version (0.x.0) may change behavior — those changes are listed under
 **Behavior changes**. See [UPGRADING.md](UPGRADING.md) for how to upgrade.
 
+## Unreleased
+
+### Fixed
+- Basic-auth passwords (`password_hash`) are verified off the async worker threads, at most
+  four at a time: a burst of wrong passwords — loopback addresses (reverse proxies) are not
+  locked out — could otherwise occupy every worker, and each Argon2 check also takes
+  ~19 MB of memory.
+- A malformed `password_hash` (no salt or hash part) is a configuration error at startup,
+  not a login that always fails.
+- Empty `SAZARE_CONFIG`, `SAZARE_DATA_DIR`, `SAZARE_APPS_DIR`, `SAZARE_IG_DIR` mean unset
+  (as compose files and unit templates often pass them).
+- `auth hash-password` / `auth new-api-key` quote the names they print, so any name gives
+  valid YAML; a hashing error is reported instead of printing an empty hash.
+
 ## 0.15.0 — 2026-11-26
 
 ### Changed

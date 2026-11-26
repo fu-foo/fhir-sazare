@@ -267,7 +267,7 @@ impl ServerConfig {
 
         let found: Option<PathBuf> = explicit
             .map(PathBuf::from)
-            .or_else(|| std::env::var_os("SAZARE_CONFIG").map(PathBuf::from))
+            .or_else(|| std::env::var_os("SAZARE_CONFIG").filter(|v| !v.is_empty()).map(PathBuf::from))
             .or_else(|| Some(PathBuf::from("config.yaml")).filter(|p| p.is_file()))
             .or_else(|| user_config_file().filter(|p| p.is_file()));
 
@@ -312,7 +312,10 @@ impl ServerConfig {
         if let Ok(host) = std::env::var("SAZARE_HOST") {
             config.server.host = host;
         }
-        let env_dir = |name: &str| std::env::var_os(name).map(|d| absolute(&cwd, Path::new(&d)));
+        // An empty variable (common in compose files and unit templates) means unset.
+        let env_dir = |name: &str| {
+            std::env::var_os(name).filter(|v| !v.is_empty()).map(|d| absolute(&cwd, Path::new(&d)))
+        };
         let mut data_dir_set = data_dir_in_file;
         if let Some(d) = env_dir("SAZARE_DATA_DIR") {
             config.storage.data_dir = d;
@@ -376,7 +379,7 @@ impl ServerConfig {
                      `password_hash` from `sazare-server auth hash-password`.",
                     u.username
                 )),
-                (None, Some(h)) if h.starts_with("$argon2") => {}
+                (None, Some(h)) if crate::auth::credentials::is_argon2_hash(h) => {}
                 (None, Some(_)) => return Err(format!("user `{}`: password_hash must be an Argon2 hash", u.username).into()),
                 _ => return Err(format!("user `{}`: set exactly one of password, password_hash", u.username).into()),
             }

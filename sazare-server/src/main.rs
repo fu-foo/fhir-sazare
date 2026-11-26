@@ -143,9 +143,18 @@ fn auth_command(args: &[String]) -> i32 {
                 eprintln!("Use at least 12 characters.");
                 return 1;
             }
+            let hash = match credentials::hash_password(&password) {
+                Ok(h) => h,
+                Err(e) => {
+                    eprintln!("Hashing failed: {e}");
+                    return 1;
+                }
+            };
+            // JSON strings are valid YAML scalars: quoting survives any name.
+            let q = |s: &str| serde_json::to_string(s).unwrap_or_default();
             println!("  basic_auth:");
-            println!("    - username: {user}");
-            println!("      password_hash: \"{}\"", credentials::hash_password(&password));
+            println!("    - username: {}", q(&user));
+            println!("      password_hash: {}", q(&hash));
             0
         }
         Some("new-api-key") => {
@@ -154,9 +163,10 @@ fn auth_command(args: &[String]) -> i32 {
             eprintln!("API key for {name} (shown once — give it to the client, it is not stored):");
             eprintln!("  {key}");
             eprintln!();
+            let q = |s: &str| serde_json::to_string(s).unwrap_or_default();
             println!("  api_keys:");
-            println!("    - name: {name}");
-            println!("      key_sha256: \"{}\"", credentials::sha256_hex(&key));
+            println!("    - name: {}", q(&name));
+            println!("      key_sha256: {}", q(&credentials::sha256_hex(&key)));
             0
         }
         _ => {
