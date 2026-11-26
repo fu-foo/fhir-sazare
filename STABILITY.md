@@ -31,7 +31,8 @@ A change to any of the following requires a **major** version.
   keys (`_sort`, missing values last); `total` is exact, and left out — not counted —
   with `_total=none`.
 - Defaults and limits that clients see: page size 100 when `_count` is absent, `_count`
-  up to 1000, chain depth 4, the request size default.
+  up to 1000, chain depth 4, the request size default. A minor release may raise a limit
+  (a larger `_count`, a deeper chain), never lower one; the default page size stays.
 - Authorization: which credentials and scopes may do what, and what a patient-scoped
   token can see. Tightening this for a security fix is the one exception (see below).
 
