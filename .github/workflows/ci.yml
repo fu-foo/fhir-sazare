@@ -89,6 +89,18 @@ jobs:
           tar -xzf "$RUNNER_TEMP/old/sazare-server-linux-amd64.tar.gz" -C "$RUNNER_TEMP/old"
           find "$RUNNER_TEMP/old" -name sazare-server -type f
       - run: python3 ci/upgrade_check.py "$(find "$RUNNER_TEMP/old" -name sazare-server -type f | head -1)" target/release/sazare-server 2000
+      # The oldest data a 1.x release opens (STABILITY.md): 0.12. Its index
+      # stored strings lower-cased, so `:exact` differs until the switch.
+      - name: Upgrade from 0.12.0
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OLD_CLI: legacy
+          DURING_REBUILD_MAY_DIFFER: "Patient?family:exact=Smith"
+          PORT: "18091"
+        run: |
+          gh release download v0.12.0 -p sazare-server-linux-amd64.tar.gz -D "$RUNNER_TEMP/old012"
+          tar -xzf "$RUNNER_TEMP/old012/sazare-server-linux-amd64.tar.gz" -C "$RUNNER_TEMP/old012"
+          python3 ci/upgrade_check.py "$RUNNER_TEMP/old012/sazare-server" target/release/sazare-server 2000
 
   # The image runs as an unprivileged user. Upgrade path: a data volume written
   # by an older (root) image must keep working without manual steps.
