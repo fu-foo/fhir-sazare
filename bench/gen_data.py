@@ -13,8 +13,8 @@ import sys
 
 random.seed(1)
 npat, obs_per = int(sys.argv[1]), int(sys.argv[2])
-families = ["Sato", "Suzuki", "Takahashi", "Tanaka", "Ito", "Watanabe",
-            "Yamamoto", "Nakamura", "Kobayashi", "Kato"] + [f"Fam{i}" for i in range(990)]
+families = ["Smith", "Garcia", "Chen", "Okafor", "Muller", "Rossi",
+            "Kowalski", "Silva", "Novak", "Haddad"] + [f"Fam{i}" for i in range(990)]
 codes = ["8867-4", "8310-5", "29463-7", "8302-2", "85354-9", "2708-6", "9279-1", "39156-5"]
 out = sys.stdout
 

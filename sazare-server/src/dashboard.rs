@@ -262,7 +262,7 @@ const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
              onkeydown="if(event.key==='Enter')runSearch()">
       <button class="search-btn" data-i18n="search.btn" onclick="runSearch()">Search</button>
     </div>
-    <div class="search-hint" data-i18n="search.hint">Tip: type a resource type and a parameter, e.g. Patient with name=Yamada. The FHIR URL is shown so you can learn it.</div>
+    <div class="search-hint" data-i18n="search.hint">Tip: type a resource type and a parameter, e.g. Patient with name=Shaw. The FHIR URL is shown so you can learn it.</div>
     <div class="search-url hidden" id="search-url"></div>
     <table class="resource-table hidden" id="search-results-table" style="margin-top:10px;">
       <thead><tr><th data-i18n="list.id">ID</th><th data-i18n="list.summary">Summary</th></tr></thead>

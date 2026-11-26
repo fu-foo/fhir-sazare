@@ -22,7 +22,7 @@ curl -s -X POST "$BASE/" \
         "fullUrl": "urn:uuid:patient-1",
         "resource": {
           "resourceType": "Patient",
-          "name": [{"family": "Kimura", "given": ["Sakura"]}],
+          "name": [{"family": "Moreau", "given": ["Camille"]}],
           "gender": "female",
           "birthDate": "1995-04-01"
         },

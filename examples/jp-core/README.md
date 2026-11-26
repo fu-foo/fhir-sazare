@@ -1,55 +1,53 @@
-# JP Core を sazare で使う
+# Using JP Core with sazare
 
-[HL7 FHIR JP Core](https://jpfhir.jp/fhir/core/) の実装ガイドを sazare に読み込む手順です。
-JP Core は sazare に同梱していません（CC0-1.0 で公開されているパッケージを、起動時に読み込みます）。
-読み込むと、次のものが使えるようになります。
+How to load the [HL7 FHIR JP Core](https://jpfhir.jp/fhir/core/) implementation guide
+into sazare. JP Core is not bundled; its package (published under CC0-1.0) is read at
+startup. With it loaded you get:
 
-- **バリデーション** — `meta.profile` に JP Core のプロファイル（例: `JP_Patient`）を宣言したリソースを、そのプロファイルで検証します。
-  作成・更新時に違反があれば 400 を返し、`$validate` では OperationOutcome で理由を返します。
-- **JP Core の検索パラメータ** — カナ氏名、被保険者番号、都道府県番号など、JP Core 1.2.0 が定義する8つすべてが使えます。
-- **コード値の検証（任意）** — `--terminology` を付けると JP のコード体系（処置コード、病名交換用コード、ICD-10 など）も読み込み、
-  存在しないコードを拒否します。
+- **Validation** — a resource declaring a JP Core profile in `meta.profile` (e.g.
+  `JP_Patient`) is validated against it. A create or update that violates it is a 400;
+  `$validate` returns the reasons in an OperationOutcome.
+- **JP Core search parameters** — all 8 that JP Core 1.2.0 defines: kana name, insured
+  person number, prefecture number, and more.
+- **Code validation (optional)** — with `--terminology`, the JP code systems (procedure
+  codes, disease exchange codes, ICD-10, …) are loaded too, and unknown codes are
+  rejected.
 
-> English summary: run `setup.sh` (add `--terminology` to also validate JP
-> code systems) to download JP Core into `profiles/`, `searchparameters/` and
-> `terminology/`, start sazare from that directory, and run
-> `load_examples.sh` to load the package's 76 examples and check the JP Core
-> searches and validation. Existing data is reindexed automatically on the
-> next start.
-
-## 1. パッケージを取得する
+## 1. Get the package
 
 ```bash
-bash examples/jp-core/setup.sh /srv/sazare                 # 省略時はカレントディレクトリ
-bash examples/jp-core/setup.sh --terminology /srv/sazare   # コード値も検証する場合
+bash examples/jp-core/setup.sh /srv/sazare                 # default: the current directory
+bash examples/jp-core/setup.sh --terminology /srv/sazare   # also validate codes
 ```
 
-`https://jpfhir.jp/fhir/core/1.2.0/package.tgz` を取得し、次のように展開します。
-バージョンは `JP_CORE_VERSION=1.2.0` のように環境変数で変えられます。
+This downloads `https://jpfhir.jp/fhir/core/1.2.0/package.tgz` and unpacks it like this
+(choose another version with `JP_CORE_VERSION=1.2.0`):
 
 ```
 /srv/sazare/
-├── profiles/           StructureDefinition-*.json（111件）
-├── searchparameters/   SearchParameter-*.json（8件）
-├── terminology/        CodeSystem-*.json / ValueSet-*.json（--terminology のときだけ）
-└── .jp-core/           ダウンロードしたパッケージ（サンプルは load_examples.sh が使います）
+├── profiles/           StructureDefinition-*.json (111)
+├── searchparameters/   SearchParameter-*.json (8)
+├── terminology/        CodeSystem-*.json / ValueSet-*.json (only with --terminology)
+└── .jp-core/           the downloaded package (its examples are used by load_examples.sh)
 ```
 
-`--terminology` は JP Core のパッケージに含まれる CodeSystem / ValueSet に加えて、
-[jpfhir-terminology](https://jpfhir.jp/fhir/core/terminology/ig/) 2.2611.0（展開後 約85MB）も取得します。
-JP Core 1.2.0 が依存を宣言している 1.4.0 はもう配布されていないため、現行版を使います
-（`JP_TERMINOLOGY_VERSION` で変更できます）。JP Core がバインドしている ValueSet はすべてこの版で解決できます。
+Besides the CodeSystems / ValueSets in the JP Core package, `--terminology` also fetches
+[jpfhir-terminology](https://jpfhir.jp/fhir/core/terminology/ig/) 2.2611.0 (about 85 MB
+unpacked). JP Core 1.2.0 declares a dependency on 1.4.0, which is no longer distributed,
+so the current release is used (change it with `JP_TERMINOLOGY_VERSION`). Every ValueSet
+JP Core binds to resolves with it.
 
-## 2. sazare を起動する
+## 2. Start sazare
 
-sazare は**作業ディレクトリ**の `profiles/` と `searchparameters/` を起動時に読みます。
+sazare reads `profiles/` and `searchparameters/` in its **working directory** at startup.
 
 ```bash
 cd /srv/sazare
 sazare-server start
 ```
 
-起動ログに次の行が出れば読み込めています（3行目は `--terminology` のとき）。
+These lines in the log (`data/logs/sazare.log`) show the package was loaded (the third
+only with `--terminology`):
 
 ```
 INFO sazare_server: Loading 111 custom profiles
@@ -57,14 +55,15 @@ INFO sazare_core::profile_loader: Loaded 8 SearchParameter resource(s) from "sea
 INFO sazare_server: Terminology: 117 code systems, 107 value sets loaded (13 value sets not fully resolvable, left unchecked)
 ```
 
-ターミノロジーを読み込むと、メモリ使用量が約60MB増え、起動が約0.3秒遅くなります。
+Loading the terminology adds about 60 MB of memory and 0.3 s of startup time.
 
-サポート外の FHIRPath 式を持つ検索パラメータは、`Skipping custom search parameter: ...`
-という警告を出して読み込みを見送ります（誤った結果を返さないため）。JP Core 1.2.0 の8件はすべて読み込めます。
+A search parameter whose FHIRPath expression is outside the supported subset is skipped
+with a `Skipping custom search parameter: ...` warning, rather than giving wrong results.
+All 8 of JP Core 1.2.0 load.
 
-### Docker の場合
+### With Docker
 
-コンテナの作業ディレクトリは `/etc/sazare` です。ディレクトリをそこへマウントします。
+The container's working directory is `/etc/sazare`; mount the directories there.
 
 ```yaml
 services:
@@ -76,25 +75,27 @@ services:
       - sazare-data:/data
       - ./profiles:/etc/sazare/profiles:ro
       - ./searchparameters:/etc/sazare/searchparameters:ro
-      - ./terminology:/etc/sazare/terminology:ro   # --terminology のとき
+      - ./terminology:/etc/sazare/terminology:ro   # with --terminology
 volumes:
   sazare-data:
 ```
 
-### すでにデータがある場合
+### When there is data already
 
-検索パラメータを後から追加・変更しても、次の起動時にサーバーが定義の変化に気づき、
-既存データのインデックスを自動で作り直します（ログに `was built with different search parameters; rebuilding` と出ます）。
-起動し直さずに反映したいときは `curl -X POST http://localhost:8080/\$reindex` でも作り直せます。
+Search parameters added or changed later are noticed at the next start, and the index of
+the existing data is rebuilt automatically (the log says `was built with different search
+parameters; rebuilding`). To apply them without restarting, run
+`curl -X POST http://localhost:8080/\$reindex`.
 
-## 3. サンプルデータで試す
+## 3. Try it with the sample data
 
 ```bash
 bash examples/jp-core/load_examples.sh /srv/sazare
 ```
 
-パッケージ付属のサンプル76件を `PUT` で投入し（id とリソース間の参照はそのまま）、
-JP Core の検索と検証を実行して、期待どおりの結果かを確かめます。1つでも違えば終了コード 1 で終わります（CI でも実行しています）。
+This `PUT`s the package's 76 examples (ids and references between them kept), runs JP Core
+searches and validations, and checks the results. Any mismatch ends with exit code 1 (CI
+runs it too). The search values are the examples' own data, so they are Japanese:
 
 ```
 === JP Core searches (hits, query) ===
@@ -110,31 +111,33 @@ accept  JP_Procedure with a JP procedure code  ok
 reject  JP_Procedure with an unknown JP procedure code  ok
 ```
 
-## 検索パラメータ一覧（JP Core 1.2.0）
+## Search parameters (JP Core 1.2.0)
 
-| パラメータ | 対象 | 型 | 例 |
+| parameter | resource | type | example |
 |---|---|---|---|
-| `jp-kana-sort` | Patient | string | `Patient?jp-kana-sort=ヤマダ`（`use=usual` のカナ氏名、前方一致） |
-| `jp-insured-personsymbol` | Coverage | string | `Coverage?jp-insured-personsymbol=あいう`（被保険者記号） |
-| `jp-insured-personnumber` | Coverage | string | `Coverage?jp-insured-personnumber=１８７`（被保険者番号） |
-| `jp-insured-personsubnumber` | Coverage | string | `Coverage?jp-insured-personsubnumber=05`（枝番） |
-| `jp-prefectureno` | Organization | token | `Organization?jp-prefectureno=13`（都道府県番号） |
-| `jp-insurance-organizationcategory` | Organization | token | `Organization?jp-insurance-organizationcategory=1`（点数表番号） |
-| `jp-insurance-organizationno` | Organization | token | `Organization?jp-insurance-organizationno=<system>\|1234567`（医療機関コード） |
-| `jp-medication-start` | MedicationRequest | date | `MedicationRequest?jp-medication-start=ge2020-01-01`（服用開始日） |
+| `jp-kana-sort` | Patient | string | `Patient?jp-kana-sort=ヤマダ` (the `use=usual` kana name, prefix match) |
+| `jp-insured-personsymbol` | Coverage | string | `Coverage?jp-insured-personsymbol=あいう` (insured person symbol) |
+| `jp-insured-personnumber` | Coverage | string | `Coverage?jp-insured-personnumber=１８７` (insured person number) |
+| `jp-insured-personsubnumber` | Coverage | string | `Coverage?jp-insured-personsubnumber=05` (branch number) |
+| `jp-prefectureno` | Organization | token | `Organization?jp-prefectureno=13` (prefecture number) |
+| `jp-insurance-organizationcategory` | Organization | token | `Organization?jp-insurance-organizationcategory=1` (fee schedule number) |
+| `jp-insurance-organizationno` | Organization | token | `Organization?jp-insurance-organizationno=<system>\|1234567` (medical institution code) |
+| `jp-medication-start` | MedicationRequest | date | `MedicationRequest?jp-medication-start=ge2020-01-01` (medication start date) |
 
-組み込みの検索パラメータと同じように、`ge`/`lt` などの日付の比較、`system|code` 形式のトークン、
-`:exact`/`:contains`、チェーン検索、`_has` と組み合わせられます。
+Like the built-in parameters, they combine with date comparisons (`ge`, `lt`, …),
+`system|code` tokens, `:exact` / `:contains`, chains and `_has`.
 
-組み込みの `name` でも、漢字・カナのどちらの氏名も検索できます（`Patient?name=山田`、`Patient?name=ヤマダ`）。
-`jp-kana-sort` は「`use=usual` のカナ表記」だけを対象にする点が違います。
+The built-in `name` parameter also finds names written in kanji or kana; `jp-kana-sort`
+differs in matching only the `use=usual` kana form.
 
-値の空白は `%20` でも `+` でも送れます（`curl --data-urlencode` は `+` にします）。`+` そのものを検索したいときは `%2B` と書いてください。
-日付の値だけは例外で、`+` をそのまま残すので、`ge2024-01-01T10:00:00+09:00` のようにタイムゾーンをエンコードせずに書けます。
+Spaces in values can be sent as `%20` or `+` (`curl --data-urlencode` uses `+`); write
+`%2B` for a literal `+`. Date values are the exception: a `+` stays, so a time zone can be
+written unencoded, as in `ge2024-01-01T10:00:00+09:00`.
 
-## バリデーションの例
+## Validation example
 
-`meta.profile` に JP Core のプロファイルを宣言すると、そのプロファイルの必須要素などを検証します。
+A resource declaring a JP Core profile in `meta.profile` is checked for that profile's
+required elements and other constraints.
 
 ```bash
 curl -s -X POST 'http://localhost:8080/Patient/$validate' \
@@ -150,10 +153,11 @@ curl -s -X POST 'http://localhost:8080/Patient/$validate' \
  "expression":["Patient.identifier"]}]}
 ```
 
-### コード値の検証（`--terminology`）
+### Code validation (`--terminology`)
 
-プロファイルが required でバインドしているコードを、読み込んだコード体系と照合します。たとえば
-`JP_Procedure` の `code.coding` で JP 処置コードのシステムを名乗るコードは、そのコード体系に実在する必要があります。
+Codes a profile binds as required are checked against the loaded code systems. For
+example, a code in `JP_Procedure`'s `code.coding` that claims the JP procedure code system
+must exist in that code system.
 
 ```
 Profile 'http://jpfhir.jp/fhir/core/StructureDefinition/JP_Procedure': element 'Procedure.code.coding:medical'
@@ -161,41 +165,47 @@ code 'NOPE' is not in code system http://jpfhir.jp/fhir/core/CodeSystem/JP_Proce
 (required value set http://jpfhir.jp/fhir/core/ValueSet/JP_ProcedureCodesMedical_VS)
 ```
 
-誤って正しいデータを拒否しないよう、確実に判断できる場合だけ検証します。
+To avoid rejecting correct data, codes are checked only where the answer is certain:
 
-- 検証するのは、`content: complete` のコード体系と、それだけで中身が決まる ValueSet です。
-  フィルタや他の ValueSet の参照を含むなど、展開しきれない ValueSet（13件）は検証しません。
-- スライス（`Observation.code.coding:jlac10` など）は、スライスがコード体系を固定していて、
-  ValueSet がそのコード体系全体を含む場合だけ検証します。院内コードなど他のシステムのコーディングはそのまま通します。
+- Only `content: complete` code systems, and ValueSets fully determined by them. ValueSets
+  that can't be expanded completely (filters, references to other ValueSets — 13 of them)
+  are not checked.
+- A slice (`Observation.code.coding:jlac10`, …) is checked only when it fixes a code system
+  and the ValueSet includes that whole code system. Codings of other systems (local codes,
+  for instance) pass.
 
-## プロファイルを宣言していないデータに JP Core を適用する
+## Applying JP Core to data that declares no profile
 
-現場のデータは `meta.profile` を宣言していないことが多く、そのままでは JP Core の検証がかかりません。
-`config.yaml` でリソースの種類ごとに既定のプロファイルを指定すると、宣言のないリソースもそのプロファイルで検証します。
+Real-world data often has no `meta.profile`, so JP Core validation wouldn't apply. In
+`config.yaml`, a default profile per resource type validates resources that declare none:
 
 ```yaml
 validation:
   default_profiles:
     Patient: "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Patient"
     Procedure: "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Procedure"
-  default_profile_mode: enforce   # または warn
+  default_profile_mode: enforce   # or warn
 ```
 
-- `enforce`（既定）: プロファイルを宣言した場合と同じように、違反していれば 400 で拒否します。
-  理由の最後に「既定のプロファイルで検証した」旨の information が付きます。
-- `warn`: 保存は受け付け、違反は `$validate` の warning とサーバーログに出します。既存データを移行するときに、
-  まず違反の数を把握したい場合に使います。
-- 検証はコピーに対して行い、保存するリソースに `meta.profile` を書き足すことはしません。
-- 別のプロファイル（US Core など）を宣言しているリソースは、宣言したほうだけで検証します。
-- 指定したプロファイルが読み込まれていない（`profiles/` にない、URL の誤記など）ときは、起動時にエラーで止まります。
-  検証が黙って無効になるのを防ぐためです。
+- `enforce` (default): a violation is a 400, as if the profile were declared. The reasons
+  end with an information issue saying the default profile was used.
+- `warn`: the resource is stored; violations go to `$validate` warnings and the server log.
+  Useful when migrating existing data, to see how much violates first.
+- Validation runs on a copy; `meta.profile` is not added to the stored resource.
+- A resource declaring another profile (US Core, say) is validated against that one only.
+- A default profile that isn't loaded (not in `profiles/`, a typo in the URL) stops the
+  server at startup, so validation can't be switched off silently.
 
-## 制限事項
+## Limitations
 
-- 検証の対象は、`meta.profile` でプロファイルを宣言したリソースと、`validation.default_profiles` で既定のプロファイルを指定した種類のリソースです。
-- コード値の検証は `--terminology` を付けたときだけです。付けても、拡張（Extension）の中のコード
-  （例: 都道府県番号）と、展開しきれない ValueSet へのバインディングは検証しません。
-- `content: complete` と宣言されたコード体系は、そこにないコードを誤りとして扱います。実運用のコードがまだ
-  jpfhir-terminology に収録されていない場合は拒否されるので、その場合は `terminology/` から該当ファイルを外してください。
-- sazare が公式に適合を確認しているのは US Core（Inferno のテストスイート）です。JP Core については、
-  上記のとおりパッケージ付属のサンプル76件がすべて投入・検証でき、8つの検索パラメータが期待どおりの結果を返すことを確認しています。
+- Validated are resources that declare a profile in `meta.profile`, and resources of the
+  types given a default profile in `validation.default_profiles`.
+- Codes are validated only with `--terminology`. Even then, codes inside extensions (e.g.
+  the prefecture number) and bindings to ValueSets that can't be expanded completely are
+  not checked.
+- A code system declared `content: complete` treats any code it lacks as an error. If
+  codes in real use aren't in jpfhir-terminology yet, they are rejected; remove the file
+  from `terminology/` in that case.
+- sazare's formally tested conformance is US Core (the Inferno test suites). For JP Core,
+  as above, all 76 package examples load and validate, and the 8 search parameters return
+  the expected results.

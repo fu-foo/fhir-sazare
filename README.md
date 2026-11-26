@@ -387,15 +387,15 @@ value come last; ties fall back to the id, so paging is stable.
 
 ```bash
 # _content: anywhere in the resource; _text: the narrative only
-curl "http://localhost:8080/Condition?_content=糖尿病"
+curl "http://localhost:8080/Condition?_content=diabetes"
 curl "http://localhost:8080/Observation?_content=heart%20rate"        # every term must occur
 curl "http://localhost:8080/Observation?_content=%22heart%20rate%22"   # "quoted" = phrase
-curl "http://localhost:8080/Patient?_text=山田"
+curl "http://localhost:8080/Patient?_text=Shaw"
 ```
 
 Matching is case-insensitive **substring** matching (SQLite FTS5 with the
-trigram tokenizer), so it works for Japanese and other text without spaces
-between words — and `MRN42` also matches `MRN420`. Whitespace-separated
+trigram tokenizer), so it also works for languages written without spaces
+between words (Japanese, Chinese, …) — and `MRN42` also matches `MRN420`. Whitespace-separated
 terms must all occur; commas separate alternatives (OR), as for any
 parameter. Terms of three or more characters use the index; shorter ones
 (e.g. a two-character surname) are still found, by a scan. An index built by
@@ -439,10 +439,10 @@ after an upgrade), the next start rebuilds the index automatically so existing
 data is covered; `POST /$reindex` does the same without a restart.
 
 ```jsonc
-// searchparameters/name-kana.json
+// searchparameters/name-phonetic.json
 {
   "resourceType": "SearchParameter",
-  "code": "name-kana",
+  "code": "name-phonetic",
   "base": ["Patient"],
   "type": "string",
   "expression": "Patient.name.where(extension('http://hl7.org/fhir/StructureDefinition/iso21090-EN-representation').value.ofType(code)='SYL').text"
@@ -450,7 +450,7 @@ data is covered; `POST /$reindex` does the same without a restart.
 ```
 
 ```bash
-curl "http://localhost:8080/Patient?name-kana=ヤマダ"
+curl "http://localhost:8080/Patient?name-phonetic=Chen"
 ```
 
 The evaluator covers path navigation, `|` unions, choice types (`as` /
@@ -468,7 +468,7 @@ load — never silently mis-evaluated into wrong results.
 `profiles/` and `searchparameters/`; all 8 of its search parameters load.
 `--terminology` also fills `terminology/` (CodeSystems/ValueSets) so required
 bindings to JP code systems are validated. See
-[`examples/jp-core/README.md`](examples/jp-core/README.md) (Japanese) for
+[`examples/jp-core/README.md`](examples/jp-core/README.md) for
 Docker and the full parameter list.
 
 ### Conditional Create
@@ -758,199 +758,3 @@ Licensed under the [Apache License, Version 2.0](LICENSE).
 
 Bundled FHIR profiles (US Core) are third-party artifacts redistributed under
 CC0-1.0 — see [NOTICE.md](NOTICE.md) for provenance and attribution.
-
----
-
-## Japanese / 日本語
-
-<details>
-<summary>日本語ドキュメント</summary>
-
-### 概要
-
-**sazare** は Rust で書かれた軽量 FHIR R4 サーバーです。SQLite を内蔵しているため、外部データベースのセットアップは不要です。シングルバイナリでデプロイできます。
-
-### 主な機能
-
-- FHIR R4 (4.0.1) 準拠の REST API
-- 全リソースタイプに対する CRUD 操作
-- バージョン履歴（vread / _history）
-- Bundle 処理（transaction: all-or-nothing / batch: 各エントリ独立）
-- `urn:uuid:` 参照の自動解決（transaction 内）
-- 検索パラメータ、チェーンサーチ（`subject:Patient.name=テスト姓`）、逆方向チェーン（`_has:Observation:subject:code=...`）、`_include` / `_revinclude`、`_sort` による並べ替え（`_sort=-date`）、全文検索（`_content=糖尿病`、`_text`。日本語の部分一致に対応）
-- 条件付き操作（作成 / 更新 / 削除）
-- JSON Patch (RFC 6902)
-- Patient `$everything` オペレーション
-- Subscription（rest-hook 通知 / WebSocket `/ws` の R4 `bind`・`ping` 通知）
-- Webhook（`BundleCreated`・`TaskCompleted` のライフサイクルイベントを設定エンドポイントへ通知）
-- `_summary` / `_elements` によるリソースフィルタリング
-- US Core プロファイルによるバリデーション（他の IG は `profiles/` ディレクトリから読み込み）
-- JP Core — スクリプト1本で JP Core 1.2.0 を読み込み、プロファイルでの検証と8つの検索パラメータ（カナ氏名・被保険者番号・都道府県番号など）が使えます。`--terminology` で JP のコード体系によるコード値の検証も（[`examples/jp-core/`](examples/jp-core/README.md)）
-- US Core 適合 — Inferno US Core v7 & v8 の FHIR API テストスイートをパス（v7: `examples/us-core-seed.json` / v8: `examples/us-core-v8-seed.json`。TLS テストは HTTPS デプロイが前提）
-- カスタム検索パラメータ — FHIR `SearchParameter` を `searchparameters/` に置くと、その FHIRPath `expression` を限定評価器がコンパイル（対応外の式はロード時に拒否、誤評価しない）
-- NDJSON 形式での一括エクスポート / インポート
-- 静的アプリ配信（API を使う SPA を同一オリジンの `/apps/<name>/` で配信。`apps.dir` を設定したときだけ有効）
-- ブラウザで確認できる Web ダッシュボード
-- 監査ログ（全操作を SQLite に記録）
-- API キー / Basic 認証 / JWT (HS256/RS256/JWK URL) / SMART on FHIR スコープ
-- コンパートメントベースのアクセス制御
-- TLS/HTTPS 対応
-
-### 位置づけ
-
-sazare は **FHIR の学習、試作・PoC、ローカル開発、小規模な運用**向けです。Java のアプリケーションサーバーと RDBMS を用意するより、データベース内蔵のバイナリ1つで済むことを重視しています。大規模な本番運用、R4 以外のバージョン、本格的なターミノロジーサービスが必要なら、[HAPI FHIR](https://hapifhir.io/) などの成熟したサーバーを使ってください。比較表は英語版の「Where sazare fits」にあります。
-
-制限事項（詳細は英語版の「Limitations」）: FHIR R4 のみ／検索は主要な型（string・token・date・reference・number）とチェーン4段・`_has` 1段まで（quantity・`_filter` などは未対応。組み込みの定義がある種別では未知のパラメータは 400）／custom search parameters は FHIRPath のサブセット／バリデーションは HL7 公式バリデーターの代替ではなく、ターミノロジーサービスもなし／1プロセス＋SQLite で書き込みは直列（ベンチマークで確認済みなのは6万件まで。それ以上は `bench/run.sh` で測ってから）／Subscription の配信はベストエフォート／ユーザーログイン用の認可サーバーは内蔵していません（外部の IdP を使います）。
-
-### クイックスタート — 30秒で FHIR サーバーを動かす
-
-ファイルを1つ落として実行するだけ。Docker も JVM もデータベースも設定も不要です。
-
-**macOS / Linux は Homebrew が一番ラク** — 後述の macOS Gatekeeper 警告も回避できます（brew で入れたバイナリは隔離フラグが付かないため）:
-
-```bash
-brew install fu-foo/tap/sazare
-sazare-server start --demo --open
-```
-
-**Windows は [Scoop](https://scoop.sh) が一番ラク** — 同様に後述の SmartScreen 警告を回避できます（Scoop のダウンロードには Mark-of-the-Web が付かないため）:
-
-```powershell
-scoop bucket add fu-foo https://github.com/fu-foo/scoop-bucket
-scoop install sazare
-sazare-server start --demo --open
-```
-
-**それ以外は、お使いの OS のバイナリ**を
-[最新リリース](https://github.com/fu-foo/fhir-sazare/releases/latest)
-（macOS Intel/Apple Silicon、Linux x86-64/ARM64、Windows x86-64）からダウンロードして、展開して実行します:
-
-```bash
-# macOS / Linux（Apple Silicon の例。OS/アーキテクチャに合うアセットを選んでください）
-tar xzf sazare-server-macos-arm64.tar.gz
-./sazare-server start --demo --open
-```
-
-```powershell
-# Windows: 展開してから
-.\sazare-server.exe start --demo --open
-```
-
-`start` はサーバーを裏で起動し、立ち上がったところで戻ります。`--demo` はサンプル患者（バイタル・条件・受診・処方）を事前投入し、`--open` は内蔵ダッシュボードをブラウザで開きます。これで準備完了。止めるときは `sazare-server stop`（書き込み中の処理を待ってから正常に停止）、状態は `sazare-server status` で確認できます。サーバーは `http://localhost:8080` で待ち受けます（デフォルトは認証なし）。
-
-> **macOS の初回起動**（直接ダウンロードした場合のみ）: バイナリは未署名なので、Gatekeeper が「開発元を確認できません」と表示してブロックします。隔離フラグを外して実行してください:
-> ```bash
-> xattr -d com.apple.quarantine ./sazare-server && ./sazare-server start --demo --open
-> ```
-> または **システム設定 → プライバシーとセキュリティ → 「このまま開く」** で許可します（macOS 15 Sequoia では、従来の「右クリック → 開く」は使えなくなりました）。`brew` で入れればこの手順は不要です。
-
-> **Windows の初回起動**（直接ダウンロードした場合のみ）: `.exe` が未署名のため、Microsoft Defender SmartScreen が青い「**Windows によって PC が保護されました**」を表示し、目立つボタンは *実行しない* だけになります。これは上記 macOS のダイアログの Windows 版で、「マルウェア」ではなく「ネットからダウンロードされた、まだ認知されていないアプリ」という意味です。抜け方は2つ:
->
-> - **クリックで抜ける**: ダイアログの **詳細情報** をクリック →現れる **実行** ボタンを押す
-> - **一度で恒久的に解除（PowerShell）**: ファイルのブロックを解除すれば次回から出ません（macOS の `xattr` に相当）:
->   ```powershell
->   Unblock-File .\sazare-server.exe
->   .\sazare-server.exe start --demo --open
->   ```
->   （GUI なら `.exe` を右クリック → **プロパティ** → 下部の **ブロックの解除** にチェック → **OK**）
->
-> `scoop` で入れればこの手順は不要です。SmartScreen はダウンロード実績が貯まると自動的に警告しなくなります。Windows / macOS バイナリの署名は 1.0 に向けた課題です。
-
-> **Linux**: この種のゲートはありません。ダウンロードして、必要なら `chmod +x sazare-server` し、実行するだけです。
-
-#### サンプルデータ — 検索を「見える」ようにする
-
-空のサーバーは学びにくい（どんな検索も空が返る）。より充実した**デモコホート**は、読める5人の患者（糖尿病、喫煙する高血圧、妊婦健診、小児の予防接種、がんの精査）を実コード（LOINC/SNOMED/RxNorm）で収録していて、`_has` や `_include`、`$everything` が**実際に何かを返す**ようになります。投入方法は2通り:
-
-```bash
-# 起動中のサーバーへ HTTP で投入
-bash examples/demo/load_demo.sh
-
-# または起動時に（ストアが空のときだけ。Docker に最適）
-SAZARE_SEED_ON_EMPTY=examples/demo/cohort.json sazare-server start
-```
-
-投入後、空サーバーでは見えなかったクエリを試せます:
-
-```bash
-# HbA1c の結果を持つ患者すべて（逆チェーン検索）
-curl "http://localhost:8080/Patient?_has:Observation:patient:code=4548-4"
-
-# 1人の患者のカルテ全体を1回で
-curl "http://localhost:8080/Patient/demo-ann-davis/\$everything"
-```
-
-リアルな**集団**（ページング・`$export`・ダッシュボード）が欲しければ Synthea で生成できます。詳細は [`examples/demo/`](examples/demo/) を参照（ヒーローコホートと Synthea 一括投入の両方）。なお `--demo` フラグとダッシュボードの「サンプルデータを読み込む」ボタンは、ファイル不要で試せる極小の埋め込み2患者セットを使います。
-
-#### ソースからビルドする場合
-
-Rust ツールチェーンがあれば、自分でビルドすることもできます:
-
-```bash
-git clone https://github.com/fu-foo/fhir-sazare.git
-cd fhir-sazare
-cargo build --release
-./target/release/sazare-server start
-```
-
-### 起動と停止
-
-```bash
-sazare-server start [--config config.yaml] [--demo] [--open]   # 裏で起動（立ち上がったら戻る）
-sazare-server status                                          # 動いているか・URL・PID・ログ
-sazare-server stop                                            # 正常に停止（書き込み中の処理を待つ）
-sazare-server run [--config config.yaml]                      # 前面で動かす（Docker・systemd・brew services 用）
-sazare-server backup <dir> [--config config.yaml]             # DB の一貫したコピー
-```
-
-データディレクトリごとに1つだけ起動できます（2つ目の `start` は起動中のものを表示、2つ目の `run` は起動を拒否）。裏で動かしたときのログは `<data_dir>/logs/sazare.log` です。`status`・`stop`・`backup` には、`start` と同じ `--config` を渡してください。
-
-### 設定
-
-`config.example.yaml` を `config.yaml` にコピーして編集してください。別の場所のファイルは `--config <path>` で指定できます。設定ファイルがない場合はデフォルト設定（ポート 8080、認証なし）で起動します。
-
-### JP Core を使う
-
-```bash
-bash examples/jp-core/setup.sh          # profiles/ と searchparameters/ に JP Core を展開（--terminology でコード体系も）
-sazare-server                           # 同じディレクトリで起動
-bash examples/jp-core/load_examples.sh  # サンプル76件を投入して JP Core の検索と検証を確認
-curl "http://localhost:8080/Patient?jp-kana-sort=ヤマダ"
-```
-
-Docker での使い方、検索パラメータ一覧は [`examples/jp-core/README.md`](examples/jp-core/README.md) を参照してください。
-
-### アップグレード
-
-手順（バックアップ → バイナリの差し替え → 初回起動のログを確認）は [UPGRADING.md](UPGRADING.md)、各バージョンの変更点と挙動の変更は [CHANGELOG.md](CHANGELOG.md) にまとめています。
-
-### バックアップと復元
-
-`sazare-server backup <dir>` で3つの DB の一貫したコピーを `<dir>` に書き出して終了します。サーバー稼働中でも安全に実行できます（SQLite の `VACUUM INTO` を使用）。既存ファイルは上書きしません。
-
-```bash
-sazare-server backup backups/$(date +%Y%m%d-%H%M%S) --config config.yaml
-```
-
-復元はサーバーを止めて `resources.sqlite` と `audit.sqlite` を `data_dir` に戻します。`search_index.sqlite` と `search_index.fts.sqlite` は戻さず（古いものは削除）、起動時にリソースから自動再構築させてください。書き込み中に取ったバックアップでも、索引とリソースの整合が保証されます。
-
-### 使用例
-
-```bash
-# Patient リソースの作成
-curl -X POST http://localhost:8080/Patient \
-  -H "Content-Type: application/json" \
-  -d '{"resourceType":"Patient","name":[{"family":"テスト姓","given":["テスト名"]}]}'
-
-# 検索
-curl "http://localhost:8080/Patient?name=テスト姓"
-
-# チェーンサーチ（Patient の名前で Observation を検索）
-curl "http://localhost:8080/Observation?subject:Patient.name=テスト姓"
-```
-
-### 名前の由来
-
-**細石（さざれ）** — 古今和歌集に詠まれる小さな石。やがて集まり巌（いわお）となるように、小さく始めて堅実に成長するサーバーを目指しています。
-
-</details>

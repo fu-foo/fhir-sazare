@@ -41,7 +41,7 @@ curl -s -X POST "$BASE/" \
         "resource": {
           "resourceType": "Patient",
           "identifier": [{"system": "http://hospital.example.org/mrn", "value": "MRN-002"}],
-          "name": [{"family": "Nakamura", "given": ["Yuto"]}]
+          "name": [{"family": "Kowalski", "given": ["Jan"]}]
         },
         "request": {
           "method": "POST",

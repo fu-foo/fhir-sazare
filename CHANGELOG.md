@@ -15,6 +15,10 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
   closed terminal; a background one can't.
 - **One server per data directory**: a lock file keeps a second server off the same
   databases (it used to be possible, and unsafe).
+- Documentation is English only: the Japanese section of the README is gone, and the JP
+  Core guide (`examples/jp-core/`) is in English. Sample names in the examples, the
+  sample app and the benchmark data are no longer Japanese (JP Core's own examples keep
+  their Japanese data).
 
 ### Behavior changes
 - String `:exact` is case-sensitive, as FHIR defines it: `family:exact=Sato` no longer
