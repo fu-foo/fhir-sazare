@@ -50,7 +50,7 @@ server such as [HAPI FHIR](https://hapifhir.io/).
 | Runtime | Single native binary (~15 MB), or Docker | Java application on the JVM, or Docker |
 | Database | Embedded SQLite, nothing to set up | External RDBMS (e.g. PostgreSQL); H2 for development |
 | FHIR versions | R4 (4.0.1) | DSTU2 – R5 |
-| Search | Every R4 parameter of type string, token, date, reference and number for the built-in resource types; chain, `_has`, `_include`/`_revinclude`, custom SearchParameters (FHIRPath subset) | Full search, including full FHIRPath and more modifiers |
+| Search | Every R4 parameter of type string, token, date, reference, number and quantity for the built-in resource types; chain, `_has`, `_include`/`_revinclude`, custom SearchParameters (FHIRPath subset) | Full search, including full FHIRPath and more modifiers |
 | Validation | Declared profiles: cardinality, types, extensions, required bindings (built-in value sets, plus an IG's complete code systems from `terminology/`) | Full HL7 validator |
 | Terminology | No `$expand` / `$validate-code` / `$lookup` | Terminology services |
 | Conformance check | Inferno US Core v7/v8 FHIR API suites pass, run in CI | Widely used reference implementation |
@@ -60,12 +60,13 @@ server such as [HAPI FHIR](https://hapifhir.io/).
 Know these before you rely on sazare:
 
 - **FHIR R4 (4.0.1) only.** No R4B / R5.
-- **Search:** every R4 parameter of type string, token, date, reference and number for
-  the built-in resource types, with `:exact`, `:contains`, `:missing`, `:not`; chains up
-  to 4 hops; one level of `_has`.
-  Not supported: `quantity`/`uri`/`composite` parameters, `_filter`, `_list`, `_query`,
-  nested `_has`, `:above`/`:below`/`:in`/`:text` modifiers. For resource types with a
-  built-in parameter list, unknown parameters are a 400, never silently ignored.
+- **Search:** every R4 parameter of type string, token, date, reference, number and
+  quantity for the built-in resource types, with `:exact`, `:contains`, `:missing`,
+  `:not`; chains up to 4 hops; one level of `_has`. Quantities match their number with a
+  system and code, or a code or unit, as written (no unit conversion). Not supported:
+  `uri`/`composite` parameters, `_filter`, `_list`, `_query`, nested `_has`,
+  `:above`/`:below`/`:in`/`:text` modifiers. For resource types with a built-in parameter
+  list, unknown parameters are a 400, never silently ignored.
 - **Custom SearchParameters** use a FHIRPath subset (paths, `|`, `ofType`/`as`,
   `extension()`, `where(a = 'x' and ...)`, `resolve() is`, `[n]`); others are rejected at load.
 - **Validation** checks declared (or default) profiles — cardinality, types, fixed values,
@@ -435,10 +436,12 @@ profile is validated against that one only.
 
 ### Basic Search
 
-Every R4 search parameter of type token, string, date, reference and number is
-supported for the built-in resource types (they are listed in `GET /metadata`), plus
-`_id`, `_lastUpdated`, `_tag`, `_profile`, `_security`, `_text` and `_content`.
-Quantity, composite and uri parameters are not yet.
+Every R4 search parameter of type token, string, date, reference, number and quantity
+is supported for the built-in resource types (they are listed in `GET /metadata`), plus
+`_id`, `_lastUpdated`, `_tag`, `_profile`, `_security`, `_text` and `_content`. A
+quantity is `[prefix]number|system|code` (`value-quantity=gt140|http://unitsofmeasure.org|mm[Hg]`),
+`number||code` for a code or unit in any system, or just the number; units are not
+converted. Composite and uri parameters are not yet.
 
 ```bash
 # Search by parameter
@@ -833,7 +836,7 @@ see the [design document](design/search-index-v2.md) for the numbers.
 - End-to-end and security review before the release
 
 **After 1.0**
-- Quantity, composite and uri search parameters
+- Composite and uri search parameters; unit conversion for quantities (UCUM)
 - FHIRPath: `or`, `exists()` in custom search parameters
 - Topic-based Subscriptions on R4 (the R5 Subscriptions Backport IG)
 - Signed binaries (macOS notarization, Windows code signing)

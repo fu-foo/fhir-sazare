@@ -4,10 +4,24 @@ use serde_json::Value;
 /// Extract search indices from a FHIR resource
 pub struct IndexBuilder;
 
+/// A Quantity (or Age, Duration, Distance, Count, SimpleQuantity) or Money
+/// as an index row: `"<number>|<code>|<unit>"` (the number's JSON text, so
+/// its precision survives) and the system. Money's currency is its code, in
+/// the ISO 4217 system. `None` without a numeric value.
+pub fn quantity_row(node: &Value) -> Option<(String, Option<String>)> {
+    let value = node.get("value").filter(|v| v.is_number())?;
+    if let Some(currency) = node.get("currency").and_then(Value::as_str) {
+        return Some((format!("{value}|{currency}|{currency}"), Some("urn:iso:std:iso:4217".to_string())));
+    }
+    let text = |k: &str| node.get(k).and_then(Value::as_str).unwrap_or("");
+    let system = node.get("system").and_then(Value::as_str).map(str::to_string);
+    Some((format!("{value}|{}|{}", text("code"), text("unit")), system))
+}
+
 /// Bump when the way resources are turned into index rows changes (not just
 /// the parameter set), so existing indexes are rebuilt on upgrade.
-/// 3: index v2 (integer keys, a table per value kind).
-pub const INDEX_FORMAT: u32 = 3;
+/// 3: index v2 (integer keys, a table per value kind). 4: quantities.
+pub const INDEX_FORMAT: u32 = 4;
 
 impl IndexBuilder {
     /// Extract all searchable indices from a resource using a registry.
@@ -66,6 +80,7 @@ impl IndexBuilder {
             sazare_core::SearchParamType::Date => "date",
             sazare_core::SearchParamType::Reference => "reference",
             sazare_core::SearchParamType::Number => "number",
+            sazare_core::SearchParamType::Quantity => "quantity",
         };
 
         match &def.extraction {
@@ -208,6 +223,11 @@ impl IndexBuilder {
                     // Keep the JSON text (e.g. "0.80") so precision survives.
                     if node.is_number() {
                         push(node.to_string(), None);
+                    }
+                }
+                SearchParamType::Quantity => {
+                    if let Some((value, system)) = quantity_row(node) {
+                        push(value, system);
                     }
                 }
             }

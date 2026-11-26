@@ -101,6 +101,7 @@ pub enum SearchParamType {
     Date,     // birthdate, date
     Reference, // subject, patient
     Number,   // _count, _offset
+    Quantity, // value-quantity: [prefix]number[|system|code]
 }
 
 impl SearchQuery {
@@ -282,6 +283,16 @@ impl SearchQuery {
                     return Err(format!("Invalid number '{value}' for parameter '{param_name}'"));
                 }
                 (prefix, number)
+            } else if param_type == SearchParamType::Quantity {
+                // `[prefix]number[|system|code]`: the number is checked here
+                // (a 400), the system and code are matched by the index.
+                let (prefix, rest) = parse_number_prefix(&value);
+                if modifier.as_deref() != Some("missing")
+                    && rest.split(',').any(|q| q.split('|').next().unwrap_or("").trim().parse::<f64>().is_err())
+                {
+                    return Err(format!("Invalid quantity '{value}' for parameter '{param_name}'"));
+                }
+                (prefix, rest)
             } else {
                 (None, value.to_string())
             };

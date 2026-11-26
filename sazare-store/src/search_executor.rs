@@ -11,12 +11,16 @@ use std::collections::HashSet;
 pub(crate) fn split_prefix(param_type: &SearchParamType, value: &str) -> (Option<String>, String) {
     if *param_type == SearchParamType::Date {
         sazare_core::search_param::parse_date_prefix(value)
-    } else if *param_type == SearchParamType::Number {
+    } else if matches!(param_type, SearchParamType::Number | SearchParamType::Quantity) {
         sazare_core::search_param::parse_number_prefix(value)
     } else {
         (None, value.to_string())
     }
 }
+
+/// The start of a search error that only the index being built can answer
+/// (a v1 index serving during the upgrade): a 503, not a failure.
+pub const INDEX_NOT_READY: &str = "The new search index is still being built";
 
 /// Execute FHIR search queries on whichever index engine is open: v2, or a
 /// v1 index still serving while its v2 replacement is built.
@@ -547,6 +551,12 @@ impl<'a> V1Executor<'a> {
                     .search_number_with_prefix(resource_type, &param.name, prefix, value)
                     .map_err(|e| e.to_string())
             }
+            // Indexed by v2 only: a v1 index serves only while its v2
+            // replacement is built.
+            SearchParamType::Quantity => Err(format!(
+                "{INDEX_NOT_READY}: searching '{}' needs it (GET /health shows the progress)",
+                param.name
+            )),
         }
     }
 
@@ -722,7 +732,7 @@ fn selectivity_rank(p: &SearchParameter) -> u8 {
         ("identifier", _, _) => 1,
         (_, _, SearchParamType::Token) => 2,
         (_, _, SearchParamType::String) => 3,
-        (_, _, SearchParamType::Date | SearchParamType::Number) => 4,
+        (_, _, SearchParamType::Date | SearchParamType::Number | SearchParamType::Quantity) => 4,
     }
 }
 

@@ -44,6 +44,9 @@ CREATE INDEX IF NOT EXISTS v_date_h ON v_date (pid, hi, lo);
 CREATE INDEX IF NOT EXISTS v_date_r ON v_date (rid, pid);
 CREATE TABLE IF NOT EXISTS v_number (pid INT, val REAL, rid INT, PRIMARY KEY (pid, val, rid)) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS v_number_r ON v_number (rid, pid);
+CREATE TABLE IF NOT EXISTS v_quantity (pid INT, val REAL, rid INT, sid INT, code TEXT, unit TEXT,
+    PRIMARY KEY (pid, val, rid, sid, code, unit)) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS v_quantity_r ON v_quantity (rid, pid);
 CREATE TABLE IF NOT EXISTS v_ref (pid INT, target INT, rid INT, PRIMARY KEY (pid, target, rid)) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS v_ref_r ON v_ref (rid, pid);
 CREATE INDEX IF NOT EXISTS v_ref_t ON v_ref (target, pid, rid);
@@ -52,7 +55,7 @@ CREATE INDEX IF NOT EXISTS v_ref_text_r ON v_ref_text (rid, pid);
 CREATE TABLE IF NOT EXISTS index_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 "#;
 
-const VALUE_TABLES: [&str; 6] = ["v_token", "v_string", "v_date", "v_number", "v_ref", "v_ref_text"];
+const VALUE_TABLES: [&str; 7] = ["v_token", "v_string", "v_date", "v_number", "v_quantity", "v_ref", "v_ref_text"];
 
 /// A probe count at or above this means "large": not worth counting further.
 #[cfg(not(test))]
@@ -429,6 +432,19 @@ impl IndexV2 {
                     params![pid, v, rid],
                 )?;
             }
+            "quantity" => {
+                // "<number>|<code>|<unit>" (IndexBuilder::quantity_row).
+                let mut parts = value.splitn(3, '|');
+                let Some(v) = parts.next().and_then(|n| n.parse::<f64>().ok()).filter(|v| v.is_finite()) else {
+                    return Ok(false);
+                };
+                let (code, unit) = (parts.next().unwrap_or(""), parts.next().unwrap_or(""));
+                let sid = self.sid(system, true)?.expect("created");
+                self.conn.execute(
+                    "INSERT OR IGNORE INTO v_quantity (pid, val, rid, sid, code, unit) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    params![pid, v, rid, sid, code, unit],
+                )?;
+            }
             "reference" => match local_reference(value) {
                 Some((ttype, tid_text)) => {
                     let ttid = self.tid(ttype, true)?.expect("created");
@@ -519,9 +535,11 @@ impl IndexV2 {
                 if v != "true" && v != "false" {
                     return Err(format!(":missing expects true|false, got '{v}'"));
                 }
-            } else if p.param_type == SearchParamType::Number && !matches!(p.name.as_str(), "_text" | "_content") {
+            } else if matches!(p.param_type, SearchParamType::Number | SearchParamType::Quantity)
+                && !matches!(p.name.as_str(), "_text" | "_content")
+            {
                 for v in p.value.split(',').map(str::trim).filter(|v| !v.is_empty()) {
-                    if v.parse::<f64>().is_err() {
+                    if v.split('|').next().unwrap_or("").trim().parse::<f64>().is_err() {
                         return Err(format!("Invalid number '{}' for parameter '{}'", v, p.name));
                     }
                 }
@@ -644,6 +662,7 @@ impl IndexV2 {
             let (table, col) = match kind.as_str() {
                 "date" => ("v_date", "lo"),
                 "number" => ("v_number", "val"),
+                "quantity" => ("v_quantity", "val"),
                 "string" => ("v_string", "norm"),
                 "token" => ("v_token", "code"),
                 _ => return Ok(None),
@@ -778,6 +797,7 @@ impl IndexV2 {
                 let (sql, numeric) = match kind.as_str() {
                     "date" => ("SELECT rid, lo FROM v_date INDEXED BY v_date_r WHERE rid = ?1 AND pid = ?2", true),
                     "number" => ("SELECT rid, val FROM v_number INDEXED BY v_number_r WHERE rid = ?1 AND pid = ?2", true),
+                    "quantity" => ("SELECT rid, val FROM v_quantity INDEXED BY v_quantity_r WHERE rid = ?1 AND pid = ?2", true),
                     "string" => ("SELECT rid, norm FROM v_string INDEXED BY v_string_r WHERE rid = ?1 AND pid = ?2", false),
                     // A reference sorts by its text: "Type/id" for a local
                     // target, else as written (bare-id copies left out).
@@ -1077,21 +1097,32 @@ impl IndexV2 {
                 (cond.into(), args.into_iter().map(Arg::Int).collect(), index, seek)
             }
             "number" => {
-                let Some((val, half)) = number_with_precision(v) else { return Ok(None) };
-                let (cond, args): (&str, Vec<f64>) = match p.prefix.as_deref().unwrap_or("eq") {
-                    "ne" => ("(val < ? OR val >= ?)", vec![val - half, val + half]),
-                    "gt" | "sa" => ("val > ?", vec![val]),
-                    "ge" => ("val >= ?", vec![val]),
-                    "lt" | "eb" => ("val < ?", vec![val]),
-                    "le" => ("val <= ?", vec![val]),
-                    "ap" => {
-                        let d = (val.abs() * 0.1).max(half);
-                        ("val >= ? AND val <= ?", vec![val - d, val + d])
+                let Some((cond, args, seek)) = number_condition(p.prefix.as_deref(), v) else { return Ok(None) };
+                (cond, args, None, seek)
+            }
+            "quantity" => {
+                // `number[|system|code]`; `number||code` matches the code or
+                // the unit in any system.
+                let mut parts = v.splitn(3, '|');
+                let number = parts.next().unwrap_or("");
+                let Some((mut cond, mut args, seek)) = number_condition(p.prefix.as_deref(), number) else { return Ok(None) };
+                match (parts.next().unwrap_or(""), parts.next().unwrap_or("")) {
+                    ("", "") => {}
+                    ("", code) => {
+                        cond = format!("{cond} AND (code = ? OR unit = ?)");
+                        args.extend([Arg::Text(code.into()), Arg::Text(code.into())]);
                     }
-                    _ => ("val >= ? AND val < ?", vec![val - half, val + half]),
-                };
-                let seek = p.prefix.as_deref() != Some("ne");
-                (cond.into(), args.into_iter().map(Arg::Real).collect(), None, seek)
+                    (sys, code) => {
+                        let Some(sid) = self.sid(Some(sys), false)? else { return Ok(None) };
+                        cond = format!("{cond} AND sid = ?");
+                        args.push(Arg::Int(sid));
+                        if !code.is_empty() {
+                            cond = format!("{cond} AND code = ?");
+                            args.push(Arg::Text(code.into()));
+                        }
+                    }
+                }
+                (cond, args, None, seek)
             }
             "reference" => match local_reference(v) {
                 Some((ttype, id)) => {
@@ -1282,11 +1313,31 @@ fn walk_by_probe(_matches: f64, want: f64, _size: f64) -> bool {
     want as u64 % 2 == 1
 }
 
+/// The condition on `val` for a number (`prefix`, FHIR's implicit precision:
+/// `eq100` is [99.5, 100.5)), its arguments and whether it seeks.
+fn number_condition(prefix: Option<&str>, v: &str) -> Option<(String, Vec<Arg>, bool)> {
+    let (val, half) = number_with_precision(v.trim())?;
+    let (cond, args): (&str, Vec<f64>) = match prefix.unwrap_or("eq") {
+        "ne" => ("(val < ? OR val >= ?)", vec![val - half, val + half]),
+        "gt" | "sa" => ("val > ?", vec![val]),
+        "ge" => ("val >= ?", vec![val]),
+        "lt" | "eb" => ("val < ?", vec![val]),
+        "le" => ("val <= ?", vec![val]),
+        "ap" => {
+            let d = (val.abs() * 0.1).max(half);
+            ("val >= ? AND val <= ?", vec![val - d, val + d])
+        }
+        _ => ("val >= ? AND val < ?", vec![val - half, val + half]),
+    };
+    Some((cond.to_string(), args.into_iter().map(Arg::Real).collect(), prefix != Some("ne")))
+}
+
 fn table_for(kind: &str) -> &'static str {
     match kind {
         "string" => "v_string",
         "date" => "v_date",
         "number" => "v_number",
+        "quantity" => "v_quantity",
         "reference" => "v_ref",
         _ => "v_token",
     }

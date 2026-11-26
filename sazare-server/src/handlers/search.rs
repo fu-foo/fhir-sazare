@@ -249,6 +249,13 @@ async fn do_search(
         crate::with_index_reader(&state, move |st, index| run_search(st, index, &rt, &q, au.as_ref()))
             .await
             .map_err(|e| {
+                if e.starts_with(sazare_store::INDEX_NOT_READY) {
+                    // Answerable once the background rebuild has switched.
+                    return (
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        Json(json!(OperationOutcome::error(IssueType::Transient, e))),
+                    );
+                }
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(json!(OperationOutcome::storage_error(e))),

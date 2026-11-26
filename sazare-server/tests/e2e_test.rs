@@ -2069,3 +2069,50 @@ async fn test_r4_parameters_from_the_definitions() {
         assert!(names.contains(&n), "metadata lacks Patient.{n}");
     }
 }
+
+/// Quantity search end to end: `[prefix]number[|system|code]`, `||code`
+/// matching the code or the unit, components, sorting and /metadata.
+#[tokio::test]
+async fn test_quantity_search() {
+    let (base, _dir) = start_test_server().await;
+    let c = reqwest::Client::new();
+    let ucum = "http://unitsofmeasure.org";
+    let bp = |sys: f64, dia: f64| json!({"resourceType": "Observation", "status": "final",
+        "code": {"coding": [{"system": "http://loinc.org", "code": "85354-9"}]},
+        "component": [
+            {"code": {"coding": [{"system": "http://loinc.org", "code": "8480-6"}]},
+             "valueQuantity": {"value": sys, "unit": "mmHg", "system": ucum, "code": "mm[Hg]"}},
+            {"code": {"coding": [{"system": "http://loinc.org", "code": "8462-4"}]},
+             "valueQuantity": {"value": dia, "unit": "mmHg", "system": ucum, "code": "mm[Hg]"}}]});
+    let weight = |kg: f64| json!({"resourceType": "Observation", "status": "final",
+        "code": {"coding": [{"system": "http://loinc.org", "code": "29463-7"}]},
+        "valueQuantity": {"value": kg, "unit": "kg", "system": ucum, "code": "kg"}});
+    let high = create(&c, &base, "Observation", &bp(150.0, 95.0)).await;
+    let normal = create(&c, &base, "Observation", &bp(118.0, 76.0)).await;
+    let w70 = create(&c, &base, "Observation", &weight(70.2)).await;
+    let w85 = create(&c, &base, "Observation", &weight(85.0)).await;
+    let ids = |q: &str| {
+        let c = c.clone();
+        let url = format!("{base}/Observation?{q}");
+        async move {
+            let b: Value = c.get(url).send().await.unwrap().json().await.unwrap();
+            assert_eq!(b["resourceType"], "Bundle", "{b}");
+            b["entry"].as_array().cloned().unwrap_or_default().iter()
+                .map(|e| e["resource"]["id"].as_str().unwrap().to_string()).collect::<Vec<_>>()
+        }
+    };
+    assert_eq!(ids("value-quantity=70").await, [w70.as_str()], "implicit precision: [69.5, 70.5)");
+    assert_eq!(ids("value-quantity=gt80|http://unitsofmeasure.org|kg").await, [w85.as_str()]);
+    assert_eq!(ids("value-quantity=gt80||kg").await, [w85.as_str()]);
+    assert!(ids("value-quantity=gt80|http://unitsofmeasure.org|g").await.is_empty(), "no unit conversion");
+    assert_eq!(ids("component-value-quantity=ge140|http://unitsofmeasure.org|mm[Hg]").await, [high.as_str()]);
+    assert_eq!(ids("component-value-quantity=lt80||mmHg").await, [normal.as_str()], "||code also matches the unit");
+    assert_eq!(ids("value-quantity:missing=true&code=85354-9&_sort=_id").await.len(), 2);
+    assert_eq!(ids("code=29463-7&_sort=-value-quantity").await, [w85, w70]);
+    let r = c.get(format!("{base}/Observation?value-quantity=heavy")).send().await.unwrap();
+    assert_eq!(r.status(), 400, "not a number");
+    let meta: Value = c.get(format!("{base}/metadata")).send().await.unwrap().json().await.unwrap();
+    let obs = meta["rest"][0]["resource"].as_array().unwrap().iter().find(|r| r["type"] == "Observation").unwrap().clone();
+    let vq = obs["searchParam"].as_array().unwrap().iter().find(|p| p["name"] == "value-quantity").cloned();
+    assert_eq!(vq.map(|p| p["type"].clone()), Some(json!("quantity")));
+}

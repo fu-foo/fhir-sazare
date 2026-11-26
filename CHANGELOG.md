@@ -4,6 +4,18 @@ All notable changes to sazare. Versions follow [Semantic Versioning](https://sem
 until 1.0, a minor version (0.x.0) may change behavior — those changes are listed under
 **Behavior changes**. See [UPGRADING.md](UPGRADING.md) for how to upgrade.
 
+## Unreleased
+
+### Added
+- **Quantity search parameters**: `[prefix]number|system|code`, `number||code` (the code
+  or the unit, any system) or the number alone, with FHIR's implicit precision and the
+  comparison prefixes, `:missing` and `_sort`. Quantities, Ages, Durations and Money are
+  indexed; units are compared as written (no unit conversion). Every R4 quantity
+  parameter of the supported types comes with it: `value-quantity`,
+  `component-value-quantity`, `combo-value-quantity` on Observation and the rest. The
+  first start rebuilds the search index once, in the background. On an index still being
+  rebuilt from an older version, a quantity search answers 503 until the new one is ready.
+
 ## 0.16.0 — 2026-11-26
 
 ### Changed
