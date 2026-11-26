@@ -239,6 +239,7 @@ sazare-server start [--config config.yaml] [--demo] [--open]   # in the backgrou
 sazare-server status                                          # running? URL, pid, log
 sazare-server stop                                            # clean shutdown (in-flight writes finish)
 sazare-server run [--config config.yaml]                      # in the foreground
+sazare-server logs [-f]                                       # the background server's log
 sazare-server backup <dir> [--config config.yaml]             # consistent copy of the databases
 ```
 
@@ -251,16 +252,73 @@ sazare-server backup <dir> [--config config.yaml]             # consistent copy 
   exposed on the server's own port.
 - **Service managers** (Docker, systemd, launchd, `brew services`) use `run`, which stays
   in the foreground and stops on SIGTERM. The Docker image already does.
-- Pass the same `--config` to `status` / `stop` / `backup` that you passed to `start`: it
-  tells them which data directory to look at.
+- `status` / `stop` / `logs` / `backup` find the server through the same configuration
+  as `start` (see [Configuration](#configuration)); with an explicit `--config`, pass it to
+  them too.
+- `sazare-server logs` prints the end of the log; `logs -f` follows it.
+
+### Starting at boot or login
+
+Let the system's service manager run `sazare-server run`:
+
+- **Homebrew** (macOS, Linux): `brew services start sazare` — starts at login and keeps it
+  running.
+- **systemd** (Linux), `~/.config/systemd/user/sazare.service`, then
+  `systemctl --user enable --now sazare`:
+  ```ini
+  [Unit]
+  Description=sazare FHIR server
+
+  [Service]
+  ExecStart=/usr/local/bin/sazare-server run
+  Restart=on-failure
+
+  [Install]
+  WantedBy=default.target
+  ```
+- **launchd** (macOS without Homebrew), `~/Library/LaunchAgents/dev.sazare.plist`, then
+  `launchctl load ~/Library/LaunchAgents/dev.sazare.plist`:
+  ```xml
+  <?xml version="1.0" encoding="UTF-8"?>
+  <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+  <plist version="1.0"><dict>
+    <key>Label</key><string>dev.sazare</string>
+    <key>ProgramArguments</key><array><string>/usr/local/bin/sazare-server</string><string>run</string></array>
+    <key>RunAtLoad</key><true/>
+    <key>KeepAlive</key><true/>
+  </dict></plist>
+  ```
+- **Windows**: a Task Scheduler task "At log on" running `sazare-server.exe start`, or
+  from PowerShell:
+  ```powershell
+  $a = New-ScheduledTaskAction -Execute (Get-Command sazare-server.exe).Source -Argument start
+  Register-ScheduledTask sazare -Action $a -Trigger (New-ScheduledTaskTrigger -AtLogOn)
+  ```
+
+With the user configuration file in place, none of these need a `--config`.
 
 ## Configuration
 
-Copy the example config and customize:
+sazare runs without any configuration (port 8080 on 127.0.0.1, auth off, data in the
+user data directory). To configure it, start from the example:
 
 ```bash
 cp config.example.yaml config.yaml
 ```
+
+**Which file**: `--config <file>`, else `$SAZARE_CONFIG`, else `./config.yaml`, else the
+user configuration file — `~/.config/sazare/config.yaml` (Linux),
+`~/Library/Application Support/sazare/config.yaml` (macOS),
+`%APPDATA%\sazare\config.yaml` (Windows). `start`, `stop`, `status`, `logs` and `backup`
+all find the server through it, so with the user file they need no options at all.
+
+**Paths** in the file (data, IG and apps directories, TLS and JWT key files) are relative
+to the file, never to the directory sazare was started from. Environment variables
+(`SAZARE_DATA_DIR`, `SAZARE_IG_DIR`, `SAZARE_APPS_DIR`, `SAZARE_HOST`, `SAZARE_PORT`)
+override the file.
+
+**Unknown keys are an error** — a typo such as `enable: true` under `auth:` stops the
+server with the line, the key and the valid ones, instead of silently leaving auth off.
 
 ```yaml
 server:
@@ -269,16 +327,19 @@ server:
   max_request_mb: 64      # Max request body (Bundles, $import NDJSON); 413 above it
 
 auth:
-  enabled: false          # Set true to require authentication
-  api_keys:
+  enabled: true
+  api_keys:               # sazare-server auth new-api-key my-client
     - name: "my-client"
-      key: "your-secret-key"
-  basic_auth:
+      key_sha256: "1c7f60ea…"
+  basic_auth:             # sazare-server auth hash-password admin
     - username: "admin"
-      password: "secure-password"
+      password_hash: "$argon2id$v=19$…"
 
 storage:
-  data_dir: "data"        # SQLite files stored here
+  data_dir: "data"        # default: the user data directory (below)
+
+ig:
+  dir: "."                # holds profiles/, searchparameters/, terminology/ (default: this file's directory)
 
 log:
   level: "info"           # trace, debug, info, warn, error
@@ -291,9 +352,19 @@ webhook:
 
 validation:
   default_profiles:       # for resources that declare no meta.profile
-    Patient: "http://jpfhir.jp/fhir/core/StructureDefinition/JP_Patient"
+    Patient: "http://example.org/fhir/StructureDefinition/MyPatient"
   default_profile_mode: enforce   # or warn: accept, report violations
 ```
+
+**Credentials** are stored hashed: `sazare-server auth new-api-key <name>` generates a
+random key, shows it once and prints the `key_sha256` line; `sazare-server auth
+hash-password <user>` asks for a password and prints an Argon2id `password_hash`. Plain
+`key:` / `password:` still work but are warned about at startup.
+
+**Data directory** when none is configured: `~/.local/share/sazare` (Linux, or
+`$XDG_DATA_HOME/sazare`), `~/Library/Application Support/sazare/data` (macOS),
+`%LOCALAPPDATA%\sazare\data` (Windows). The startup log states the configuration file,
+data directory and IG directory in use.
 
 `validation.default_profiles` validates resources that don't declare a
 `meta.profile` against a profile per resource type — real-world data often
@@ -303,8 +374,6 @@ violations exactly as if the profile were declared; `warn` accepts the
 resource and reports the violations (`$validate` and the server log), which
 helps while migrating existing data. A resource that declares its own
 profile is validated against that one only.
-
-If no `config.yaml` is found, the server runs with sensible defaults (port 8080, auth disabled).
 
 ---
 

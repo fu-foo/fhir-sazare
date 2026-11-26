@@ -402,3 +402,48 @@ fn config_hint(forwarded: &[String]) -> String {
         .or_else(|| forwarded.iter().find(|a| a.starts_with("--config=")).map(|a| format!(" {a}")))
         .unwrap_or_default()
 }
+
+/// `sazare-server logs [-n <lines>] [-f]`: the background server's log.
+pub fn logs(config: &ServerConfig, args: &[String]) -> i32 {
+    let paths = Paths::new(config);
+    let follow = args.iter().any(|a| a == "-f" || a == "--follow");
+    let lines = args
+        .iter()
+        .position(|a| a == "-n")
+        .and_then(|i| args.get(i + 1))
+        .and_then(|n| n.parse().ok())
+        .unwrap_or(50usize);
+    let Ok(text) = std::fs::read_to_string(&paths.log) else {
+        eprintln!("No log at {} (the server logs there when started with `start`).", paths.log.display());
+        return 1;
+    };
+    let all: Vec<&str> = text.lines().collect();
+    for l in &all[all.len().saturating_sub(lines)..] {
+        println!("{l}");
+    }
+    if !follow {
+        return 0;
+    }
+    // Follow: poll for appended bytes; start over if the file was rotated.
+    let mut pos = text.len() as u64;
+    loop {
+        std::thread::sleep(Duration::from_millis(500));
+        let Ok(meta) = std::fs::metadata(&paths.log) else { continue };
+        if meta.len() < pos {
+            pos = 0;
+        }
+        if meta.len() > pos
+            && let Ok(mut f) = std::fs::File::open(&paths.log)
+        {
+            use std::io::Seek;
+            if f.seek(std::io::SeekFrom::Start(pos)).is_ok() {
+                let mut chunk = String::new();
+                if f.read_to_string(&mut chunk).is_ok() {
+                    print!("{chunk}");
+                    let _ = std::io::stdout().flush();
+                    pos += chunk.len() as u64;
+                }
+            }
+        }
+    }
+}

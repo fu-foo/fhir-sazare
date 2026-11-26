@@ -25,7 +25,11 @@ Commands:
   stop      Stop the background server (waits for in-flight writes)
   status    Show whether the server is running, its URL and pid
   run       Run in the foreground (for Docker, systemd, launchd, brew services)
+  logs      Print the background server's log (-f to follow, -n <lines>)
   backup    Write a consistent copy of the databases: backup <dir>
+  auth      Credentials for config.yaml:
+              auth hash-password [user]   prompt for a password, print password_hash
+              auth new-api-key [name]     generate a key, print it and its key_sha256
   version   Print the version
   help      Show this help
 
@@ -34,8 +38,13 @@ Options (start, run):
   --demo            Load the sample dataset
   --open            Open the dashboard in a browser
 
-One server runs per data directory. stop, status and backup take --config too,
-to find it.
+Configuration: --config, else $SAZARE_CONFIG, else ./config.yaml, else the user
+configuration file (~/.config/sazare/config.yaml; ~/Library/Application Support/
+sazare/config.yaml on macOS; %APPDATA%\\sazare\\config.yaml on Windows). Relative paths
+in it are relative to the file. Unknown keys are an error.
+
+One server runs per data directory. stop, status, logs and backup find it through
+the same configuration.
 ";
 
 fn main() {
@@ -58,9 +67,14 @@ fn main() {
             let config = load_config(&rest);
             let open = rest.iter().any(|a| a == "--open");
             let forwarded: Vec<String> = rest.into_iter().filter(|a| a != "--open").collect();
+            for note in &config.notes {
+                eprintln!("warning: {note}");
+            }
             instance::start(&config, &forwarded, open)
         }
         "stop" => instance::stop(&load_config(&rest)),
+        "logs" => instance::logs(&load_config(&rest), &rest),
+        "auth" => auth_command(&rest),
         "status" => instance::status(&load_config(&rest)),
         "backup" => {
             let dir = rest.iter().enumerate().find(|(i, a)| {
@@ -104,7 +118,56 @@ fn init_tracing() {
         .init();
 }
 
-/// `--config <path>` / `--config=<path>`, or `./config.yaml` when present.
+/// `auth hash-password [user]` / `auth new-api-key [name]`: print the lines to
+/// put in config.yaml. Nothing is written; the file keeps its comments.
+fn auth_command(args: &[String]) -> i32 {
+    use sazare_server::auth::credentials;
+    match args.first().map(String::as_str) {
+        Some("hash-password") => {
+            let user = args.get(1).cloned().unwrap_or_else(|| "admin".into());
+            let password = if std::io::IsTerminal::is_terminal(&std::io::stdin()) {
+                let a = rpassword::prompt_password(format!("Password for {user}: ")).unwrap_or_default();
+                let b = rpassword::prompt_password("Again: ").unwrap_or_default();
+                if a != b {
+                    eprintln!("The passwords differ.");
+                    return 1;
+                }
+                a
+            } else {
+                // Piped: the first line of stdin.
+                let mut line = String::new();
+                let _ = std::io::stdin().read_line(&mut line);
+                line.trim_end_matches(['\r', '\n']).to_string()
+            };
+            if password.len() < 12 {
+                eprintln!("Use at least 12 characters.");
+                return 1;
+            }
+            println!("  basic_auth:");
+            println!("    - username: {user}");
+            println!("      password_hash: \"{}\"", credentials::hash_password(&password));
+            0
+        }
+        Some("new-api-key") => {
+            let name = args.get(1).cloned().unwrap_or_else(|| "client".into());
+            let key = credentials::new_api_key();
+            eprintln!("API key for {name} (shown once — give it to the client, it is not stored):");
+            eprintln!("  {key}");
+            eprintln!();
+            println!("  api_keys:");
+            println!("    - name: {name}");
+            println!("      key_sha256: \"{}\"", credentials::sha256_hex(&key));
+            0
+        }
+        _ => {
+            eprintln!("Usage: sazare-server auth hash-password [user] | auth new-api-key [name]");
+            2
+        }
+    }
+}
+
+/// The configuration to run with (see `ServerConfig::load`): `--config <path>`
+/// / `--config=<path>`, `SAZARE_CONFIG`, `./config.yaml`, the user's file.
 fn load_config(args: &[String]) -> ServerConfig {
     let explicit_config = args.iter().enumerate().find_map(|(i, a)| {
         a.strip_prefix("--config=")
@@ -115,23 +178,12 @@ fn load_config(args: &[String]) -> ServerConfig {
         eprintln!("--config requires a path");
         std::process::exit(2);
     }
-    match explicit_config.as_deref() {
-        // An explicitly requested file must load — silently running on
-        // defaults (port, data_dir, auth off) would be a surprise.
-        Some(path) => ServerConfig::load(Some(path)).unwrap_or_else(|e| {
-            eprintln!("Failed to load config {path}: {e}");
-            std::process::exit(1);
-        }),
-        None => ServerConfig::load(
-            std::path::Path::new("config.yaml")
-                .exists()
-                .then_some("config.yaml"),
-        )
-        .unwrap_or_else(|e| {
-            eprintln!("Failed to load config, using defaults: {e}");
-            ServerConfig::default()
-        }),
-    }
+    // A configuration that doesn't load stops here: running on defaults
+    // instead (port, data_dir, auth off) would be a surprise.
+    ServerConfig::load(explicit_config.as_deref()).unwrap_or_else(|e| {
+        eprintln!("Invalid configuration: {e}");
+        std::process::exit(1);
+    })
 }
 
 /// `run`: the server in the foreground.
@@ -159,6 +211,15 @@ async fn serve(args: Vec<String>) {
         }
     };
     tracing::info!("Starting fhir-sazare server...");
+    tracing::info!(
+        "Config: {}",
+        config.source.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| "none (defaults)".into())
+    );
+    tracing::info!("Data:   {}", config.storage.data_dir.display());
+    tracing::info!("IG:     {} (profiles/, searchparameters/, terminology/)", config.ig_dir().display());
+    for note in &config.notes {
+        tracing::warn!("{note}");
+    }
 
     // Create data directory
     if let Err(e) = std::fs::create_dir_all(&config.storage.data_dir) {
@@ -190,7 +251,7 @@ async fn serve(args: Vec<String>) {
     // Load custom profiles from profiles/ directory if it exists (this is how
     // JP Core or any other IG is supplied now — drop the package's profiles in).
     // Validation against US Core remains the only built-in conformance claim.
-    match ProfileLoader::load_from_directory("profiles") {
+    match ProfileLoader::load_from_directory(config.ig_dir().join("profiles")) {
         Ok(custom_profiles) if !custom_profiles.is_empty() => {
             tracing::info!("Loading {} custom profiles", custom_profiles.len());
             profile_registry.load_profiles(custom_profiles);
@@ -224,7 +285,7 @@ async fn serve(args: Vec<String>) {
     // (or any IG) search params are supplied now — drop them in alongside the
     // matching profiles in profiles/.
     let mut search_param_registry = SearchParamRegistry::new();
-    match ProfileLoader::load_resources_from_directory("searchparameters", "SearchParameter") {
+    match ProfileLoader::load_resources_from_directory(config.ig_dir().join("searchparameters"), "SearchParameter") {
         Ok(sps) => {
             for sp in &sps {
                 match search_param_registry.register_search_parameter(sp) {
@@ -240,7 +301,7 @@ async fn serve(args: Vec<String>) {
     // ValueSets, e.g. JP Core's package plus jpfhir-terminology). Only fully
     // resolvable ValueSets are registered; bindings to the rest stay unchecked.
     let mut terminology_registry = TerminologyRegistry::new();
-    match ProfileLoader::load_terminology_directory("terminology", &mut terminology_registry) {
+    match ProfileLoader::load_terminology_directory(config.ig_dir().join("terminology"), &mut terminology_registry) {
         Ok(Some(s)) => tracing::info!(
             "Terminology: {} code systems, {} value sets loaded ({} value sets not fully resolvable, left unchecked)",
             s.code_systems,
@@ -370,9 +431,6 @@ async fn serve(args: Vec<String>) {
         }
     );
 
-    if config.plugins.dir.is_some() {
-        tracing::warn!("`plugins.dir` / SAZARE_PLUGIN_DIR is deprecated: use `apps.dir` / SAZARE_APPS_DIR");
-    }
     if state.app_names.is_empty() {
         tracing::info!("Apps: none (set apps.dir to serve static apps under /apps/)");
     } else {

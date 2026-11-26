@@ -419,8 +419,17 @@ async fn authenticate_bearer(state: &Arc<AppState>, auth_header: &str) -> Result
     let token = auth_header.trim_start_matches("Bearer ").trim();
 
     // Try API key match first
+    // Keys are compared as SHA-256 digests (`key_sha256`), or as stored when
+    // a plaintext `key` is configured. API keys are long random values, so a
+    // fast hash is the right tool (unlike passwords).
+    let token_digest = credentials::sha256_hex(token);
     for api_key in &state.config.auth.api_keys {
-        if ct_eq(&api_key.key, token) {
+        let ok = match (&api_key.key, &api_key.key_sha256) {
+            (_, Some(digest)) => ct_eq(&digest.to_ascii_lowercase(), &token_digest),
+            (Some(key), None) => ct_eq(key, token),
+            (None, None) => false,
+        };
+        if ok {
             return Ok(AuthUser::new(api_key.name.clone(), AuthType::ApiKey));
         }
     }
@@ -578,13 +587,108 @@ fn authenticate_basic(config: &ServerConfig, auth_header: &str) -> Result<AuthUs
 
     // Validate credentials
     for user in &config.auth.basic_auth {
-        if user.username == username && ct_eq(&user.password, password) {
+        if user.username != username {
+            continue;
+        }
+        let ok = match (&user.password, &user.password_hash) {
+            (_, Some(hash)) => credentials::verify_password(username, password, hash),
+            (Some(plain), None) => ct_eq(plain, password),
+            (None, None) => false,
+        };
+        if ok {
             return Ok(AuthUser::new(username.to_string(), AuthType::BasicAuth));
         }
     }
 
     let outcome = OperationOutcome::unauthorized("Invalid username or password");
     Err((StatusCode::UNAUTHORIZED, axum::Json(outcome)).into_response())
+}
+
+/// Hashed credentials: Argon2id for passwords, SHA-256 for API keys.
+pub mod credentials {
+    use argon2::password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
+    use argon2::Argon2;
+    use sha2::{Digest, Sha256};
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock};
+    use std::time::{Duration, Instant};
+
+    pub fn sha256_hex(s: &str) -> String {
+        Sha256::digest(s.as_bytes()).iter().map(|b| format!("{b:02x}")).collect()
+    }
+
+    /// An Argon2id hash (PHC string) of `password`, for `password_hash`.
+    pub fn hash_password(password: &str) -> String {
+        let salt = SaltString::generate(&mut OsRng);
+        Argon2::default()
+            .hash_password(password.as_bytes(), &salt)
+            .map(|h| h.to_string())
+            .unwrap_or_default()
+    }
+
+    /// A new random API key (256 bits, hex).
+    pub fn new_api_key() -> String {
+        use argon2::password_hash::rand_core::RngCore;
+        let mut bytes = [0u8; 32];
+        OsRng.fill_bytes(&mut bytes);
+        bytes.iter().map(|b| format!("{b:02x}")).collect()
+    }
+
+    /// How long a successful password check is remembered: Argon2 is slow on
+    /// purpose (tens of ms), and Basic auth sends the password with every
+    /// request.
+    const REMEMBER: Duration = Duration::from_secs(300);
+
+    fn cache() -> &'static Mutex<HashMap<(String, String), Instant>> {
+        static C: OnceLock<Mutex<HashMap<(String, String), Instant>>> = OnceLock::new();
+        C.get_or_init(Default::default)
+    }
+
+    /// Check `password` against an Argon2 `hash`. Successful checks are cached
+    /// (keyed by user and a SHA-256 of hash+password, never the password) for
+    /// [`REMEMBER`]; failures are not.
+    pub fn verify_password(user: &str, password: &str, hash: &str) -> bool {
+        let key = (user.to_string(), sha256_hex(&format!("{hash}\0{password}")));
+        {
+            let c = cache().lock().unwrap_or_else(|e| e.into_inner());
+            if c.get(&key).is_some_and(|t| t.elapsed() < REMEMBER) {
+                return true;
+            }
+        }
+        let ok = PasswordHash::new(hash)
+            .map(|h| Argon2::default().verify_password(password.as_bytes(), &h).is_ok())
+            .unwrap_or(false);
+        if ok {
+            let mut c = cache().lock().unwrap_or_else(|e| e.into_inner());
+            if c.len() > 1000 {
+                c.retain(|_, t| t.elapsed() < REMEMBER);
+            }
+            c.insert(key, Instant::now());
+        }
+        ok
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn password_hash_round_trip() {
+            let h = hash_password("correct horse");
+            assert!(h.starts_with("$argon2id$"));
+            assert!(verify_password("u", "correct horse", &h));
+            assert!(verify_password("u", "correct horse", &h)); // cached
+            assert!(!verify_password("u", "wrong", &h));
+            assert!(!verify_password("u", "correct horse", "not a hash"));
+        }
+
+        #[test]
+        fn api_key_digest() {
+            let k = new_api_key();
+            assert_eq!(k.len(), 64);
+            assert_eq!(sha256_hex("abc"), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+        }
+    }
 }
 
 /// Per-address failed-login counter: `MAX_FAILURES` failures within `WINDOW`
@@ -751,11 +855,13 @@ mod tests {
                 enabled: true,
                 api_keys: vec![ApiKey {
                     name: "test-client".to_string(),
-                    key: "test-api-key-12345".to_string(),
+                    key: Some("test-api-key-12345".to_string()),
+                    key_sha256: None,
                 }],
                 basic_auth: vec![BasicAuthUser {
                     username: "admin".to_string(),
-                    password: "admin123".to_string(),
+                    password: Some("admin123".to_string()),
+                    password_hash: None,
                 }],
                 jwt: None,
                 smart: None,

@@ -48,6 +48,20 @@ into `data_dir`, delete the two `search_index*` files, start the older binary).
   `sazare-server run` in the foreground. `--backup <dir>` became `sazare-server backup <dir>`.
 - Scripts, systemd units and launchd plists that started `sazare-server [--config …]`:
   add `run` (`sazare-server run --config …`). The Docker image needs no change.
+- **Unknown configuration keys are an error.** A file that used to load with a typo now
+  stops with the line and the valid keys; fix the key. The deprecated `plugins.dir` /
+  `SAZARE_PLUGIN_DIR` are gone: use `apps.dir` / `SAZARE_APPS_DIR`.
+- **Paths in `config.yaml` are relative to the file** (they were relative to the directory
+  sazare was started from). If you started sazare from the directory holding
+  `config.yaml`, nothing changes.
+- **Without `storage.data_dir`, data goes to the user data directory** (e.g.
+  `~/.local/share/sazare`). An existing `./data` that holds data is still used, with a
+  warning: set `storage.data_dir` (or move it) to silence it.
+- **IG directories** (`profiles/`, `searchparameters/`, `terminology/`) are read from the
+  configuration file's directory (or `ig.dir`), not from the current directory; without a
+  configuration file, a current directory holding them is still used, with a warning.
+- Plain `key:` / `password:` credentials still work but are warned about; replace them with
+  `key_sha256` / `password_hash` (`sazare-server auth new-api-key` / `auth hash-password`).
 
 ### To 0.14.0
 

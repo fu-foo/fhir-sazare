@@ -14,19 +14,21 @@ auth:
   # Set enabled to true to require authentication
   enabled: false
 
-  # API keys for Bearer token authentication
-  # Replace with your own secret keys before use
-  api_keys:
-    - name: "my-app"
-      key: "CHANGE-ME-to-a-random-secret"
+  # API keys for Bearer token authentication. Generate one with
+  #   sazare-server auth new-api-key my-app
+  # (prints the key once, and the lines below with its SHA-256).
+  # api_keys:
+  #   - name: "my-app"
+  #     key_sha256: "<64 hex digits>"
 
-  # Basic authentication users
-  # Replace with your own credentials before use
-  basic_auth:
-    - username: "admin"
-      password: "CHANGE-ME"
+  # Basic authentication users (the dashboard logs in with these). Generate with
+  #   sazare-server auth hash-password admin
+  # basic_auth:
+  #   - username: "admin"
+  #     password_hash: "$argon2id$..."
 
 storage:
+  # Relative paths in this file are relative to the file itself.
   data_dir: "data"
   resources_db: "resources.sqlite"
   search_index_db: "search_index.sqlite"
