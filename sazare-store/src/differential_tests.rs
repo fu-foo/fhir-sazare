@@ -83,8 +83,14 @@ fn date(rng: &mut Rng) -> String {
 
 /// One generated dataset: Patients and Observations with references, repeated
 /// and missing values, case and accent variants, periods (some open-ended).
-fn dataset(rng: &mut Rng, patients: usize, observations: usize) -> Vec<Value> {
+/// `dangling`: some references point at Patients that don't exist (v1's
+/// `_has` counts those — a known v1 bug, fixed in v2; v1 runs without).
+fn dataset(rng: &mut Rng, patients: usize, observations: usize, dangling: bool) -> Vec<Value> {
     let mut out = Vec::new();
+    // Groups with the Patients' ids: a reference's type must be honored.
+    for i in (0..patients).step_by(4) {
+        out.push(json!({"resourceType": "Group", "id": format!("p{i}"), "type": "person", "actual": true}));
+    }
     for i in 0..patients {
         let mut p = json!({"resourceType": "Patient", "id": format!("p{i}")});
         if rng.chance(90) {
@@ -133,7 +139,15 @@ fn dataset(rng: &mut Rng, patients: usize, observations: usize) -> Vec<Value> {
             o["category"] = json!([{"coding": [{"system": "http://terminology.hl7.org/CodeSystem/observation-category", "code": rng.pick(CATEGORIES)}]}]);
         }
         if rng.chance(90) {
-            o["subject"] = json!({"reference": format!("Patient/p{}", rng.below(patients.max(1)))});
+            // Mostly Patients; some Groups with the same ids (a type mix-up
+            // would show) and some Patients that don't exist.
+            let n = rng.below(patients.max(1));
+            let target = match rng.below(20) {
+                0..=2 => format!("Group/p{n}"),
+                3 | 4 if dangling => format!("Patient/missing{n}"),
+                _ => format!("Patient/p{n}"),
+            };
+            o["subject"] = json!({"reference": target});
         }
         match rng.below(4) {
             0 => {}
@@ -329,7 +343,7 @@ enum Which {
 fn run(which: Which, seed: u64, patients: usize, observations: usize, queries: usize) {
     let mut rng = Rng(seed.max(1));
     let registry = SearchParamRegistry::new();
-    let resources = dataset(&mut rng, patients, observations);
+    let resources = dataset(&mut rng, patients, observations, matches!(which, Which::V2));
     let (store, index, v2, entries) = load(&resources, &registry);
     let v1 = V1Executor::new(&store, &index);
     let exec: &dyn Backend = match which {
@@ -402,7 +416,7 @@ fn sort_key(entries: &Entries, param: &str, descending: bool) -> Option<String> 
 fn run_sorted(which: Which, seed: u64, patients: usize, observations: usize, queries: usize) {
     let mut rng = Rng(seed.max(1));
     let registry = SearchParamRegistry::new();
-    let resources = dataset(&mut rng, patients, observations);
+    let resources = dataset(&mut rng, patients, observations, matches!(which, Which::V2));
     let (store, index, v2, entries) = load(&resources, &registry);
     let v1 = V1Executor::new(&store, &index);
     let exec: &dyn Backend = match which {
