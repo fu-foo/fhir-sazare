@@ -589,3 +589,28 @@ async fn patient_scoped_searches_return_exactly_the_compartment() {
     let (_, b) = c.get("/Task", &t2).await;
     assert_eq!(b["total"], 2, "for: p2 on both tasks");
 }
+
+/// During the upgrade from 0.16 the index serving searches has no
+/// compartments (`_compartment`) yet: a patient-scoped search must fall back
+/// to testing each match, not find nothing.
+#[tokio::test]
+async fn patient_scoped_searches_on_an_index_without_compartments() {
+    let (c, t, dir) = two_patients().await;
+    // Make the index look like 0.16's: no format record, no compartment rows.
+    let db = rusqlite::Connection::open(dir.path().join("i.sqlite")).unwrap();
+    db.execute("DELETE FROM index_meta WHERE key = 'index_format'", []).unwrap();
+    let removed = db
+        .execute("DELETE FROM v_ref WHERE pid IN (SELECT pid FROM param WHERE name = '_compartment')", [])
+        .unwrap();
+    assert!(removed > 0, "the compartment rows were there");
+    drop(db);
+    let (s, b) = c.get("/Observation", &t).await;
+    assert_eq!(s, 200);
+    assert_eq!(b["total"], 1, "{b}");
+    assert_eq!(b["entry"][0]["resource"]["id"], "o-p1");
+    let (_, b) = c.get("/Observation?_summary=count", &t).await;
+    assert_eq!(b["total"], 1);
+    // Quantities aren't in such an index either: 503, not an empty result.
+    let (s, _) = c.get("/Observation?value-quantity=gt1", ADMIN_KEY).await;
+    assert_eq!(s, 503);
+}

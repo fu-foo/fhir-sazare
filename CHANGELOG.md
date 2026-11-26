@@ -7,6 +7,10 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
 ## Unreleased
 
 ### Fixed
+- Stopping the server while it rebuilt the search index in the background
+  (`sazare-server stop`, SIGTERM) waited for the rebuild to finish — up to an hour at 10M
+  resources — after logging that it had shut down. The rebuild now stops at once; its
+  partial index is deleted and built again on the next start or `$reindex`.
 - The `latest` Docker image follows releases only. Every push to `main` used to rebuild
   it, so `latest` (used by `docker-compose.yml`) could be an unreleased build; the newest
   `main` is now the `edge` tag.
@@ -29,7 +33,8 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
   the same test the access check applies), and the compartment is one more criterion of
   the search: pages and totals come straight from the index. The page is still checked
   against the compartment. The first start rebuilds the search index once, in the
-  background.
+  background; until it switches, patient-scoped searches test each match as before, and
+  quantity searches answer 503.
 
 ## 0.16.0 — 2026-11-26
 

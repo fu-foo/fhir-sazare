@@ -195,8 +195,9 @@ pub fn visible_matches(
 /// A search by a compartment-restricted user: the page `query` asks for and
 /// the total, of the matches they may see. On a v2 index the patient's
 /// compartment is one more criterion (`_compartment`, indexed with the same
-/// test the access check applies), so the index pages it; a v1 index (only
-/// while its replacement is built) reads every match to filter it.
+/// test the access check applies), so the index pages it; an index without
+/// compartments (v1, or v2 from 0.16 — only while its replacement is built)
+/// reads every match to filter it.
 pub fn compartment_search(
     state: &AppState,
     executor: &SearchExecutor<'_>,
@@ -212,7 +213,7 @@ pub fn compartment_search(
         // Not a compartment type: the access check lets every match through.
         return executor.search_with_total(resource_type, query);
     }
-    if !index.is_v1() {
+    if index.has_compartments() {
         let mut q = query.clone();
         q.parameters.push(sazare_core::SearchParameter {
             name: sazare_store::COMPARTMENT_PARAM.to_string(),

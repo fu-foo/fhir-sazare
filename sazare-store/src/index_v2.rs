@@ -57,6 +57,9 @@ CREATE TABLE IF NOT EXISTS index_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL
 
 const VALUE_TABLES: [&str; 7] = ["v_token", "v_string", "v_date", "v_number", "v_quantity", "v_ref", "v_ref_text"];
 
+/// `index_meta` key: the format the index was written in.
+const FORMAT_KEY: &str = "index_format";
+
 /// A probe count at or above this means "large": not worth counting further.
 #[cfg(not(test))]
 const PROBE_CAP: i64 = 10_001;
@@ -172,7 +175,25 @@ impl IndexV2 {
         Self::attach_text(&conn, path)?;
         conn.execute_batch("PRAGMA fts.journal_mode=WAL;")?;
         conn.execute_batch(TEXT_SCHEMA)?;
-        Ok(Self::with(conn))
+        let index = Self::with(conn);
+        // A new (empty) index is in this release's format; one without the
+        // record was written by 0.16 (format 3).
+        if index.get_meta(FORMAT_KEY)?.is_none() && index.is_empty_of_keys()? {
+            index.set_meta(FORMAT_KEY, &crate::INDEX_FORMAT.to_string())?;
+        }
+        Ok(index)
+    }
+
+    fn is_empty_of_keys(&self) -> Result<bool> {
+        let any: bool = self.conn.query_row("SELECT EXISTS (SELECT 1 FROM rkey)", [], |r| r.get(0))?;
+        Ok(!any)
+    }
+
+    /// The index format the file was written in (`INDEX_FORMAT`; 3 for an
+    /// index from 0.16, which didn't record it). An older format answers
+    /// searches while its replacement is built, without what it lacks.
+    pub fn format(&self) -> Result<u32> {
+        Ok(self.get_meta(FORMAT_KEY)?.and_then(|v| v.parse().ok()).unwrap_or(3))
     }
 
     /// Open an existing index read-only, for searches beside the writer.

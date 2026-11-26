@@ -70,6 +70,25 @@ impl SearchIndex {
         matches!(self.engine, Engine::V1(_))
     }
 
+    /// The index holds each resource's patient compartments (`_compartment`,
+    /// format 4): patient-scoped searches can narrow in it. An older index —
+    /// serving while its replacement is built — can't.
+    pub fn has_compartments(&self) -> bool {
+        self.v2_format() >= 4
+    }
+
+    /// The index holds quantities (format 4).
+    pub fn has_quantities(&self) -> bool {
+        self.v2_format() >= 4
+    }
+
+    fn v2_format(&self) -> u32 {
+        match &self.engine {
+            Engine::V1(_) => 0,
+            Engine::V2(i) => i.format().unwrap_or(3),
+        }
+    }
+
     /// Start recording which resources this index writes (see `journal`).
     pub fn start_journal(&self) {
         *self.journal.borrow_mut() = Some(Default::default());
