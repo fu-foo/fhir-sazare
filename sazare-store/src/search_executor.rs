@@ -42,16 +42,14 @@ impl<'a> SearchExecutor<'a> {
     /// The page of ids `query` asks for (`_sort`, `_offset`, `_count`) and
     /// the total number of matches.
     pub fn search_with_total(&self, resource_type: &str, query: &SearchQuery) -> Result<(Vec<String>, usize), String> {
+        // An index from before quantities were indexed (v1, 0.16), still
+        // serving while its replacement is built.
+        if !self.index.has_quantities() && uses_quantity(query) {
+            return Err(format!("{INDEX_NOT_READY}: quantity searches need it (GET /health shows the progress)"));
+        }
         match self.index.engine() {
             Engine::V1(index) => V1Executor::new(self.store, index).search_with_total(resource_type, query),
-            Engine::V2(index) => {
-                // An index from before quantities were indexed (0.16), still
-                // serving while its replacement is built.
-                if !self.index.has_quantities() && uses_quantity(query) {
-                    return Err(format!("{INDEX_NOT_READY}: quantity searches need it (GET /health shows the progress)"));
-                }
-                index.search_with_total(resource_type, query)
-            }
+            Engine::V2(index) => index.search_with_total(resource_type, query),
         }
     }
 
@@ -208,6 +206,7 @@ fn uses_quantity(q: &SearchQuery) -> bool {
     q.parameters.iter().any(|p| p.param_type == SearchParamType::Quantity)
         || q.chain_parameters.iter().any(|c| c.target_param_type == SearchParamType::Quantity)
         || q.has_parameters.iter().any(|h| h.target_param_type == SearchParamType::Quantity)
+        || q.sort.iter().any(|k| k.param_type == Some(SearchParamType::Quantity))
 }
 
 /// Searches on a v1 index.

@@ -145,10 +145,11 @@ def status(path):
 
 # A search only the new index can answer (quantity): 503 while the old one serves.
 if get("health").get("index", {}).get("state") == "rebuilding":
-    code = status("Observation?value-quantity=gt0")
-    if code != 503 and get("health").get("index", {}).get("state") == "rebuilding":
-        sys.exit(f"a quantity search during the rebuild answered {code}, not 503")
-    print(f"quantity search during the rebuild: {code}")
+    for q in ("Observation?value-quantity=gt0", "Observation?_sort=-value-quantity"):
+        code = status(q)
+        if code != 503 and get("health").get("index", {}).get("state") == "rebuilding":
+            sys.exit(f"{q} during the rebuild answered {code}, not 503")
+        print(f"{q} during the rebuild: {code}")
 # A write while the rebuild runs: replayed into the new index.
 req = urllib.request.Request(f"{BASE}/Patient/upgrade-check", method="PUT",
                              data=json.dumps({"resourceType": "Patient", "id": "upgrade-check",

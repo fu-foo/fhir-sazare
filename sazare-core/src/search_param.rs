@@ -25,6 +25,9 @@ pub struct SearchQuery {
 pub struct SortKey {
     pub name: String,
     pub descending: bool,
+    /// The parameter's type, when the parse knew the resource type and the
+    /// registry has the name (`None` for `_id`, `_lastUpdated`).
+    pub param_type: Option<SearchParamType>,
 }
 
 /// A reverse-chained `_has` search parameter (one level).
@@ -221,7 +224,8 @@ impl SearchQuery {
                         Some(rest) => (rest, true),
                         None => (k, false),
                     };
-                    sort.push(SortKey { name: name.to_string(), descending });
+                    let param_type = resource_type.and_then(|rt| registry.lookup_param_type(rt, name));
+                    sort.push(SortKey { name: name.to_string(), descending, param_type });
                 }
                 continue;
             }
@@ -783,9 +787,9 @@ mod tests {
         assert_eq!(
             query.sort,
             vec![
-                SortKey { name: "date".into(), descending: true },
-                SortKey { name: "status".into(), descending: false },
-                SortKey { name: "_id".into(), descending: false },
+                SortKey { name: "date".into(), descending: true, param_type: None },
+                SortKey { name: "status".into(), descending: false, param_type: None },
+                SortKey { name: "_id".into(), descending: false, param_type: None },
             ]
         );
     }

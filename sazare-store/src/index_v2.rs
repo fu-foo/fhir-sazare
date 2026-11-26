@@ -160,6 +160,8 @@ pub struct IndexV2 {
     tids: RefCell<HashMap<String, i64>>,
     pids: RefCell<HashMap<(i64, String), (i64, String)>>,
     sids: RefCell<HashMap<String, i64>>,
+    /// `index_format`, read once: a file's format never changes once written.
+    format: u32,
 }
 
 impl IndexV2 {
@@ -175,11 +177,12 @@ impl IndexV2 {
         Self::attach_text(&conn, path)?;
         conn.execute_batch("PRAGMA fts.journal_mode=WAL;")?;
         conn.execute_batch(TEXT_SCHEMA)?;
-        let index = Self::with(conn);
+        let index = Self::with(conn)?;
         // A new (empty) index is in this release's format; one without the
         // record was written by 0.16 (format 3).
         if index.get_meta(FORMAT_KEY)?.is_none() && index.is_empty_of_keys()? {
             index.set_meta(FORMAT_KEY, &crate::INDEX_FORMAT.to_string())?;
+            return Ok(Self { format: crate::INDEX_FORMAT, ..index });
         }
         Ok(index)
     }
@@ -192,8 +195,8 @@ impl IndexV2 {
     /// The index format the file was written in (`INDEX_FORMAT`; 3 for an
     /// index from 0.16, which didn't record it). An older format answers
     /// searches while its replacement is built, without what it lacks.
-    pub fn format(&self) -> Result<u32> {
-        Ok(self.get_meta(FORMAT_KEY)?.and_then(|v| v.parse().ok()).unwrap_or(3))
+    pub fn format(&self) -> u32 {
+        self.format
     }
 
     /// Open an existing index read-only, for searches beside the writer.
@@ -204,7 +207,7 @@ impl IndexV2 {
         conn.busy_timeout(std::time::Duration::from_secs(5))?;
         // Attached files open with the main connection's flags: read-only too.
         Self::attach_text(&conn, path)?;
-        Ok(Self::with(conn))
+        Self::with(conn)
     }
 
     fn attach_text(conn: &Connection, path: &Path) -> Result<()> {
@@ -220,8 +223,10 @@ impl IndexV2 {
         Ok(())
     }
 
-    fn with(conn: Connection) -> Self {
-        Self { conn, tids: Default::default(), pids: Default::default(), sids: Default::default() }
+    fn with(conn: Connection) -> Result<Self> {
+        let mut index = Self { conn, tids: Default::default(), pids: Default::default(), sids: Default::default(), format: 0 };
+        index.format = index.get_meta(FORMAT_KEY)?.and_then(|v| v.parse().ok()).unwrap_or(3);
+        Ok(index)
     }
 
     /// Forget cached dictionary keys (after a failed write rolled some back).

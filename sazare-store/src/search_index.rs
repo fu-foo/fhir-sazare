@@ -85,7 +85,7 @@ impl SearchIndex {
     fn v2_format(&self) -> u32 {
         match &self.engine {
             Engine::V1(_) => 0,
-            Engine::V2(i) => i.format().unwrap_or(3),
+            Engine::V2(i) => i.format(),
         }
     }
 

@@ -35,7 +35,11 @@ auth:
 }
 
 async fn start(config: ServerConfig) -> (String, TempDir) {
-    let dir = TempDir::new().unwrap();
+    start_in(config, TempDir::new().unwrap()).await
+}
+
+/// A server on the files in `dir` (a second one reopens what a first wrote).
+async fn start_in(config: ServerConfig, dir: TempDir) -> (String, TempDir) {
     let app_names = sazare_server::apps::discover_app_names(&config);
     let state = Arc::new(AppState {
         store: SqliteStore::open(dir.path().join("r.sqlite")).unwrap(),
@@ -595,8 +599,9 @@ async fn patient_scoped_searches_return_exactly_the_compartment() {
 /// to testing each match, not find nothing.
 #[tokio::test]
 async fn patient_scoped_searches_on_an_index_without_compartments() {
-    let (c, t, dir) = two_patients().await;
-    // Make the index look like 0.16's: no format record, no compartment rows.
+    let (_, t, dir) = two_patients().await;
+    // Make the index look like 0.16's: no format record, no compartment rows;
+    // then a server that opens it (a file's format is read when it's opened).
     let db = rusqlite::Connection::open(dir.path().join("i.sqlite")).unwrap();
     db.execute("DELETE FROM index_meta WHERE key = 'index_format'", []).unwrap();
     let removed = db
@@ -604,6 +609,8 @@ async fn patient_scoped_searches_on_an_index_without_compartments() {
         .unwrap();
     assert!(removed > 0, "the compartment rows were there");
     drop(db);
+    let (base, _dir) = start_in(secured_config(), dir).await;
+    let c = Client { http: reqwest::Client::new(), base };
     let (s, b) = c.get("/Observation", &t).await;
     assert_eq!(s, 200);
     assert_eq!(b["total"], 1, "{b}");
@@ -612,5 +619,8 @@ async fn patient_scoped_searches_on_an_index_without_compartments() {
     assert_eq!(b["total"], 1);
     // Quantities aren't in such an index either: 503, not an empty result.
     let (s, _) = c.get("/Observation?value-quantity=gt1", ADMIN_KEY).await;
+    assert_eq!(s, 503);
+    // Nor a sort by one (it would come back unsorted).
+    let (s, _) = c.get("/Observation?_sort=-value-quantity", ADMIN_KEY).await;
     assert_eq!(s, 503);
 }
