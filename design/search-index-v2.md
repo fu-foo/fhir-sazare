@@ -1,6 +1,6 @@
 # Search index v2
 
-Status: **draft, revision 2** (after the first external review) · Target: 0.15 (before 1.0) · Author: Claude Code, with the maintainer
+Status: **approved for milestone 0, revision 3** (after two external reviews) · Target: 0.15 (before 1.0) · Author: Claude Code, with the maintainer
 
 ## 1. Why
 
@@ -163,7 +163,10 @@ CREATE TABLE type_count (tid INTEGER PRIMARY KEY, n INTEGER NOT NULL);          
   (`lo < qhi AND hi > qlo`) the pid's longest span (`param.max_span`, kept up to date on
   write) bounds the scan: `lo >= qlo - max_span AND lo < qhi`. Instants and dates have
   short spans, so this stays a narrow range; a parameter holding long Periods gets a wider
-  one. (v1 has the same weakness: `code=…&date=ge…` took 6 s.)
+  one. (v1 has the same weakness: `code=…&date=ge…` took 6 s.) Open-ended Periods
+  (`hi = i64::MAX`) are left out of `max_span` and matched by a separate seek on
+  `v_date_h` (`hi = MAX AND lo < qhi`), so one open Period can't turn every `eq` into a
+  full scan.
 - **Compartment membership** is indexed for every compartment type, including types with
   no search parameters (`Consent`, `Basic`, …): extraction writes the compartment's
   reference fields under an internal pid `_compartment` into `v_ref`. Compartment
@@ -288,7 +291,10 @@ open SQLite file can't be removed.
    recorded, replayed before it reached the store, and then be missing from the new
    index). The rest of `pending` is replayed, `ready = 1` is committed, readers and the
    writer move to the new files, the old connections are closed, then the old files are
-   deleted. Only this last step blocks writes, for a moment.
+   deleted. Only this last step blocks writes, for a moment. Searches still running on
+   the old generation keep it open; it is closed and its files deleted when the last of
+   them finishes (the generation is reference-counted and marked delete-on-drop at the
+   switch) — needed on Windows, harmless elsewhere.
 
 **Operations.** Progress in `/health` and `/metrics`. `POST /$reindex` while a build runs
 is a 409. Config `index.rebuild: background | blocking | manual` (default `background`;
@@ -297,8 +303,11 @@ new generations coexist during the build (at 10M resources about 12.6 GB resourc
 60 GB old index and FTS + ~15 GB new: plan for ~90 GB free).
 
 **Later parameter changes** don't need a new generation: `rid`s and the FTS file stay, and
-only the changed parameters' rows (`pid`s) are rebuilt in place, in the background, using
-the same pending/drain steps.
+only the changed parameters are rebuilt, in the background, with the same pending/drain
+steps. A changed parameter is written under a **new staging `pid`**; searches keep using
+the old one until the rebuild is complete, then `param` switches to the new `pid` and the
+old rows are deleted — so a parameter change never makes searches on that parameter
+incomplete, even briefly.
 
 Downgrade after the switch is by restoring the backup (as today: migrations are
 forward-only).
@@ -365,6 +374,9 @@ forward-only).
 
 ## Revision history
 
+- r3 — implementation notes from the second review: open-ended Periods and `max_span`,
+  reference-counted old generation (delete when the last reader finishes), staging `pid`s
+  for parameter changes. Reviewer: go for milestone 0.
 - r2 — after the first external review: probe rules (seekable nodes only, saturation
   ranking), date `ge`/`eq` indexing, `count(DISTINCT rid)`, `Has`/`Chain` type and
   existence checks, compartment pid for all compartment types, read-connection pool,
