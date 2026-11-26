@@ -22,23 +22,12 @@ pub fn index_fingerprint(registry: &SearchParamRegistry) -> String {
 pub async fn reindex(
     State(state): State<Arc<AppState>>,
 ) -> Result<(StatusCode, Json<Value>), (StatusCode, Json<Value>)> {
-    if state.rebuild.is_running() {
+    if !crate::index_generation::spawn(state.clone(), "requested with $reindex") {
         return Err((
             StatusCode::CONFLICT,
             Json(json!({"resourceType": "OperationOutcome", "issue": [{"severity": "error", "code": "conflict",
                 "diagnostics": "A rebuild of the search index is already running (GET /health shows its progress)"}]})),
         ));
-    }
-    let st = state.clone();
-    tokio::spawn(async move {
-        let _ = crate::index_generation::rebuild(st, "requested with $reindex").await;
-    });
-    // Let the task register, so an immediate /health shows it.
-    for _ in 0..50 {
-        if state.rebuild.is_running() {
-            break;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
     }
     Ok((
         StatusCode::ACCEPTED,

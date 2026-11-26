@@ -131,6 +131,9 @@ struct Compiled {
     distinct: bool,
     /// The query has no criteria (every resource of the type).
     unfiltered: bool,
+    /// Every criterion as one per-candidate check (`?X?` for the rid): a
+    /// sort walk tests each row of the sort key's index with it.
+    probe: Option<Sql>,
     /// Distinct matches for counting, when several criteria are each large:
     /// their sets intersected (a merge, not a probe per row), the rest probed.
     count_sql: Option<Sql>,
@@ -318,15 +321,20 @@ impl IndexV2 {
 
     /// Add one value to a resource's rows (keeping the others).
     pub fn add_value(&self, resource_type: &str, id: &str, name: &str, kind: &str, value: &str, system: Option<&str>) -> Result<()> {
+        let r = self.add_value_inner(resource_type, id, name, kind, value, system);
+        if r.is_err() {
+            self.forget();
+        }
+        r
+    }
+
+    fn add_value_inner(&self, resource_type: &str, id: &str, name: &str, kind: &str, value: &str, system: Option<&str>) -> Result<()> {
         let tx = self.conn.unchecked_transaction()?;
         let tid = self.tid(resource_type, true)?.expect("created");
         let rid = self.rid(tid, id, true)?;
         let (pid, _) = self.pid(tid, name, Some(kind))?.expect("created");
-        let had: bool = self.conn.query_row(
-            &format!("SELECT EXISTS (SELECT 1 FROM {t} INDEXED BY {t}_r WHERE rid = ?1 AND pid = ?2)", t = table_for(kind)),
-            params![rid, pid],
-            |r| r.get(0),
-        )?;
+        let has = self.has_value(pid, kind).with_rid(&rid.to_string());
+        let had: bool = self.conn.query_row(&format!("SELECT {}", has.text), params_from_iter(has.args.iter()), |r| r.get(0))?;
         if self.write_value(pid, kind, value, system, rid)? && had {
             self.conn.execute("UPDATE param SET multi = 1 WHERE pid = ?1 AND multi = 0", params![pid])?;
         }
@@ -567,15 +575,12 @@ impl IndexV2 {
             // Sorted over a large set: walk the first key's index in order and
             // stop at the page, instead of gathering every candidate's key.
             let want = offset.saturating_add(count.unwrap_or(usize::MAX / 2));
-            self.walk_sorted(tid, &query.sort, filter, want).map_err(err)?.into_iter().skip(offset).collect()
-        } else {
-            let mut rids = self.rids(&sql).map_err(err)?;
-            self.sort_rids(tid, &query.sort, &mut rids).map_err(err)?;
-            let mut page: Vec<i64> = rids.into_iter().skip(offset).collect();
-            if let Some(n) = count {
-                page.truncate(n);
+            match self.walk_sorted(tid, &query.sort, filter, c.probe.as_ref(), total, want).map_err(err)? {
+                Some(walked) => walked.into_iter().skip(offset).collect(),
+                None => self.gathered_page(tid, &query.sort, &sql, offset, count).map_err(err)?,
             }
-            page
+        } else {
+            self.gathered_page(tid, &query.sort, &sql, offset, count).map_err(err)?
         };
         let total = total.unwrap_or(offset + page.len());
         if let Some(n) = query.count {
@@ -583,6 +588,17 @@ impl IndexV2 {
         }
         let ids = self.ids_for(&page).map_err(err)?;
         Ok((ids, total))
+    }
+
+    /// A sorted page by gathering every match's keys and sorting them.
+    fn gathered_page(&self, tid: i64, keys: &[SortKey], sql: &Sql, offset: usize, count: Option<usize>) -> Result<Vec<i64>> {
+        let mut rids = self.rids(sql)?;
+        self.sort_rids(tid, keys, &mut rids)?;
+        let mut page: Vec<i64> = rids.into_iter().skip(offset).collect();
+        if let Some(n) = count {
+            page.truncate(n);
+        }
+        Ok(page)
     }
 
     /// The number of matches: `type_count` without criteria.
@@ -605,9 +621,23 @@ impl IndexV2 {
     /// descending), groups of equal first keys ordered by the remaining keys,
     /// then the rids without a value, in rid order. With `filter`, only its
     /// matches.
-    fn walk_sorted(&self, tid: i64, keys: &[SortKey], filter: Option<&Sql>, want: usize) -> Result<Vec<i64>> {
+    ///
+    /// Each row of the walk is tested against the filter one of two ways: a
+    /// probe per row (`EXISTS` on the by-resource indexes; nothing to build,
+    /// so the first page of a broad filter is immediate), or membership in
+    /// the filter's matches, built once (cheap per row; better when the
+    /// filter is narrow and the walk passes many rows to fill the page).
+    /// `None`: the first key has no ordered index (references).
+    fn walk_sorted(
+        &self,
+        tid: i64,
+        keys: &[SortKey],
+        filter: Option<&Sql>,
+        probe: Option<&Sql>,
+        total: Option<usize>,
+        want: usize,
+    ) -> Result<Option<Vec<i64>>> {
         let first = &keys[0];
-        let member = filter.map(|f| (format!(" AND rid IN ({})", f.text), f.args.clone())).unwrap_or_default();
         let mut out: Vec<i64> = Vec::new();
         let mut seen = std::collections::HashSet::new();
         if let Some((pid, kind)) = self.pid(tid, &first.name, None)? {
@@ -615,12 +645,33 @@ impl IndexV2 {
                 "date" => ("v_date", "lo"),
                 "number" => ("v_number", "val"),
                 "string" => ("v_string", "norm"),
-                _ => ("v_token", "code"),
+                "token" => ("v_token", "code"),
+                _ => return Ok(None),
+            };
+            // Rows the walk visits ≈ want × type size / matches; a probe
+            // costs ~2.5 µs a row, building the membership ~0.4 µs a match.
+            let by_probe = match (filter, total) {
+                (None, _) => false,
+                (Some(_), None) => true,
+                (Some(_), Some(t)) => {
+                    let n: i64 = self
+                        .conn
+                        .query_row("SELECT coalesce((SELECT n FROM type_count WHERE tid = ?1), 0)", params![tid], |r| r.get(0))?;
+                    walk_by_probe(t as f64, want as f64, n as f64)
+                }
+            };
+            let (cond, cond_args) = match (filter, probe) {
+                (Some(_), Some(p)) if by_probe => {
+                    let p = p.with_rid("w.rid");
+                    (format!(" AND {}", p.text), p.args)
+                }
+                (Some(f), _) => (format!(" AND w.rid IN ({})", f.text), f.args.clone()),
+                (None, _) => (String::new(), Vec::new()),
             };
             let dir = if first.descending { "DESC" } else { "ASC" };
-            let sql = format!("SELECT rid, {col} FROM {table} NOT INDEXED WHERE pid = ?{} ORDER BY {col} {dir}", member.0);
+            let sql = format!("SELECT w.rid, w.{col} FROM {table} w NOT INDEXED WHERE w.pid = ?{cond} ORDER BY w.{col} {dir}");
             let mut args = vec![Arg::Int(pid)];
-            args.extend(member.1.clone());
+            args.extend(cond_args);
             let mut stmt = self.conn.prepare(&sql)?;
             let mut rows = stmt.query(params_from_iter(args.iter()))?;
             let mut group: Vec<i64> = Vec::new();
@@ -681,7 +732,7 @@ impl IndexV2 {
             out.extend(rest);
         }
         out.truncate(want);
-        Ok(out)
+        Ok(Some(out))
     }
 
     fn rids(&self, sql: &Sql) -> Result<Vec<i64>> {
@@ -728,6 +779,16 @@ impl IndexV2 {
                     "date" => ("SELECT rid, lo FROM v_date INDEXED BY v_date_r WHERE rid = ?1 AND pid = ?2", true),
                     "number" => ("SELECT rid, val FROM v_number INDEXED BY v_number_r WHERE rid = ?1 AND pid = ?2", true),
                     "string" => ("SELECT rid, norm FROM v_string INDEXED BY v_string_r WHERE rid = ?1 AND pid = ?2", false),
+                    // A reference sorts by its text: "Type/id" for a local
+                    // target, else as written (bare-id copies left out).
+                    "reference" => (
+                        "SELECT v.rid, t.name || '/' || k.id FROM v_ref v INDEXED BY v_ref_r \
+                         CROSS JOIN rkey k ON k.rid = v.target CROSS JOIN rtype t ON t.tid = k.tid \
+                         WHERE v.rid = ?1 AND v.pid = ?2 \
+                         UNION ALL SELECT rid, value FROM v_ref_text INDEXED BY v_ref_text_r \
+                         WHERE rid = ?1 AND pid = ?2 AND (value LIKE '%/%' OR value LIKE '%:%' OR value LIKE '#%')",
+                        false,
+                    ),
                     _ => ("SELECT rid, code FROM v_token INDEXED BY v_token_r WHERE rid = ?1 AND pid = ?2", false),
                 };
                 let mut stmt = self.conn.prepare_cached(sql)?;
@@ -783,7 +844,7 @@ impl IndexV2 {
         }
         let all_of_type = Sql::new("SELECT rid FROM rkey INDEXED BY rkey_live WHERE tid = ? AND present = 1", vec![Arg::Int(tid)]);
         if crits.is_empty() {
-            return Ok(Some(Compiled { sql: all_of_type, distinct: false, unfiltered: true, count_sql: None }));
+            return Ok(Some(Compiled { sql: all_of_type, distinct: false, unfiltered: true, probe: None, count_sql: None }));
         }
         // Drive from the smallest seekable criterion (bounded probe counts;
         // ties and saturated counts by rank); the others are checked per row.
@@ -855,12 +916,29 @@ impl IndexV2 {
             }
             Sql::new(text, args)
         });
-        Ok(Some(Compiled { sql: Sql::new(text, args), distinct: !unique, unfiltered: false, count_sql }))
+        let probe = Sql::new(
+            crits.iter().map(|c| c.probe.text.clone()).collect::<Vec<_>>().join(" AND "),
+            crits.iter().flat_map(|c| c.probe.args.clone()).collect(),
+        );
+        Ok(Some(Compiled { sql: Sql::new(text, args), distinct: !unique, unfiltered: false, probe: Some(probe), count_sql }))
     }
 
     fn probe_count(&self, set: &Sql) -> Result<i64> {
         let sql = format!("SELECT count(*) FROM ({} LIMIT {PROBE_CAP})", set.text);
         Ok(self.conn.query_row(&sql, params_from_iter(set.args.iter()), |r| r.get(0))?)
+    }
+
+    /// "The candidate (`?X?`) has a value for `pid`": references live in two
+    /// tables (local targets, and URLs / urn: / #contained as text).
+    fn has_value(&self, pid: i64, kind: &str) -> Sql {
+        let t = table_for(kind);
+        let mut text = format!("EXISTS (SELECT 1 FROM {t} INDEXED BY {t}_r WHERE rid = ?X? AND pid = ?)");
+        let mut args = vec![Arg::Int(pid)];
+        if kind == "reference" {
+            text = format!("({text} OR EXISTS (SELECT 1 FROM v_ref_text INDEXED BY v_ref_text_r WHERE rid = ?X? AND pid = ?))");
+            args.push(Arg::Int(pid));
+        }
+        Sql::new(text, args)
     }
 
     /// One search parameter (with its modifier and comma alternatives).
@@ -875,10 +953,7 @@ impl IndexV2 {
             Some("missing") => {
                 let want_missing = p.value.trim() == "true";
                 let has = match &pid {
-                    Some((pid, kind)) => {
-                        let t = table_for(kind);
-                        Sql::new(format!("EXISTS (SELECT 1 FROM {t} INDEXED BY {t}_r WHERE rid = ?X? AND pid = ?)"), vec![Arg::Int(*pid)])
-                    }
+                    Some((pid, kind)) => self.has_value(*pid, kind),
                     None => Sql::new("0", vec![]),
                 };
                 let probe = if want_missing { Sql::new(format!("NOT {}", has.text), has.args) } else { has };
@@ -996,28 +1071,26 @@ impl IndexV2 {
                     ),
                     _ => ("lo >= ? AND hi <= ?", vec![qs, qe], None),
                 };
-                (cond.into(), args.into_iter().map(Arg::Int).collect(), index, true)
+                // `ne` is an OR across the whole parameter: no seek.
+                let seek = p.prefix.as_deref() != Some("ne");
+                (cond.into(), args.into_iter().map(Arg::Int).collect(), index, seek)
             }
             "number" => {
                 let Some((val, half)) = number_with_precision(v) else { return Ok(None) };
-                let (cond, lo, hi) = match p.prefix.as_deref().unwrap_or("eq") {
-                    "ne" => ("(val < ? OR val >= ?)", val - half, val + half),
-                    "gt" | "sa" => ("val > ? AND ? = ?", val, val),
-                    "ge" => ("val >= ? AND ? = ?", val, val),
-                    "lt" | "eb" => ("val < ? AND ? = ?", val, val),
-                    "le" => ("val <= ? AND ? = ?", val, val),
+                let (cond, args): (&str, Vec<f64>) = match p.prefix.as_deref().unwrap_or("eq") {
+                    "ne" => ("(val < ? OR val >= ?)", vec![val - half, val + half]),
+                    "gt" | "sa" => ("val > ?", vec![val]),
+                    "ge" => ("val >= ?", vec![val]),
+                    "lt" | "eb" => ("val < ?", vec![val]),
+                    "le" => ("val <= ?", vec![val]),
                     "ap" => {
                         let d = (val.abs() * 0.1).max(half);
-                        ("val >= ? AND val <= ?", val - d, val + d)
+                        ("val >= ? AND val <= ?", vec![val - d, val + d])
                     }
-                    _ => ("val >= ? AND val < ?", val - half, val + half),
+                    _ => ("val >= ? AND val < ?", vec![val - half, val + half]),
                 };
-                let args = if cond.contains("? = ?") {
-                    vec![Arg::Real(lo), Arg::Real(hi), Arg::Real(hi)]
-                } else {
-                    vec![Arg::Real(lo), Arg::Real(hi)]
-                };
-                (cond.into(), args, None, true)
+                let seek = p.prefix.as_deref() != Some("ne");
+                (cond.into(), args.into_iter().map(Arg::Real).collect(), None, seek)
             }
             "reference" => match local_reference(v) {
                 Some((ttype, id)) => {
@@ -1116,7 +1189,21 @@ impl IndexV2 {
             prefix,
             param_type: c.target_param_type.clone(),
         };
-        let mut targets = self.parameter(ttid, &terminal)?.set;
+        let terminal_c = self.parameter(ttid, &terminal)?;
+        let mut targets = terminal_c.set;
+        // The per-candidate check, built from the end: each hop follows the
+        // candidate's own references (v_ref_r) to a target checked by the
+        // next hop's probe — no set of all targets is built.
+        let mut probe = terminal_c.probe;
+        for i in (0..c.links.len()).rev() {
+            let hop_tid = if i == 0 { tid } else { self.tid(&c.links[i - 1].target_type, false)?.unwrap_or(-1) };
+            let hop_pid = self.pid(hop_tid, &c.links[i].reference_param, None)?.map(|p| p.0).unwrap_or(-1);
+            let inner = probe.with_rid(&format!("c{i}.target"));
+            probe = Sql::new(
+                format!("EXISTS (SELECT 1 FROM v_ref c{i} INDEXED BY v_ref_r WHERE c{i}.rid = ?X? AND c{i}.pid = ? AND {})", inner.text),
+                [vec![Arg::Int(hop_pid)], inner.args].concat(),
+            );
+        }
         // Hops before the last: each set is the rids of hop i's type whose
         // reference param points into the next set.
         for i in (1..c.links.len()).rev() {
@@ -1137,10 +1224,6 @@ impl IndexV2 {
             format!("SELECT rid FROM v_ref NOT INDEXED WHERE pid = ? AND target IN ({})", targets.text),
             [vec![Arg::Int(pid)], targets.args.clone()].concat(),
         );
-        let probe = Sql::new(
-            format!("EXISTS (SELECT 1 FROM v_ref INDEXED BY v_ref_r WHERE rid = ?X? AND pid = ? AND target IN ({}))", targets.text),
-            [vec![Arg::Int(pid)], targets.args].concat(),
-        );
         // Seekable: a chain whose targets are few (a name, an identifier)
         // is the best driver; the bounded probe count says so.
         Ok(Criterion { set, probe, seekable: true, rank: 5, unique: multi == 0, equality: false })
@@ -1158,12 +1241,9 @@ impl IndexV2 {
             prefix,
             param_type: h.target_param_type.clone(),
         };
-        let sources = self.parameter(stid, &inner)?.set;
+        let inner_c = self.parameter(stid, &inner)?;
+        let sources = inner_c.set;
         let pid = self.pid(stid, &h.reference_param, None)?.map(|p| p.0).unwrap_or(-1);
-        let targets = Sql::new(
-            format!("SELECT target FROM v_ref INDEXED BY v_ref_r WHERE pid = ? AND rid IN ({})", sources.text),
-            [vec![Arg::Int(pid)], sources.args.clone()].concat(),
-        );
         // Driving: walk the matching sources, follow their references to
         // existing resources of this type, each once — a page stops early
         // instead of materializing every target first.
@@ -1177,9 +1257,28 @@ impl IndexV2 {
             ),
             [sources.args, vec![Arg::Int(pid), Arg::Int(tid)]].concat(),
         );
-        let probe = Sql::new(format!("?X? IN ({})", targets.text), targets.args);
+        // Per candidate: the sources referencing it (v_ref_t), each checked
+        // against the inner criterion — a handful of rows, not every source.
+        let check = inner_c.probe.with_rid("h.rid");
+        let probe = Sql::new(
+            format!("EXISTS (SELECT 1 FROM v_ref h INDEXED BY v_ref_t WHERE h.target = ?X? AND h.pid = ? AND {})", check.text),
+            [vec![Arg::Int(pid)], check.args].concat(),
+        );
         Ok(Criterion { set, probe, seekable: true, rank: 5, unique: true, equality: false })
     }
+}
+
+/// Whether a sort walk should test rows with probes rather than membership
+/// (see [`IndexV2::walk_sorted`]): `matches` of `size`, `want` rows wanted.
+#[cfg(not(test))]
+fn walk_by_probe(matches: f64, want: f64, size: f64) -> bool {
+    matches * matches * 0.4 > want * size * 2.5
+}
+
+/// In tests both ways run, alternating with the page size.
+#[cfg(test)]
+fn walk_by_probe(_matches: f64, want: f64, _size: f64) -> bool {
+    want as u64 % 2 == 1
 }
 
 fn table_for(kind: &str) -> &'static str {

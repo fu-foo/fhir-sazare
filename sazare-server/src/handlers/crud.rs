@@ -52,12 +52,14 @@ pub async fn create(
     Path(resource_type): Path<String>,
     request: Request,
 ) -> Result<Response, (StatusCode, Json<Value>)> {
-    // Index and store writes happen under the write gate (shared), so an index
-    // switch never finds a write between its two steps.
-    let _write_gate = state.write_gate.read().await;
     let audit_ctx = AuditContext::from_request(&request);
     let auth_user = request.extensions().get::<AuthUser>().cloned();
     let (headers, body) = extract_body(request).await?;
+    // Index and store writes happen under the write gate (shared), so an index
+    // switch never finds a write between its two steps. Taken once the body
+    // is in: a slow upload must not hold up a switch (or, behind a waiting
+    // switch, every other write).
+    let _write_gate = state.write_gate.read().await;
 
     // Compartment check: patient-scoped tokens can only create resources in their compartment
     check_compartment_write(auth_user.as_ref(), &state.compartment_def, &resource_type, &body, 'c')?;
@@ -300,12 +302,14 @@ pub async fn update(
     Path((resource_type, id)): Path<(String, String)>,
     request: Request,
 ) -> Result<Response, (StatusCode, Json<Value>)> {
-    // Index and store writes happen under the write gate (shared), so an index
-    // switch never finds a write between its two steps.
-    let _write_gate = state.write_gate.read().await;
     let audit_ctx = AuditContext::from_request(&request);
     let auth_user = request.extensions().get::<AuthUser>().cloned();
     let (headers, body) = extract_body(request).await?;
+    // Index and store writes happen under the write gate (shared), so an index
+    // switch never finds a write between its two steps. Taken once the body
+    // is in: a slow upload must not hold up a switch (or, behind a waiting
+    // switch, every other write).
+    let _write_gate = state.write_gate.read().await;
 
     // The new content must be in the caller's compartment too (the existing
     // version is checked below) — this also covers update-as-create.
@@ -505,12 +509,14 @@ pub async fn patch_resource(
     Path((resource_type, id)): Path<(String, String)>,
     request: Request,
 ) -> Result<Response, (StatusCode, Json<Value>)> {
-    // Index and store writes happen under the write gate (shared), so an index
-    // switch never finds a write between its two steps.
-    let _write_gate = state.write_gate.read().await;
     let audit_ctx = AuditContext::from_request(&request);
     let auth_user = request.extensions().get::<AuthUser>().cloned();
     let (headers, patch_body) = extract_body(request).await?;
+    // Index and store writes happen under the write gate (shared), so an index
+    // switch never finds a write between its two steps. Taken once the body
+    // is in: a slow upload must not hold up a switch (or, behind a waiting
+    // switch, every other write).
+    let _write_gate = state.write_gate.read().await;
 
     // Get existing resource
     let data = match state.store.get(&resource_type, &id) {
