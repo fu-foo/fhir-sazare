@@ -204,8 +204,8 @@ fn param_matches(entries: &Entries, p: &SearchParameter) -> bool {
         .value
         .split(',')
         .map(str::trim)
-        .filter(|v| !v.is_empty())
         .enumerate()
+        .filter(|(_, v)| !v.is_empty())
         .map(|(i, v)| {
             let prefixed = matches!(p.param_type, SearchParamType::Date | SearchParamType::Number | SearchParamType::Quantity);
             if i == 0 || !prefixed {

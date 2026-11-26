@@ -2120,6 +2120,9 @@ async fn test_quantity_search() {
     want.sort();
     assert_eq!(both, want);
     assert_eq!(ids("value-quantity=gt80||kg,70.2||kg").await.len(), 2, "the second is eq, not gt");
+    assert_eq!(ids("value-quantity=,lt71||kg").await, [w70.as_str()], "a leading comma: lt90 is still lt");
+    let r = c.get(format!("{base}/Observation?value-quantity=")).send().await.unwrap();
+    assert_eq!(r.status(), 400, "an empty quantity");
     let meta: Value = c.get(format!("{base}/metadata")).send().await.unwrap().json().await.unwrap();
     let obs = meta["rest"][0]["resource"].as_array().unwrap().iter().find(|r| r["type"] == "Observation").unwrap().clone();
     let vq = obs["searchParam"].as_array().unwrap().iter().find(|p| p["name"] == "value-quantity").cloned();

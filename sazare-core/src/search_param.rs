@@ -278,8 +278,9 @@ impl SearchQuery {
                 // Reject at parse time (a 400), comma-separated alternatives
                 // each checked (each with its own prefix); `:missing` takes
                 // true/false instead.
+                let alts = alternatives(&number);
                 if modifier.as_deref() != Some("missing")
-                    && alternatives(&number).iter().any(|n| parse_number_prefix(n).1.trim().parse::<f64>().is_err())
+                    && (alts.is_empty() || alts.iter().any(|n| parse_number_prefix(n).1.trim().parse::<f64>().is_err()))
                 {
                     return Err(format!("Invalid number '{value}' for parameter '{param_name}'"));
                 }
@@ -290,11 +291,12 @@ impl SearchQuery {
                 // With pipes it is `number|system|code`: one pipe (`5.4|mg`,
                 // a token habit) would silently match nothing.
                 let (prefix, rest) = parse_number_prefix(&value);
+                let alts = alternatives(&rest);
                 if modifier.as_deref() != Some("missing")
-                    && alternatives(&rest).iter().any(|q| {
+                    && (alts.is_empty() || alts.iter().any(|q| {
                         let q = parse_number_prefix(q).1;
                         !matches!(q.matches('|').count(), 0 | 2) || q.split('|').next().unwrap_or("").trim().parse::<f64>().is_err()
-                    })
+                    }))
                 {
                     return Err(format!(
                         "Invalid quantity '{value}' for parameter '{param_name}': expected [prefix]number, number|system|code or number||code"
@@ -477,9 +479,13 @@ fn alternatives(value: &str) -> Vec<&str> {
 /// still carry theirs (`ge2020,lt2019`, `gt140,90` — the second is `eq`).
 /// Any other parameter: its alternatives, no prefix.
 pub fn prefixed_alternatives(p: &SearchParameter) -> Vec<(Option<String>, String)> {
-    let alts = alternatives(&p.value);
-    alts.iter()
+    // Positions before dropping empty ones: in `,lt90` the `lt90` is second
+    // and carries its own prefix.
+    p.value
+        .split(',')
+        .map(str::trim)
         .enumerate()
+        .filter(|(_, v)| !v.is_empty())
         .map(|(i, v)| match (&p.param_type, i) {
             (SearchParamType::Date | SearchParamType::Number | SearchParamType::Quantity, 0) => {
                 (p.prefix.clone(), v.to_string())
@@ -904,4 +910,20 @@ mod tests {
         assert_eq!(infer_param_type("birthdate"), SearchParamType::Date);
         assert_eq!(infer_param_type("patient"), SearchParamType::Reference);
     }
+
+    #[test]
+    fn number_and_quantity_alternatives_keep_their_prefixes() {
+        let q = SearchQuery::parse_with_registry("value-quantity=,lt90", Some("Observation"), &crate::SearchParamRegistry::new()).unwrap();
+        assert_eq!(prefixed_alternatives(&q.parameters[0]), [(Some("lt".to_string()), "90".to_string())]);
+        let q = SearchQuery::parse_with_registry("value-quantity=gt140,90", Some("Observation"), &crate::SearchParamRegistry::new()).unwrap();
+        assert_eq!(
+            prefixed_alternatives(&q.parameters[0]),
+            [(Some("gt".to_string()), "140".to_string()), (Some("eq".to_string()), "90".to_string())]
+        );
+        for bad in ["value-quantity=", "value-quantity=,,", "value-quantity=5.4|mg", "value-quantity=gt5,lt"] {
+            assert!(SearchQuery::parse_with_registry(bad, Some("Observation"), &crate::SearchParamRegistry::new()).is_err(), "{bad}");
+        }
+        assert!(SearchQuery::parse_with_registry("value-quantity:missing=true", Some("Observation"), &crate::SearchParamRegistry::new()).is_ok());
+    }
+
 }
