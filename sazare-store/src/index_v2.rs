@@ -49,6 +49,14 @@ const VALUE_TABLES: [&str; 6] = ["v_token", "v_string", "v_date", "v_number", "v
 /// A probe count at or above this means "large": not worth counting further.
 const PROBE_CAP: i64 = 10_001;
 
+/// A sorted search over at most this many matches gathers their keys and
+/// sorts; above it, the sort key's index is walked in order.
+#[cfg(not(test))]
+const GATHER_MAX: i64 = 5_000;
+/// Small in tests, so the differential tests exercise both paths.
+#[cfg(test)]
+const GATHER_MAX: i64 = 8;
+
 /// A value bound into SQL.
 #[derive(Clone, Debug)]
 enum Arg {
@@ -328,10 +336,26 @@ impl IndexV2 {
         let Some(sql) = self.compile(resource_type, query).map_err(|e| e.to_string())? else {
             return Ok((Vec::new(), 0));
         };
+        let tid = self.tid(resource_type, false).map_err(|e| e.to_string())?.unwrap_or(-1);
+        let filtered = !(query.parameters.is_empty() && query.chain_parameters.is_empty() && query.has_parameters.is_empty());
+        // Sorted over a large set: walk the first key's index in order and stop
+        // at the page, instead of gathering every candidate's key.
+        if !query.sort.is_empty() {
+            let large = !filtered || self.probe_count(&sql).map_err(|e| e.to_string())? > GATHER_MAX;
+            if large {
+                let want = query.offset.unwrap_or(0) + query.count.unwrap_or(usize::MAX / 2);
+                let ordered = self
+                    .walk_sorted(tid, &query.sort, filtered.then_some(&sql), want)
+                    .map_err(|e| e.to_string())?;
+                let total = self.count(tid, filtered.then_some(&sql)).map_err(|e| e.to_string())?;
+                let page: Vec<i64> = ordered.into_iter().skip(query.offset.unwrap_or(0)).collect();
+                let ids = self.ids_for(&page).map_err(|e| e.to_string())?;
+                return Ok((ids, total));
+            }
+        }
         let mut rids = self.rids(&sql).map_err(|e| e.to_string())?;
         let total = rids.len();
         if !query.sort.is_empty() {
-            let tid = self.tid(resource_type, false).map_err(|e| e.to_string())?.unwrap_or(-1);
             self.sort_rids(tid, &query.sort, &mut rids).map_err(|e| e.to_string())?;
         }
         let offset = query.offset.unwrap_or(0).min(rids.len());
@@ -341,6 +365,103 @@ impl IndexV2 {
         }
         let ids = self.ids_for(&page).map_err(|e| e.to_string())?;
         Ok((ids, total))
+    }
+
+    /// The number of matches: `type_count` without criteria.
+    fn count(&self, tid: i64, filter: Option<&Sql>) -> Result<usize> {
+        let n: i64 = match filter {
+            None => self
+                .conn
+                .query_row("SELECT coalesce((SELECT n FROM type_count WHERE tid = ?1), 0)", params![tid], |r| r.get(0))?,
+            Some(f) => self.conn.query_row(
+                &format!("SELECT count(*) FROM ({})", f.text),
+                params_from_iter(f.args.iter()),
+                |r| r.get(0),
+            )?,
+        };
+        Ok(n as usize)
+    }
+
+    /// The first `want` rids in sort order: the first key's value index walked
+    /// in order (each rid first seen at its lowest value ascending, highest
+    /// descending), groups of equal first keys ordered by the remaining keys,
+    /// then the rids without a value, in rid order. With `filter`, only its
+    /// matches.
+    fn walk_sorted(&self, tid: i64, keys: &[SortKey], filter: Option<&Sql>, want: usize) -> Result<Vec<i64>> {
+        let first = &keys[0];
+        let member = filter.map(|f| (format!(" AND rid IN ({})", f.text), f.args.clone())).unwrap_or_default();
+        let mut out: Vec<i64> = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        if let Some((pid, kind)) = self.pid(tid, &first.name, None)? {
+            let (table, col) = match kind.as_str() {
+                "date" => ("v_date", "lo"),
+                "number" => ("v_number", "val"),
+                "string" => ("v_string", "norm"),
+                _ => ("v_token", "code"),
+            };
+            let dir = if first.descending { "DESC" } else { "ASC" };
+            let sql = format!("SELECT rid, {col} FROM {table} NOT INDEXED WHERE pid = ?{} ORDER BY {col} {dir}", member.0);
+            let mut args = vec![Arg::Int(pid)];
+            args.extend(member.1.clone());
+            let mut stmt = self.conn.prepare(&sql)?;
+            let mut rows = stmt.query(params_from_iter(args.iter()))?;
+            let mut group: Vec<i64> = Vec::new();
+            let mut group_key: Option<rusqlite::types::Value> = None;
+            let flush = |group: &mut Vec<i64>, out: &mut Vec<i64>| -> Result<()> {
+                if group.len() > 1 && keys.len() > 1 {
+                    self.sort_rids(tid, &keys[1..], group)?;
+                }
+                out.append(group);
+                Ok(())
+            };
+            while let Some(row) = rows.next()? {
+                let rid: i64 = row.get(0)?;
+                let key: rusqlite::types::Value = row.get(1)?;
+                if !seen.insert(rid) {
+                    continue;
+                }
+                if group_key.as_ref() != Some(&key) {
+                    flush(&mut group, &mut out)?;
+                    if out.len() >= want {
+                        break;
+                    }
+                    group_key = Some(key);
+                }
+                group.push(rid);
+            }
+            if out.len() < want {
+                flush(&mut group, &mut out)?;
+            }
+        }
+        if out.len() < want {
+            // Resources without a value for the first key go last (rid order).
+            let sql = match filter {
+                Some(f) => format!("SELECT rid FROM ({}) ORDER BY rid", f.text),
+                None => "SELECT rid FROM rkey INDEXED BY rkey_live WHERE tid = ? AND present = 1 ORDER BY rid".to_string(),
+            };
+            let args: Vec<Arg> = match filter {
+                Some(f) => f.args.clone(),
+                None => vec![Arg::Int(tid)],
+            };
+            let mut stmt = self.conn.prepare(&sql)?;
+            let mut rows = stmt.query(params_from_iter(args.iter()))?;
+            let mut rest = Vec::new();
+            while let Some(row) = rows.next()? {
+                let rid: i64 = row.get(0)?;
+                if !seen.contains(&rid) {
+                    rest.push(rid);
+                    if out.len() + rest.len() >= want && keys.len() == 1 {
+                        break;
+                    }
+                }
+            }
+            if keys.len() > 1 {
+                self.sort_rids(tid, &keys[1..], &mut rest)?;
+            }
+            out.extend(rest);
+        }
+        out.truncate(want);
+        Ok(out)
     }
 
     fn rids(&self, sql: &Sql) -> Result<Vec<i64>> {
