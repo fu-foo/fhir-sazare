@@ -6,6 +6,7 @@ pub mod sqlite_index;
 pub mod sqlite_audit;
 pub mod search_executor;
 pub mod index_builder;
+pub mod index_v2;
 #[cfg(test)]
 mod differential_tests;
 
