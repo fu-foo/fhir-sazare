@@ -1613,7 +1613,7 @@ async fn test_large_request_bodies() {
 async fn test_sort_and_default_page_size() {
     let (base_url, _dir) = start_test_server().await;
     let client = reqwest::Client::new();
-    for (family, birth) in [("Suzuki", "1990-03-01"), ("Abe", "1960-07-07"), ("Tanaka", "1975-12-31")] {
+    for (family, birth) in [("Silva", "1990-03-01"), ("Abbott", "1960-07-07"), ("Taylor", "1975-12-31")] {
         create(&client, &base_url, "Patient", &json!({
             "resourceType": "Patient", "name": [{"family": family}], "birthDate": birth
         }))
@@ -1631,12 +1631,12 @@ async fn test_sort_and_default_page_size() {
     };
 
     let b: Value = get("_sort=-birthdate").await.json().await.unwrap();
-    assert_eq!(families(&b), vec!["Suzuki", "Tanaka", "Abe"]);
+    assert_eq!(families(&b), vec!["Silva", "Taylor", "Abbott"]);
     let b: Value = get("_sort=family").await.json().await.unwrap();
-    assert_eq!(families(&b), vec!["Abe", "Suzuki", "Tanaka"]);
+    assert_eq!(families(&b), vec!["Abbott", "Silva", "Taylor"]);
     // The page boundary follows the sort order, and links keep _sort.
     let b: Value = get("_sort=birthdate&_count=1&_offset=1").await.json().await.unwrap();
-    assert_eq!(families(&b), vec!["Tanaka"]);
+    assert_eq!(families(&b), vec!["Taylor"]);
     let next = b["link"].as_array().unwrap().iter()
         .find(|l| l["relation"] == "next").unwrap()["url"].as_str().unwrap().to_string();
     assert!(next.contains("_sort=birthdate") && next.contains("_offset=2"), "{next}");
@@ -1887,4 +1887,24 @@ async fn test_export_jobs_are_bounded() {
     let r = c.delete(format!("{base}/$export-status/{path}")).send().await.unwrap();
     assert!(r.status().is_success(), "{}", r.status());
     assert_eq!(kick().await.unwrap().status(), 202);
+}
+
+/// `:exact` end to end — through extraction, not just the index: case
+/// matters for `:exact`, not for the default prefix or `:contains`.
+#[tokio::test]
+async fn test_string_exact_is_case_sensitive_end_to_end() {
+    let (base, _dir) = start_test_server().await;
+    let c = reqwest::Client::new();
+    create(&c, &base, "Patient", &json!({"resourceType": "Patient", "name": [{"family": "McAllister", "given": ["Ada"]}]})).await;
+    let total = |q: &str| {
+        let c = c.clone();
+        let url = format!("{base}/Patient?{q}&_summary=count");
+        async move { c.get(url).send().await.unwrap().json::<Value>().await.unwrap()["total"].clone() }
+    };
+    assert_eq!(total("family:exact=McAllister").await, 1);
+    assert_eq!(total("family:exact=mcallister").await, 0);
+    assert_eq!(total("family:exact=MCALLISTER").await, 0);
+    assert_eq!(total("family=mcall").await, 1, "prefix stays case-insensitive");
+    assert_eq!(total("family:contains=ALLIS").await, 1, ":contains stays case-insensitive");
+    assert_eq!(total("name:exact=Ada").await, 1);
 }

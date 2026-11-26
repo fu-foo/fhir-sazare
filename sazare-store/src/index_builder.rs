@@ -6,7 +6,7 @@ pub struct IndexBuilder;
 
 /// Bump when the way resources are turned into index rows changes (not just
 /// the parameter set), so existing indexes are rebuilt on upgrade.
-pub const INDEX_FORMAT: u32 = 1;
+pub const INDEX_FORMAT: u32 = 2;
 
 impl IndexBuilder {
     /// Extract all searchable indices from a resource using a registry.
@@ -134,7 +134,7 @@ impl IndexBuilder {
                     let mut parts = Vec::new();
                     string_parts(node, &mut parts);
                     for s in parts {
-                        push(s.to_lowercase(), None);
+                        push(s.to_string(), None);
                     }
                 }
                 SearchParamType::Date => {
@@ -282,7 +282,7 @@ impl IndexBuilder {
         };
         for element in elements {
             if let Some(s) = element.get(path[1].as_str()).and_then(|v| v.as_str()) {
-                let value = if param_type == "string" { s.to_lowercase() } else { s.to_string() };
+                let value = s.to_string();
                 indices.push((name.to_string(), param_type.to_string(), value, None));
             }
         }
@@ -351,7 +351,7 @@ impl IndexBuilder {
         };
 
         let push = |s: &str, indices: &mut Vec<(String, String, String, Option<String>)>| {
-            indices.push((name.to_string(), param_type.to_string(), s.to_lowercase(), None));
+            indices.push((name.to_string(), param_type.to_string(), s.to_string(), None));
         };
 
         // Specific component requested (e.g. address-city).
@@ -523,11 +523,7 @@ impl IndexBuilder {
             }
         }
         if let Some(s) = current.as_str() {
-            let value = if param_type == "string" {
-                s.to_lowercase()
-            } else {
-                s.to_string()
-            };
+            let value = s.to_string();
             indices.push((name.to_string(), param_type.to_string(), value.clone(), None));
             for alias in aliases {
                 indices.push((alias.to_string(), param_type.to_string(), value.clone(), None));
@@ -549,11 +545,7 @@ impl IndexBuilder {
         if let Some(array) = resource.get(path[0].as_str()).and_then(|v| v.as_array()) {
             for item in array {
                 if let Some(val) = item.get(path[1].as_str()).and_then(|v| v.as_str()) {
-                    let value = if param_type == "string" {
-                        val.to_lowercase()
-                    } else {
-                        val.to_string()
-                    };
+                    let value = val.to_string();
                     indices.push((name.to_string(), param_type.to_string(), value, None));
                 }
             }
@@ -576,11 +568,7 @@ impl IndexBuilder {
                 if let Some(inner) = item.get(path[1].as_str()).and_then(|v| v.as_array()) {
                     for val in inner {
                         if let Some(s) = val.as_str() {
-                            let value = if param_type == "string" {
-                                s.to_lowercase()
-                            } else {
-                                s.to_string()
-                            };
+                            let value = s.to_string();
                             indices.push((name.to_string(), param_type.to_string(), value, None));
                         }
                     }
@@ -856,7 +844,7 @@ mod tests {
         let patient = json!({
             "resourceType": "Patient",
             "name": [
-                {"text": "Yamada Taro"},
+                {"text": "Moreau Camille"},
                 {"text": "ミホン ハジメ", "extension": [{
                     "url": "http://hl7.org/fhir/StructureDefinition/iso21090-EN-representation",
                     "valueCode": "SYL"
@@ -905,15 +893,15 @@ mod tests {
     #[test]
     fn test_fhirpath_string_on_humanname_and_address() {
         let p = json!({"resourceType": "Patient",
-            "name": [{"family": "Yamada", "given": ["Taro", "T"], "text": "Yamada Taro"}],
-            "address": [{"line": ["1-2-3 Chiyoda"], "city": "Tokyo", "postalCode": "100-0001"}]});
+            "name": [{"family": "Moreau", "given": ["Camille", "C"], "text": "Moreau Camille"}],
+            "address": [{"line": ["12 Main St"], "city": "Springfield", "postalCode": "62701"}]});
         assert_eq!(
             vals(&custom_rows("x-name", "string", "Patient.name", &p)),
-            vec!["t", "taro", "yamada", "yamada taro"]
+            vec!["C", "Camille", "Moreau", "Moreau Camille"]
         );
         assert_eq!(
             vals(&custom_rows("x-addr", "string", "Patient.address", &p)),
-            vec!["1-2-3 chiyoda", "100-0001", "tokyo"]
+            vec!["12 Main St", "62701", "Springfield"]
         );
     }
 
@@ -999,15 +987,15 @@ mod tests {
 
         let indices = IndexBuilder::extract_indices("Patient", &patient);
 
-        // String values are lowercased on extract
-        assert!(indices.iter().any(|(n, _, v, _)| n == "name" && v == "smith"));
-        assert!(indices.iter().any(|(n, _, v, _)| n == "name" && v == "amy"));
-        assert!(indices.iter().any(|(n, _, v, _)| n == "name" && v == "v."));
-        assert!(indices.iter().any(|(n, _, v, _)| n == "name" && v == "mrs."));
+        // String values are indexed as written (search lower-cases them itself).
+        assert!(indices.iter().any(|(n, _, v, _)| n == "name" && v == "Smith"));
+        assert!(indices.iter().any(|(n, _, v, _)| n == "name" && v == "Amy"));
+        assert!(indices.iter().any(|(n, _, v, _)| n == "name" && v == "V."));
+        assert!(indices.iter().any(|(n, _, v, _)| n == "name" && v == "Mrs."));
 
         // Existing family/given index entries still present
-        assert!(indices.iter().any(|(n, _, v, _)| n == "family" && v == "smith"));
-        assert!(indices.iter().any(|(n, _, v, _)| n == "given" && v == "amy"));
+        assert!(indices.iter().any(|(n, _, v, _)| n == "family" && v == "Smith"));
+        assert!(indices.iter().any(|(n, _, v, _)| n == "given" && v == "Amy"));
     }
 
     #[test]
@@ -1435,15 +1423,15 @@ mod tests {
         });
 
         let indices = IndexBuilder::extract_indices("Location", &location);
-        // Whole-address param matches any component (values are lowercased).
-        assert!(indices.iter().any(|(n, t, v, _)| n == "address" && t == "string" && v == "boston"));
-        assert!(indices.iter().any(|(n, _, v, _)| n == "address" && v == "ma"));
-        assert!(indices.iter().any(|(n, _, v, _)| n == "address" && v == "100 health way"));
+        // Whole-address param matches any component.
+        assert!(indices.iter().any(|(n, t, v, _)| n == "address" && t == "string" && v == "Boston"));
+        assert!(indices.iter().any(|(n, _, v, _)| n == "address" && v == "MA"));
+        assert!(indices.iter().any(|(n, _, v, _)| n == "address" && v == "100 Health Way"));
         // Granular params index only their component.
-        assert!(indices.iter().any(|(n, _, v, _)| n == "address-city" && v == "boston"));
-        assert!(indices.iter().any(|(n, _, v, _)| n == "address-state" && v == "ma"));
+        assert!(indices.iter().any(|(n, _, v, _)| n == "address-city" && v == "Boston"));
+        assert!(indices.iter().any(|(n, _, v, _)| n == "address-state" && v == "MA"));
         assert!(indices.iter().any(|(n, _, v, _)| n == "address-postalcode" && v == "02115"));
-        assert!(indices.iter().any(|(n, _, v, _)| n == "address-country" && v == "us"));
+        assert!(indices.iter().any(|(n, _, v, _)| n == "address-country" && v == "US"));
         assert!(!indices.iter().any(|(n, _, v, _)| n == "address-city" && v == "ma"));
     }
 
@@ -1457,8 +1445,8 @@ mod tests {
         });
 
         let indices = IndexBuilder::extract_indices("Organization", &org);
-        assert!(indices.iter().any(|(n, _, v, _)| n == "address" && v == "tulsa"));
-        assert!(indices.iter().any(|(n, _, v, _)| n == "name" && v == "acme health"));
+        assert!(indices.iter().any(|(n, _, v, _)| n == "address" && v == "Tulsa"));
+        assert!(indices.iter().any(|(n, _, v, _)| n == "name" && v == "Acme Health"));
     }
 
     #[test]
@@ -1492,8 +1480,8 @@ mod tests {
         });
 
         let indices = IndexBuilder::extract_indices("RelatedPerson", &rp);
-        assert!(indices.iter().any(|(n, t, v, _)| n == "name" && t == "string" && v == "smith"));
-        assert!(indices.iter().any(|(n, _, v, _)| n == "name" && v == "jane"));
+        assert!(indices.iter().any(|(n, t, v, _)| n == "name" && t == "string" && v == "Smith"));
+        assert!(indices.iter().any(|(n, _, v, _)| n == "name" && v == "Jane"));
         assert!(indices.iter().any(|(n, _, v, _)| n == "patient" && v == "Patient/123"));
     }
 

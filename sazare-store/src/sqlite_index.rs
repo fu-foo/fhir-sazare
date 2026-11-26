@@ -1160,11 +1160,11 @@ mod tests {
     #[test]
     fn test_string_contains_and_like_escaping() {
         let index = SearchIndex::open(":memory:").unwrap();
-        index.add_index("Patient", "p1", "name", "string", Some("Yamada"), None).unwrap();
+        index.add_index("Patient", "p1", "name", "string", Some("Moreau"), None).unwrap();
         index.add_index("Patient", "p2", "name", "string", Some("50%off"), None).unwrap();
 
         // :contains substring
-        assert_eq!(index.search_string("Patient", "name", "mad", StringMatch::Contains).unwrap(), vec!["p1"]);
+        assert_eq!(index.search_string("Patient", "name", "rea", StringMatch::Contains).unwrap(), vec!["p1"]);
         // A literal % must not act as a wildcard.
         let r = index.search_string("Patient", "name", "50%", StringMatch::Prefix).unwrap();
         assert_eq!(r, vec!["p2"]);

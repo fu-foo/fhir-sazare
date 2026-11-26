@@ -413,36 +413,6 @@ impl ServerConfig {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_default_config() {
-        let config = ServerConfig::default();
-        assert_eq!(config.server.port, 8080);
-        assert_eq!(config.server.host, "127.0.0.1");
-        assert!(!config.auth.enabled);
-    }
-
-    #[test]
-    fn test_db_paths() {
-        let config = ServerConfig::default();
-        assert_eq!(
-            config.resources_db_path(),
-            PathBuf::from("data/resources.sqlite")
-        );
-        assert_eq!(
-            config.search_index_db_path(),
-            PathBuf::from("data/search_index.sqlite")
-        );
-        assert_eq!(
-            config.audit_db_path(),
-            PathBuf::from("data/audit.sqlite")
-        );
-    }
-}
-
 /// Where an unconfigured server keeps its data: `$XDG_DATA_HOME/sazare` or
 /// `~/.local/share/sazare` (Linux and other Unix), `~/Library/Application
 /// Support/sazare/data` (macOS), `%LOCALAPPDATA%\\sazare\\data` (Windows).
@@ -492,4 +462,34 @@ fn normalize(p: &Path) -> PathBuf {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_config() {
+        let config = ServerConfig::default();
+        assert_eq!(config.server.port, 8080);
+        assert_eq!(config.server.host, "127.0.0.1");
+        assert!(!config.auth.enabled);
+    }
+
+    #[test]
+    fn test_db_paths() {
+        let config = ServerConfig::default();
+        assert_eq!(
+            config.resources_db_path(),
+            PathBuf::from("data/resources.sqlite")
+        );
+        assert_eq!(
+            config.search_index_db_path(),
+            PathBuf::from("data/search_index.sqlite")
+        );
+        assert_eq!(
+            config.audit_db_path(),
+            PathBuf::from("data/audit.sqlite")
+        );
+    }
 }

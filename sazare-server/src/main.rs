@@ -210,6 +210,10 @@ async fn serve(args: Vec<String>) {
             std::process::exit(1);
         }
     };
+    // Run info left by a server that crashed names a pid and control port that
+    // aren't this server's: drop it now, so `stop` during startup can't act on
+    // them (it reports "still starting" until this server publishes its own).
+    let _ = std::fs::remove_file(&paths.run);
     tracing::info!("Starting fhir-sazare server...");
     tracing::info!(
         "Config: {}",

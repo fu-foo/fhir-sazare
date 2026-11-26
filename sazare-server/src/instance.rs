@@ -83,9 +83,11 @@ pub fn try_lock(path: &Path) -> std::io::Result<Option<InstanceLock>> {
     }
 }
 
-/// Whether a server holds the lock (probes it without keeping it).
+/// Whether a server holds the lock (probes it without keeping it). A data
+/// directory that was never served has no lock file, and looking must not
+/// create one (nor the directory).
 pub fn is_running(paths: &Paths) -> bool {
-    matches!(try_lock(&paths.lock), Ok(None))
+    paths.lock.exists() && matches!(try_lock(&paths.lock), Ok(None))
 }
 
 fn read_run_info(paths: &Paths) -> Option<RunInfo> {
@@ -268,7 +270,7 @@ pub fn stop(config: &ServerConfig) -> i32 {
     }
     // No answer from the control port: fall back to the pid.
     let Some(info) = info else {
-        eprintln!("sazare is running but left no run info; stop it by its process");
+        eprintln!("sazare is still starting (it has not published its run info yet); try again in a moment");
         return 1;
     };
     eprintln!("sazare (pid {}) did not stop when asked; terminating it", info.pid);

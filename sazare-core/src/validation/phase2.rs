@@ -912,7 +912,7 @@ mod tests {
         let resource = json!({
             "resourceType": "Patient",
             "meta": {"profile": ["http://example.com/StructureDefinition/PatientProfile"]},
-            "name": [{"family": "Yamada"}]
+            "name": [{"family": "Moreau"}]
         });
         let mut registry = ProfileRegistry::new();
         registry.add_profile(json!({

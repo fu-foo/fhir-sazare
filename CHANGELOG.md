@@ -38,9 +38,10 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
   unused copies of JP Core examples under `sazare-core/tests/fixtures/` are gone.
 
 ### Behavior changes
-- String `:exact` is case-sensitive, as FHIR defines it: `family:exact=Sato` no longer
-  matches `SATO` or `sato`. (It compared lower-cased values.) Plain and `:contains`
-  string searches stay case-insensitive.
+- String `:exact` is case-sensitive, as FHIR defines it: `family:exact=Smith` no longer
+  matches `SMITH` or `smith`. (It compared lower-cased values.) Plain and `:contains`
+  string searches stay case-insensitive. String values are now indexed as written, so the
+  first start after upgrading rebuilds the search index once.
 
 ## 0.14.0 — 2026-11-26
 
