@@ -15,6 +15,8 @@ pub struct ServerConfig {
     /// Where an implementation guide's `profiles/`, `searchparameters/` and
     /// `terminology/` directories are (see `ig_dir`).
     pub ig: IgSettings,
+    /// Search-index maintenance.
+    pub index: IndexSettings,
     pub validation: ValidationSettings,
     pub subscription: SubscriptionSettings,
     /// The configuration file this was loaded from, if any (absolute).
@@ -199,6 +201,28 @@ pub enum DefaultProfileModeSetting {
 #[serde(default)]
 pub struct AppsSettings {
     pub dir: Option<PathBuf>,
+}
+
+/// How the search index is rebuilt when it has to be (new search parameters,
+/// a new index format, a missing index).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[serde(default)]
+pub struct IndexSettings {
+    pub rebuild: RebuildMode,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RebuildMode {
+    /// Serve from the current index while a new one is built beside it, then
+    /// switch (default).
+    #[default]
+    Background,
+    /// Build before accepting requests.
+    Blocking,
+    /// Only on `POST /$reindex`; until then searches use the stale index.
+    Manual,
 }
 
 /// Implementation-guide directories.

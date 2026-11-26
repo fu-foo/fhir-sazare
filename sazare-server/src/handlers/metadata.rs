@@ -61,11 +61,14 @@ fn bulk_export_operations_for(resource_type: &str) -> Vec<Value> {
 }
 
 /// Health check (GET /health)
-pub async fn health_check() -> impl IntoResponse {
+pub async fn health_check(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    // `index.state` is "rebuilding" (with progress) while a new index generation
+    // is built; the server is up and answering either way.
     Json(json!({
         "status": "ok",
         "version": env!("CARGO_PKG_VERSION"),
-        "fhirVersion": "4.0.1"
+        "fhirVersion": "4.0.1",
+        "index": state.rebuild.to_json()
     }))
 }
 

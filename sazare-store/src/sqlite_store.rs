@@ -380,6 +380,25 @@ impl SqliteStore {
         Ok(results)
     }
 
+    /// One page of a type's current resources in id order, after `after_id`
+    /// (empty for the first page): a pass over millions of resources in
+    /// bounded memory.
+    pub fn list_page(&self, resource_type: &str, after_id: &str, limit: usize) -> Result<Vec<(String, Vec<u8>)>> {
+        let conn = self.reader();
+        let mut stmt = conn.prepare_cached(
+            "SELECT id, value FROM resources WHERE resource_type = ?1 AND id > ?2 ORDER BY id LIMIT ?3",
+        )?;
+        let rows = stmt.query_map(params![resource_type, after_id, limit as i64], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        let mut page = Vec::new();
+        for row in rows {
+            let (id, val) = row?;
+            page.push((id, val.into_bytes()));
+        }
+        Ok(page)
+    }
+
     /// List resource IDs of a type (id column only).
     ///
     /// Used by search when no parameters are given: avoids loading every

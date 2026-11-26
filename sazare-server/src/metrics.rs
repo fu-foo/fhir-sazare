@@ -130,9 +130,17 @@ pub async fn metrics(State(state): State<Arc<AppState>>) -> Response {
         }
     }
 
+    let _ = writeln!(out, "# HELP sazare_index_rebuild_remaining Resources a running index rebuild has still to read (0: none running).");
+    let _ = writeln!(out, "# TYPE sazare_index_rebuild_remaining gauge");
+    let remaining = state.rebuild.progress().map(|(d, t)| t.saturating_sub(d)).unwrap_or(0);
+    let _ = writeln!(out, "sazare_index_rebuild_remaining {remaining}");
+    let _ = writeln!(out, "# HELP sazare_index_rebuild_active Whether an index rebuild is running.");
+    let _ = writeln!(out, "# TYPE sazare_index_rebuild_active gauge");
+    let _ = writeln!(out, "sazare_index_rebuild_active {}", u8::from(state.rebuild.is_running()));
+
     let _ = writeln!(out, "# HELP sazare_database_size_bytes On-disk size of each database file (with its WAL).");
     let _ = writeln!(out, "# TYPE sazare_database_size_bytes gauge");
-    let index = state.config.search_index_db_path();
+    let index = state.index_path();
     for (name, path) in [
         ("resources", state.config.resources_db_path()),
         ("search_index", index.clone()),

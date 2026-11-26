@@ -160,6 +160,10 @@ pub struct SearchIndex {
     /// While set, single-parameter searches of this resource type only look
     /// at the ids in `temp.search_scope` (see [`SearchIndex::set_scope`]).
     scope: std::cell::RefCell<Option<String>>,
+    /// While set, the resources whose index rows were written, so a new index
+    /// generation being built beside this one can replay them
+    /// ([`SearchIndex::start_journal`]).
+    journal: std::cell::RefCell<Option<std::collections::HashSet<(String, String)>>>,
     /// Full text (`_text` / `_content`) lives in its own database file. FTS5
     /// commits in a file shared with the large `search_index` table cost
     /// ~10 ms each (measured: 0.2 ms in a file of its own), which made every
@@ -275,7 +279,7 @@ impl SearchIndex {
         // even with analysis_limit (measured: 78–140 s per index at 10M
         // resources), and it ran on every start. The covering indexes are
         // designed to give the right plans without statistics.
-        Ok(Self { conn, text, scope: std::cell::RefCell::new(None) })
+        Ok(Self { conn, text, scope: std::cell::RefCell::new(None), journal: std::cell::RefCell::new(None) })
     }
 
     /// Open an existing index read-only, for searches running beside the
@@ -284,12 +288,38 @@ impl SearchIndex {
     pub fn open_read_only(path: impl AsRef<Path>) -> Result<Self> {
         use rusqlite::OpenFlags;
         let path = path.as_ref();
-        let flags = OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX | OpenFlags::SQLITE_OPEN_URI;
+        // Not SQLITE_OPEN_URI: a plain path (one with `?` or `#` in a directory
+        // name must not be read as a URI).
+        let flags = OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX;
         let conn = Connection::open_with_flags(path, flags)?;
         conn.busy_timeout(std::time::Duration::from_secs(5))?;
         let text = Connection::open_with_flags(path.with_extension("fts.sqlite"), flags)?;
         text.busy_timeout(std::time::Duration::from_secs(5))?;
-        Ok(Self { conn, text, scope: std::cell::RefCell::new(None) })
+        Ok(Self { conn, text, scope: std::cell::RefCell::new(None), journal: std::cell::RefCell::new(None) })
+    }
+
+    /// Start recording which resources this index writes (see `journal`).
+    pub fn start_journal(&self) {
+        *self.journal.borrow_mut() = Some(Default::default());
+    }
+
+    /// The resources written since the journal started or was last taken.
+    pub fn take_journal(&self) -> Vec<(String, String)> {
+        match self.journal.borrow_mut().as_mut() {
+            Some(set) => set.drain().collect(),
+            None => Vec::new(),
+        }
+    }
+
+    /// Stop recording.
+    pub fn stop_journal(&self) {
+        *self.journal.borrow_mut() = None;
+    }
+
+    fn note(&self, resource_type: &str, resource_id: &str) {
+        if let Some(set) = self.journal.borrow_mut().as_mut() {
+            set.insert((resource_type.to_string(), resource_id.to_string()));
+        }
     }
 
     /// Add an index entry
@@ -302,6 +332,7 @@ impl SearchIndex {
         value_string: Option<&str>,
         value_system: Option<&str>,
     ) -> Result<()> {
+        self.note(resource_type, resource_id);
         let value_string_lower = value_string.map(|s| s.to_lowercase());
 
         // For date params, derive a [start, end) epoch-second range so searches
@@ -374,6 +405,7 @@ impl SearchIndex {
         entries: &[(String, String, String, Option<String>)],
         text: &ResourceText,
     ) -> Result<()> {
+        self.note(resource_type, resource_id);
         let tx = self.conn.unchecked_transaction()?;
         self.write_resource_index(resource_type, resource_id, entries)?;
         tx.commit()?;
@@ -386,6 +418,9 @@ impl SearchIndex {
     /// [`Self::replace_resource_index`] for many resources in one transaction
     /// per database (bulk import): far fewer commits than one per resource.
     pub fn replace_many(&self, items: &[IndexUpdate]) -> Result<()> {
+        for u in items {
+            self.note(&u.resource_type, &u.resource_id);
+        }
         let tx = self.conn.unchecked_transaction()?;
         for u in items {
             self.write_resource_index(&u.resource_type, &u.resource_id, &u.entries)?;
@@ -519,6 +554,7 @@ impl SearchIndex {
 
     /// Remove all index entries (and the full text) for a resource
     pub fn remove_index(&self, resource_type: &str, resource_id: &str) -> Result<()> {
+        self.note(resource_type, resource_id);
         self.conn.execute(
             "DELETE FROM search_index WHERE resource_type = ?1 AND resource_id = ?2",
             params![resource_type, resource_id],

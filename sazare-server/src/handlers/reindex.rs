@@ -1,15 +1,9 @@
 use axum::{extract::State, http::StatusCode, response::Json};
 use sazare_core::SearchParamRegistry;
-use sazare_store::{IndexBuilder, SearchIndex, SqliteStore};
 use serde_json::{json, Value};
 use std::sync::Arc;
 
 use crate::AppState;
-
-pub struct ReindexSummary {
-    pub resources_indexed: usize,
-    pub entries_written: usize,
-}
 
 /// `index_meta` key holding [`index_fingerprint`].
 pub const FINGERPRINT_KEY: &str = "param_fingerprint";
@@ -22,71 +16,33 @@ pub fn index_fingerprint(registry: &SearchParamRegistry) -> String {
     format!("format={}\n{}", sazare_store::INDEX_FORMAT, registry.fingerprint())
 }
 
-/// Rebuild the search index from the resource store in-place.
-/// Clears existing entries, then re-extracts indices for every resource.
-pub fn perform_reindex(
-    store: &SqliteStore,
-    index: &SearchIndex,
-    registry: &SearchParamRegistry,
-) -> Result<ReindexSummary, String> {
-    index.clear_all().map_err(|e| format!("clear index: {}", e))?;
-
-    let all = store.list_all(None).map_err(|e| format!("list resources: {}", e))?;
-    let mut resources_indexed = 0usize;
-    let mut entries_written = 0usize;
-
-    for (resource_type, id, bytes) in all {
-        let resource: Value = match serde_json::from_slice(&bytes) {
-            Ok(v) => v,
-            Err(e) => {
-                tracing::warn!("Skipping {}/{}: parse error: {}", resource_type, id, e);
-                continue;
-            }
-        };
-        let indices = IndexBuilder::extract_indices_with_registry(registry, &resource_type, &resource);
-        // One transaction per resource (search entries + full text), not one
-        // autocommit per entry.
-        let text = sazare_store::resource_text(&resource);
-        if let Err(e) = index.replace_resource_index(&resource_type, &id, &indices, &text) {
-            tracing::warn!("reindex {}/{}: {}", resource_type, id, e);
-            continue;
-        }
-        entries_written += indices.len();
-        resources_indexed += 1;
-    }
-
-    // Record which definitions built this index (see `index_fingerprint`).
-    if let Err(e) = index.set_meta(FINGERPRINT_KEY, &index_fingerprint(registry)) {
-        tracing::warn!("could not record the index fingerprint: {e}");
-    }
-    Ok(ReindexSummary { resources_indexed, entries_written })
-}
-
-/// POST /$reindex — admin endpoint to rebuild the search index.
+/// POST /$reindex — rebuild the search index in the background: the server
+/// keeps serving from the current index and switches when the new one is
+/// complete. 202 with the progress location; 409 while a rebuild runs.
 pub async fn reindex(
     State(state): State<Arc<AppState>>,
-) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    let index = state.index.lock().await;
-    let summary = perform_reindex(&state.store, &index, &state.search_param_registry)
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"resourceType": "OperationOutcome",
-                    "issue": [{"severity": "error", "code": "exception", "diagnostics": e}]})),
-            )
-        })?;
-
-    tracing::info!(
-        "Reindex complete: {} resources, {} index entries",
-        summary.resources_indexed,
-        summary.entries_written
-    );
-
-    Ok(Json(json!({
-        "resourceType": "Parameters",
-        "parameter": [
-            {"name": "resourcesIndexed", "valueInteger": summary.resources_indexed},
-            {"name": "entriesWritten", "valueInteger": summary.entries_written},
-        ]
-    })))
+) -> Result<(StatusCode, Json<Value>), (StatusCode, Json<Value>)> {
+    if state.rebuild.is_running() {
+        return Err((
+            StatusCode::CONFLICT,
+            Json(json!({"resourceType": "OperationOutcome", "issue": [{"severity": "error", "code": "conflict",
+                "diagnostics": "A rebuild of the search index is already running (GET /health shows its progress)"}]})),
+        ));
+    }
+    let st = state.clone();
+    tokio::spawn(async move {
+        let _ = crate::index_generation::rebuild(st, "requested with $reindex").await;
+    });
+    // Let the task register, so an immediate /health shows it.
+    for _ in 0..50 {
+        if state.rebuild.is_running() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(json!({"resourceType": "OperationOutcome", "issue": [{"severity": "information", "code": "informational",
+            "diagnostics": "Rebuilding the search index in the background; searches keep using the current index until it is done (progress: GET /health)"}]})),
+    ))
 }

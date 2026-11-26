@@ -163,6 +163,9 @@ fn resources_from_dataset(value: Value) -> Vec<Value> {
 /// embedded `--demo` set and the `SAZARE_SEED_ON_EMPTY` file loader. Returns
 /// `(loaded_count, per_resource_errors)`.
 async fn load_resources_into(state: &AppState, resources: &[Value]) -> (usize, Vec<String>) {
+    // Index and store writes happen under the write gate (shared), so an index
+    // switch never finds a write between its two steps.
+    let _write_gate = state.write_gate.read().await;
     let mut loaded = 0;
     let mut errors: Vec<String> = Vec::new();
 

@@ -26,6 +26,9 @@ pub async fn import(
     auth_user: Option<axum::extract::Extension<AuthUser>>,
     body: String,
 ) -> axum::response::Response {
+    // Index and store writes happen under the write gate (shared), so an index
+    // switch never finds a write between its two steps.
+    let _write_gate = state.write_gate.read().await;
     // $import writes the whole dataset — require system-level write scope.
     if let Err(resp) = crate::bulk_export::authorize_bulk(&auth_user, "write") {
         return resp;

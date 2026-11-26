@@ -13,6 +13,7 @@ pub mod config;
 pub mod dashboard;
 pub mod demo;
 pub mod handlers;
+pub mod index_generation;
 pub mod metrics;
 pub mod smart;
 pub mod subscription;
@@ -45,7 +46,14 @@ pub struct AppState {
     pub store: SqliteStore,
     pub index: Mutex<SearchIndex>,
     /// Read-only connections for searches (empty: searches use `index`).
-    pub index_readers: sazare_store::IndexReaders,
+    pub index_readers: Readers,
+    /// The index generation in use (see `index_generation`).
+    pub index_file: std::sync::RwLock<std::path::PathBuf>,
+    /// Held (shared) by every write across its index and store steps; taken
+    /// exclusively by an index switch, so no write is between the two.
+    pub write_gate: tokio::sync::RwLock<()>,
+    /// A background index rebuild, if one runs.
+    pub rebuild: index_generation::RebuildStatus,
     pub audit: Arc<Mutex<AuditLog>>,
     pub config: config::ServerConfig,
     pub profile_registry: ProfileRegistry,
@@ -88,6 +96,46 @@ pub(crate) fn http_client() -> &'static reqwest::Client {
     })
 }
 
+/// The swappable pool of read-only index connections: an index switch
+/// replaces it; searches in flight keep the pool they started with.
+pub struct Readers {
+    current: std::sync::RwLock<Arc<sazare_store::IndexReaders>>,
+    capacity: usize,
+    /// One permit per reader: a search waits here (async) for a free reader
+    /// before it takes a blocking thread, so a long search on one reader
+    /// doesn't hold up a short one that another free reader could serve, and
+    /// blocked searches don't pile up on the blocking thread pool.
+    permits: tokio::sync::Semaphore,
+}
+
+impl Readers {
+    pub fn new(readers: sazare_store::IndexReaders) -> Self {
+        let capacity = readers.len().max(2);
+        let permits = tokio::sync::Semaphore::new(readers.len().max(1));
+        Self { current: std::sync::RwLock::new(Arc::new(readers)), capacity, permits }
+    }
+    pub fn current(&self) -> Arc<sazare_store::IndexReaders> {
+        self.current.read().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+    /// Install `new`; returns the previous pool (still used by searches in flight).
+    pub fn replace(&self, new: sazare_store::IndexReaders) -> Arc<sazare_store::IndexReaders> {
+        std::mem::replace(&mut *self.current.write().unwrap_or_else(|e| e.into_inner()), Arc::new(new))
+    }
+    pub fn capacity(&self) -> usize {
+        self.capacity
+    }
+}
+
+impl AppState {
+    /// The index file in use.
+    pub fn index_path(&self) -> std::path::PathBuf {
+        self.index_file.read().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+    pub fn set_index_path(&self, path: std::path::PathBuf) {
+        *self.index_file.write().unwrap_or_else(|e| e.into_inner()) = path;
+    }
+}
+
 /// Run a search-side closure on a read-only index connection, off the async
 /// workers: SQLite calls block, and a long one (an exact total over millions
 /// of matches) must not hold up other requests — nor, with a reader, the
@@ -97,16 +145,22 @@ where
     T: Send + 'static,
     F: FnOnce(&AppState, &SearchIndex) -> T + Send + 'static,
 {
+    let permit = state.index_readers.permits.acquire().await.expect("reader permits");
     let st = state.clone();
-    tokio::task::spawn_blocking(move || match st.index_readers.get() {
-        Some(reader) => f(&st, &reader),
-        None => {
-            let writer = st.index.blocking_lock();
-            f(&st, &writer)
+    let result = tokio::task::spawn_blocking(move || {
+        let readers = st.index_readers.current();
+        match readers.get() {
+            Some(reader) => f(&st, &reader),
+            None => {
+                let writer = st.index.blocking_lock();
+                f(&st, &writer)
+            }
         }
     })
     .await
-    .expect("search task panicked")
+    .expect("search task panicked");
+    drop(permit);
+    result
 }
 
 /// The subset of `ids` (matches of a conditional interaction) the caller may

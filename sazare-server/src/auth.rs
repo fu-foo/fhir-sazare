@@ -946,7 +946,10 @@ mod tests {
             index: tokio::sync::Mutex::new(
                 sazare_store::SearchIndex::open(&idx_path).unwrap(),
             ),
-            index_readers: sazare_store::IndexReaders::open(&idx_path, 1).unwrap(),
+            index_readers: crate::Readers::new(sazare_store::IndexReaders::open(&idx_path, 1).unwrap()),
+        index_file: std::sync::RwLock::new(std::path::PathBuf::from(&idx_path)),
+        write_gate: Default::default(),
+        rebuild: Default::default(),
             audit: Arc::new(tokio::sync::Mutex::new(
                 sazare_store::AuditLog::open(&audit_path).unwrap(),
             )),

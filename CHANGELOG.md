@@ -6,9 +6,22 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
 
 ## Unreleased
 
+### Changed
+- **Index rebuilds happen in the background.** When the search index has to be rebuilt —
+  new search parameters, a new index format, a missing full-text index — the server
+  answers at once from the current index and builds a new one beside it (a new *index
+  generation*, `search_index.gN.sqlite`), then switches to it; writes made during the build
+  are replayed into it, and the old files are deleted once their last search is done. At
+  10M resources the server used to be unreachable for the hours a rebuild took. Progress
+  is in `GET /health` (`index.state`, `done`, `total`) and `/metrics`
+  (`sazare_index_rebuild_active`, `sazare_index_rebuild_remaining`). `index.rebuild:
+  blocking` restores the old wait; `manual` rebuilds only on `POST /$reindex`.
+- `POST /$reindex` starts a background rebuild and answers 202 (409 while one runs).
+
 ### Performance
 - Searches (including `_summary=count`, `_include` / `_revinclude` and `$everything`) run on
-  a pool of read-only index connections, off the async worker threads. A long search —
+  a pool of read-only index connections, off the async worker threads, waiting for a free
+  connection before taking a thread. A long search —
   an exact total over millions of matches — no longer holds up other searches or the
   writer, and a long write (an `$import` batch) no longer holds up searches.
 

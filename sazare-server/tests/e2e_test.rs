@@ -24,7 +24,10 @@ async fn start_test_server() -> (String, TempDir) {
     let state = Arc::new(AppState {
         store,
         index: Mutex::new(index),
-        index_readers: sazare_store::IndexReaders::open(temp_dir.path().join("search_index.sqlite"), 2).unwrap(),
+        index_readers: sazare_server::Readers::new(sazare_store::IndexReaders::open(temp_dir.path().join("search_index.sqlite"), 2).unwrap()),
+        index_file: std::sync::RwLock::new(temp_dir.path().join("search_index.sqlite")),
+        write_gate: Default::default(),
+        rebuild: Default::default(),
         audit: Arc::new(Mutex::new(audit)),
         config: ServerConfig::default(),
         profile_registry: ProfileRegistry::new(),
@@ -97,7 +100,10 @@ async fn test_webhook_task_completed_fires() {
     let state = Arc::new(AppState {
         store: SqliteStore::open(temp_dir.path().join("r.sqlite")).unwrap(),
         index: Mutex::new(SearchIndex::open(temp_dir.path().join("i.sqlite")).unwrap()),
-        index_readers: sazare_store::IndexReaders::open(temp_dir.path().join("i.sqlite"), 2).unwrap(),
+        index_readers: sazare_server::Readers::new(sazare_store::IndexReaders::open(temp_dir.path().join("i.sqlite"), 2).unwrap()),
+        index_file: std::sync::RwLock::new(temp_dir.path().join("i.sqlite")),
+        write_gate: Default::default(),
+        rebuild: Default::default(),
         audit: Arc::new(Mutex::new(AuditLog::open(temp_dir.path().join("a.sqlite")).unwrap())),
         config,
         profile_registry: ProfileRegistry::new(),
@@ -427,7 +433,10 @@ async fn test_smart_backend_services_token_flow() {
     let state = Arc::new(AppState {
         store: SqliteStore::open(temp_dir.path().join("r.sqlite")).unwrap(),
         index: Mutex::new(SearchIndex::open(temp_dir.path().join("i.sqlite")).unwrap()),
-        index_readers: sazare_store::IndexReaders::open(temp_dir.path().join("i.sqlite"), 2).unwrap(),
+        index_readers: sazare_server::Readers::new(sazare_store::IndexReaders::open(temp_dir.path().join("i.sqlite"), 2).unwrap()),
+        index_file: std::sync::RwLock::new(temp_dir.path().join("i.sqlite")),
+        write_gate: Default::default(),
+        rebuild: Default::default(),
         audit: Arc::new(Mutex::new(AuditLog::open(temp_dir.path().join("a.sqlite")).unwrap())),
         config,
         profile_registry: ProfileRegistry::new(),
@@ -1774,14 +1783,80 @@ async fn test_revinclude_through_standard_reference_params() {
     assert_eq!(r.status(), 400, "status is not a reference parameter");
 }
 
-#[tokio::test]
-async fn test_reindex_records_the_parameter_fingerprint() {
+/// `$reindex` builds a new index generation in the background and switches to
+/// it: searches keep answering, writes made during the build are in the new
+/// index, and the old generation's files go.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn test_reindex_builds_a_new_generation_in_the_background() {
     let (base_url, dir) = start_test_server().await;
     let client = reqwest::Client::new();
-    assert!(client.post(format!("{}/$reindex", base_url)).send().await.unwrap().status().is_success());
-    let index = SearchIndex::open(dir.path().join("search_index.sqlite")).unwrap();
+    let ndjson: String = (0..3000)
+        .map(|i| json!({"resourceType": "Patient", "id": format!("g{i}"), "name": [{"family": "Before"}]}).to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let r = client.post(format!("{base_url}/$import")).header("Content-Type", "application/fhir+ndjson")
+        .body(ndjson).send().await.unwrap();
+    assert_eq!(r.status(), 200);
+
+    let r = client.post(format!("{base_url}/$reindex")).send().await.unwrap();
+    assert_eq!(r.status(), 202);
+    let second = client.post(format!("{base_url}/$reindex")).send().await.unwrap().status();
+    let health: Value = client.get(format!("{base_url}/health")).send().await.unwrap().json().await.unwrap();
+    if health["index"]["state"] == "rebuilding" {
+        assert_eq!(second, 409, "a second rebuild is refused while one runs");
+    }
+
+    // Writes during the build: a new resource, a change, a delete.
+    let put = |id: &str, family: &str| {
+        client.put(format!("{base_url}/Patient/{id}")).header("Content-Type", "application/fhir+json")
+            .body(json!({"resourceType": "Patient", "id": id, "name": [{"family": family}]}).to_string()).send()
+    };
+    assert_eq!(put("during", "During").await.unwrap().status(), 201);
+    assert_eq!(put("g7", "Changed").await.unwrap().status(), 200);
+    assert_eq!(client.delete(format!("{base_url}/Patient/g8")).send().await.unwrap().status(), 204);
+    // Searches answer meanwhile.
+    assert_eq!(client.get(format!("{base_url}/Patient?_summary=count")).send().await.unwrap().status(), 200);
+
+    let mut state = Value::Null;
+    for _ in 0..300 {
+        let h: Value = client.get(format!("{base_url}/health")).send().await.unwrap().json().await.unwrap();
+        state = h["index"]["state"].clone();
+        if state == "ready" {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    assert_eq!(state, "ready");
+
+    let count = |q: &'static str| {
+        let c = client.clone();
+        let url = format!("{base_url}/Patient?{q}&_summary=count");
+        async move { c.get(url).send().await.unwrap().json::<Value>().await.unwrap()["total"].clone() }
+    };
+    assert_eq!(count("family:exact=During").await, 1, "created during the build");
+    assert_eq!(count("family:exact=Changed").await, 1, "changed during the build");
+    assert_eq!(count("_id=g8").await, 0, "deleted during the build");
+    assert_eq!(count("family:exact=Before").await, 2998);
+
+    // The new generation is complete and carries the fingerprint; the old files go.
+    let gen1 = dir.path().join("search_index.g1.sqlite");
+    let index = SearchIndex::open_read_only(&gen1).unwrap();
+    assert_eq!(index.get_meta("ready").unwrap().as_deref(), Some("1"));
     let stored = index.get_meta(sazare_server::handlers::reindex::FINGERPRINT_KEY).unwrap().unwrap();
     assert_eq!(stored, sazare_server::handlers::reindex::index_fingerprint(&SearchParamRegistry::new()));
+    let old = dir.path().join("search_index.sqlite");
+    for _ in 0..100 {
+        if !old.exists() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    assert!(!old.exists(), "the old generation is deleted once unused");
+    assert_eq!(
+        sazare_server::index_generation::current(&old, false),
+        gen1,
+        "the next start opens the new generation"
+    );
 }
 
 #[tokio::test]

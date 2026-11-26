@@ -374,6 +374,9 @@ impl SubscriptionManager {
 
     /// Update subscription status (e.g. to "error" on failure).
     async fn update_subscription_status(state: &AppState, subscription: &Value, new_status: &str) {
+        // Index and store writes happen under the write gate (shared), so an index
+        // switch never finds a write between its two steps.
+        let _write_gate = state.write_gate.read().await;
         let id = match subscription.get("id").and_then(|v| v.as_str()) {
             Some(id) => id,
             None => return,

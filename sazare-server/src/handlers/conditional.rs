@@ -29,6 +29,9 @@ pub async fn conditional_update(
     Path(resource_type): Path<String>,
     request: Request,
 ) -> Result<Response, (StatusCode, Json<Value>)> {
+    // Index and store writes happen under the write gate (shared), so an index
+    // switch never finds a write between its two steps.
+    let _write_gate = state.write_gate.read().await;
     let audit_ctx = AuditContext::from_request(&request);
     let auth_user = request.extensions().get::<AuthUser>().cloned();
 
@@ -263,6 +266,9 @@ pub async fn conditional_delete(
     Path(resource_type): Path<String>,
     request: Request,
 ) -> Result<StatusCode, (StatusCode, Json<Value>)> {
+    // Index and store writes happen under the write gate (shared), so an index
+    // switch never finds a write between its two steps.
+    let _write_gate = state.write_gate.read().await;
     let audit_ctx = AuditContext::from_request(&request);
     let auth_user = request.extensions().get::<AuthUser>().cloned();
 

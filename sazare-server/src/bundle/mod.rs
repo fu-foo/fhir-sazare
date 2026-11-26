@@ -227,6 +227,9 @@ pub async fn process_bundle(
     auth_user: Option<axum::extract::Extension<AuthUser>>,
     Json(bundle): Json<Value>,
 ) -> impl IntoResponse {
+    // Index and store writes happen under the write gate (shared), so an index
+    // switch never finds a write between its two steps.
+    let _write_gate = state.write_gate.read().await;
     let auth_user = auth_user.map(|axum::extract::Extension(u)| u);
     let user_id = auth_user.as_ref().map(|u| u.user_id.clone());
     let audit_ctx = AuditContext::new(user_id, addr.ip().to_string());

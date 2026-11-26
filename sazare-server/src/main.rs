@@ -11,7 +11,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use sazare_server::{apps, build_router, config::ServerConfig, handlers::reindex::perform_reindex, AppState};
+use sazare_server::{apps, build_router, config::{RebuildMode, ServerConfig}, index_generation, AppState};
 
 mod instance;
 
@@ -247,7 +247,10 @@ async fn serve(args: Vec<String>) {
         std::process::exit(1);
     });
 
-    let index = SearchIndex::open(config.search_index_db_path()).unwrap_or_else(|e| {
+    // The newest complete index generation (unfinished ones are removed: a
+    // build that didn't finish restarts below).
+    let index_path = index_generation::current(&config.search_index_db_path(), true);
+    let index = SearchIndex::open(&index_path).unwrap_or_else(|e| {
         tracing::error!("Failed to open search index: {}", e);
         std::process::exit(1);
     });
@@ -342,37 +345,34 @@ async fn serve(args: Vec<String>) {
         .ok()
         .flatten()
         .is_none_or(|stored| stored != fingerprint);
-    match index.is_empty() {
+    // Whether the index must be rebuilt, and why. The rebuild itself runs once
+    // the server is up (index.rebuild: background), before it (blocking), or
+    // on POST /$reindex (manual).
+    let rebuild_reason: Option<&'static str> = match index.is_empty() {
         Ok(empty) if empty || text_missing || params_changed => {
             // An existence check, not a full load of every resource.
-            let store_has_data = store.has_any().unwrap_or(false);
-            if !store_has_data {
+            if store.has_any().unwrap_or(false) {
+                Some(if empty {
+                    "the index is empty"
+                } else if text_missing {
+                    "the index has no full text yet"
+                } else {
+                    "the search parameters or the index format changed"
+                })
+            } else {
                 let _ = index.set_meta(sazare_server::handlers::reindex::FINGERPRINT_KEY, &fingerprint);
-            }
-            if store_has_data {
-                tracing::info!(
-                    "Search index {}; rebuilding from resource store...",
-                    if empty {
-                        "is empty"
-                    } else if text_missing {
-                        "has no full text yet (_text/_content)"
-                    } else {
-                        "was built with different search parameters"
-                    }
-                );
-                match perform_reindex(&store, &index, &search_param_registry) {
-                    Ok(s) => tracing::info!(
-                        "Auto-reindex complete: {} resources, {} entries",
-                        s.resources_indexed,
-                        s.entries_written
-                    ),
-                    Err(e) => tracing::error!("Auto-reindex failed: {}", e),
-                }
+                None
             }
         }
-        Ok(_) => tracing::info!("Search index is up to date"),
-        Err(e) => tracing::warn!("Failed to query search index size: {}", e),
-    }
+        Ok(_) => {
+            tracing::info!("Search index is up to date");
+            None
+        }
+        Err(e) => {
+            tracing::warn!("Failed to inspect the search index: {}", e);
+            None
+        }
+    };
 
     let bind_addr = format!("{}:{}", config.server.host, config.server.port);
     let loopback = matches!(config.server.host.as_str(), "127.0.0.1" | "localhost" | "::1");
@@ -390,7 +390,7 @@ async fn serve(args: Vec<String>) {
     // Read-only index connections for searches (after any startup rebuild, so
     // they open the finished index).
     let readers = std::thread::available_parallelism().map(|n| n.get().clamp(2, 8)).unwrap_or(4);
-    let index_readers = sazare_store::IndexReaders::open(config.search_index_db_path(), readers)
+    let index_readers = sazare_store::IndexReaders::open(&index_path, readers)
         .unwrap_or_else(|e| {
             tracing::warn!("Search index readers unavailable ({e}); searches share the writer connection");
             sazare_store::IndexReaders::none()
@@ -398,7 +398,10 @@ async fn serve(args: Vec<String>) {
     let state = Arc::new(AppState {
         store,
         index: Mutex::new(index),
-        index_readers,
+        index_readers: sazare_server::Readers::new(index_readers),
+        index_file: std::sync::RwLock::new(index_path.clone()),
+        write_gate: Default::default(),
+        rebuild: Default::default(),
         audit: Arc::new(Mutex::new(audit_log)),
         config: config.clone(),
         profile_registry,
@@ -462,6 +465,31 @@ async fn serve(args: Vec<String>) {
             state.app_names.len(),
             state.app_names.join("/, /apps/")
         );
+    }
+
+    if let Some(reason) = rebuild_reason {
+        match config.index.rebuild {
+            RebuildMode::Background => {
+                tracing::warn!(
+                    "Search index needs rebuilding ({reason}); serving from the current index while a new \
+                     one is built in the background — searches may be incomplete until it is done \
+                     (progress: GET /health)"
+                );
+                let st = state.clone();
+                tokio::spawn(async move {
+                    let _ = index_generation::rebuild(st, reason).await;
+                });
+            }
+            RebuildMode::Blocking => {
+                tracing::info!("Search index needs rebuilding ({reason}); rebuilding before serving");
+                if let Err(e) = index_generation::rebuild(state.clone(), reason).await {
+                    tracing::error!("Index rebuild failed: {e}");
+                }
+            }
+            RebuildMode::Manual => tracing::warn!(
+                "Search index needs rebuilding ({reason}); index.rebuild is manual — run POST /$reindex"
+            ),
+        }
     }
 
     // Build router
@@ -614,7 +642,8 @@ fn run_backup(config: &ServerConfig, dir: &std::path::Path) -> i32 {
     }
     let dbs = [
         config.resources_db_path(),
-        config.search_index_db_path(),
+        // The index generation in use (derived data; a restore rebuilds it anyway).
+        index_generation::current(&config.search_index_db_path(), false),
         config.audit_db_path(),
     ];
     for src in &dbs {

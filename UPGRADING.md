@@ -8,11 +8,15 @@
    ```
 2. **Replace the binary** — download the release, `brew upgrade sazare`, or pull the new
    Docker image — and restart.
-3. **Watch the first start.** Schema migrations run automatically, and the search index /
-   full text are rebuilt when needed. The log says what happened, e.g.
-   `Search index was built with different search parameters; rebuilding from resource store...`
-   then `Auto-reindex complete: N resources`. This takes roughly a minute per 100k
-   resources; the server answers once it is done.
+3. **Watch the first start.** Schema migrations run automatically. When the search index
+   has to be rebuilt (new search parameters, a new index format), the server **answers at
+   once** and builds a new index in the background, switching to it when it is complete;
+   until then searches use the previous index and may miss what the new one adds.
+   `GET /health` shows the progress (`"index": {"state": "rebuilding", "done": …, "total": …}`)
+   and the log says `Switched to search index generation N`. Expect roughly 3,000
+   resources per second; plan disk space for the old and the new index side by side.
+   `index.rebuild: blocking` waits for the rebuild before serving; `manual` only rebuilds
+   on `POST /$reindex`.
 4. **Read the Behavior changes** for every version you skip in [CHANGELOG.md](CHANGELOG.md).
 
 ## What is migrated, and what is rebuilt
@@ -33,13 +37,22 @@ into `data_dir`, delete the two `search_index*` files, start the older binary).
 - **The server doesn't start**: the log names the failing step. A configuration error (for
   example `Invalid validation.default_profiles`) stops the server on purpose — fix the
   configuration rather than downgrading.
-- **Searches miss data after the upgrade**: run `curl -X POST http://localhost:8080/$reindex`
-  (with operator credentials when auth is enabled), or delete both `search_index*` files and
-  restart — they are rebuilt from the resources.
+- **Searches miss data after the upgrade**: check `GET /health` — a background rebuild may
+  still be running. Otherwise run `curl -X POST http://localhost:8080/$reindex` (operator
+  credentials when auth is enabled): it rebuilds in the background (202; 409 while one
+  runs). Deleting the `search_index*` files and restarting also rebuilds them.
 - **Anything else**: restore the backup and start the previous version, then open an issue
   with the log.
 
 ## Version notes
+
+### To 0.16.0
+
+- **Index rebuilds no longer block startup.** The server answers immediately and builds the
+  new index in the background (`GET /health` shows progress). Index files may now be named
+  `search_index.gN.sqlite` (index generations); the newest complete one is used.
+- `POST /$reindex` answers 202 at once and rebuilds in the background (it used to block
+  until done and answer 200 with counts); 409 while a rebuild runs.
 
 ### To 0.15.0
 

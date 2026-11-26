@@ -40,7 +40,10 @@ async fn start(config: ServerConfig) -> (String, TempDir) {
     let state = Arc::new(AppState {
         store: SqliteStore::open(dir.path().join("r.sqlite")).unwrap(),
         index: Mutex::new(SearchIndex::open(dir.path().join("i.sqlite")).unwrap()),
-        index_readers: sazare_store::IndexReaders::open(dir.path().join("i.sqlite"), 2).unwrap(),
+        index_readers: sazare_server::Readers::new(sazare_store::IndexReaders::open(dir.path().join("i.sqlite"), 2).unwrap()),
+        index_file: std::sync::RwLock::new(dir.path().join("i.sqlite")),
+        write_gate: Default::default(),
+        rebuild: Default::default(),
         audit: Arc::new(Mutex::new(AuditLog::open(dir.path().join("a.sqlite")).unwrap())),
         config,
         profile_registry: ProfileRegistry::new(),
@@ -217,11 +220,13 @@ async fn admin_operations_require_an_operator() {
         assert_eq!(c.send(reqwest::Method::POST, path, &user, None).await.0, 403, "{path} user");
     }
     let system = jwt("system/*.write", None);
-    assert_eq!(c.send(reqwest::Method::POST, "/$reindex", &system, None).await.0, 200);
+    // Accepted: a background rebuild starts (202), or one already runs (409).
+    let accepted = |code: u16| code == 202 || code == 409;
+    assert!(accepted(c.send(reqwest::Method::POST, "/$reindex", &system, None).await.0));
     // Metrics reveal resource counts: operators only.
     assert_eq!(c.get("/metrics", &t).await.0, 403);
     assert_eq!(c.get("/metrics", ADMIN_KEY).await.0, 200);
-    assert_eq!(c.send(reqwest::Method::POST, "/$reindex", ADMIN_KEY, None).await.0, 200);
+    assert!(accepted(c.send(reqwest::Method::POST, "/$reindex", ADMIN_KEY, None).await.0));
 }
 
 #[tokio::test]
@@ -238,8 +243,10 @@ async fn cross_site_basic_auth_writes_are_refused() {
         r.send()
     };
     assert_eq!(post(Some("cross-site")).await.unwrap().status().as_u16(), 403);
-    assert_eq!(post(Some("same-origin")).await.unwrap().status().as_u16(), 200);
-    assert_eq!(post(None).await.unwrap().status().as_u16(), 200); // curl & co.
+    // Accepted: 202 (rebuild started) or 409 (one already runs).
+    let accepted = |code: u16| code == 202 || code == 409;
+    assert!(accepted(post(Some("same-origin")).await.unwrap().status().as_u16()));
+    assert!(accepted(post(None).await.unwrap().status().as_u16())); // curl & co.
     // Reads are unaffected.
     let r = c.http.get(format!("{}/Patient/p1", c.base)).basic_auth("ops", Some("ops-password"))
         .header("Sec-Fetch-Site", "cross-site").send().await.unwrap();

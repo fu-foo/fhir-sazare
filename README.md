@@ -341,6 +341,9 @@ storage:
 ig:
   dir: "."                # holds profiles/, searchparameters/, terminology/ (default: this file's directory)
 
+index:
+  rebuild: background     # when the index must be rebuilt: background (default), blocking, manual
+
 log:
   level: "info"           # trace, debug, info, warn, error
 
@@ -505,7 +508,9 @@ an implementation guide's search params are supplied, alongside its profiles in
 `profiles/`, with nothing baked into the core.
 When the set of parameters changes (a file added or edited, or new built-ins
 after an upgrade), the next start rebuilds the index automatically so existing
-data is covered; `POST /$reindex` does the same without a restart.
+data is covered — in the background, while the server keeps answering from the previous
+index (`GET /health` shows progress). `POST /$reindex` starts the same rebuild without a
+restart.
 
 ```jsonc
 // searchparameters/name-phonetic.json
