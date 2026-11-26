@@ -144,6 +144,8 @@ fn dataset(rng: &mut Rng, patients: usize, observations: usize, dangling: bool) 
             let n = rng.below(patients.max(1));
             let target = match rng.below(20) {
                 0..=2 => format!("Group/p{n}"),
+                // Absolute URLs: kept as text (and found by their bare id).
+                5 => format!("http://example.org/fhir/Patient/p{n}"),
                 3 | 4 if dangling => format!("Patient/missing{n}"),
                 _ => format!("Patient/p{n}"),
             };
@@ -303,9 +305,10 @@ fn query(rng: &mut Rng, resource_type: &str, patients: usize) -> String {
                 _ => format!("subject:Patient.gender={}", rng.pick(GENDERS)),
             },
             (_, 4) => format!("date={}{}", rng.pick(&["", "ge", "le", "gt", "lt", "ne", "ap", "sa", "eb"]), date(rng)),
-            (_, _) => format!("{}:{}", rng.pick(&["status", "category", "date"]), rng.pick(&["missing=true", "missing=false", "not=final"]))
+            (_, _) => format!("{}:{}", rng.pick(&["status", "category", "date", "subject"]), rng.pick(&["missing=true", "missing=false", "not=final"]))
                 .replace("category:not=final", "category:not=laboratory")
-                .replace("date:not=final", "date:missing=true"),
+                .replace("date:not=final", "date:missing=true")
+                .replace("subject:not=final", "subject:missing=false"),
         };
         parts.push(part);
     }
@@ -402,8 +405,13 @@ fn index_v2_matches_the_reference_model() {
 /// value ascending, highest descending (dates by range start, text
 /// case-insensitively); `None` without a value.
 fn sort_key(entries: &Entries, param: &str, descending: bool) -> Option<String> {
-    let keys = entries.iter().filter(|(n, _, _, _)| n == param).map(|(_, t, v, _)| {
-        if t == "date" {
+    let keys = entries.iter().filter(|(n, t, v, _)| {
+        // A reference sorts by its text as written; bare-id copies don't count.
+        n == param && (t != "reference" || v.contains(['/', ':', '#']))
+    }).map(|(_, t, v, _)| {
+        if t == "reference" {
+            v.clone()
+        } else if t == "date" {
             let start = v.split('/').next().and_then(fhir_date_range).map(|r| r.0).unwrap_or(i64::MIN);
             format!("{:020}", start as i128 - i64::MIN as i128)
         } else {
@@ -425,7 +433,12 @@ fn run_sorted(which: Which, seed: u64, patients: usize, observations: usize, que
     };
     for _ in 0..queries {
         let rt = if rng.chance(40) { "Patient" } else { "Observation" };
-        let key = if rt == "Patient" { *rng.pick(&["family", "birthdate"]) } else { "date" };
+        // Sorting by a reference: v2 only (v1 sorted bare-id copies too).
+        let key = match (rt, which) {
+            ("Patient", _) => *rng.pick(&["family", "birthdate"]),
+            (_, Which::V2) if rng.chance(30) => "subject",
+            _ => "date",
+        };
         let desc = rng.chance(50);
         let filter = if rng.chance(50) { format!("{}&", query(&mut rng, rt, patients)) } else { String::new() };
         let q = format!("{filter}_sort={}{key}", if desc { "-" } else { "" });

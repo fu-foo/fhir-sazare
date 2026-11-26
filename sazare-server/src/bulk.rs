@@ -27,8 +27,10 @@ pub async fn import(
     body: String,
 ) -> axum::response::Response {
     // Index and store writes happen under the write gate (shared), so an index
-    // switch never finds a write between its two steps.
-    let _write_gate = state.write_gate.read().await;
+    // switch never finds a write between its two steps. Held per batch (from
+    // its first store write to its index flush), not for the whole import: a
+    // switch — and the writes queued behind it — wait for one batch at most.
+    let mut write_gate = state.write_gate.read().await;
     // $import writes the whole dataset — require system-level write scope.
     if let Err(resp) = crate::bulk_export::authorize_bulk(&auth_user, "write") {
         return resp;
@@ -185,6 +187,8 @@ pub async fn import(
                 pending.push((update, resource));
                 if pending.len() >= BATCH {
                     flush(&state, &mut pending).await;
+                    drop(write_gate);
+                    write_gate = state.write_gate.read().await;
                 }
                 created += 1;
             }
@@ -199,6 +203,7 @@ pub async fn import(
         }
     }
     flush(&state, &mut pending).await;
+    drop(write_gate);
 
     audit::log_operation_success(
         &audit_ctx,

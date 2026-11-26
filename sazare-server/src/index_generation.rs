@@ -69,7 +69,9 @@ fn is_ready(path: &Path) -> bool {
 }
 
 /// The index generation to open: the newest ready one, or generation 0.
-/// With `clean_up`, unfinished generations are deleted (a crashed build).
+/// With `clean_up`, every other generation is deleted: unfinished ones (a
+/// crashed build) and older ones a crash right after a switch left behind
+/// (generation 0 included once a later one is in use).
 pub fn current(base: &Path, clean_up: bool) -> PathBuf {
     let mut gens: Vec<(u32, PathBuf)> = std::fs::read_dir(base.parent().unwrap_or(Path::new(".")))
         .into_iter()
@@ -87,10 +89,18 @@ pub fn current(base: &Path, clean_up: bool) -> PathBuf {
     for (_, p) in gens {
         if chosen.is_none() && is_ready(&p) {
             chosen = Some(p);
-        } else if clean_up && chosen.is_none() {
-            tracing::warn!("Removing unfinished index generation {}", p.display());
+        } else if clean_up {
+            if chosen.is_none() {
+                tracing::warn!("Removing unfinished index generation {}", p.display());
+            } else {
+                tracing::info!("Removing old index generation {}", p.display());
+            }
             delete_files(&p);
         }
+    }
+    if clean_up && chosen.is_some() && base.exists() {
+        tracing::info!("Removing old index generation {}", base.display());
+        delete_files(base);
     }
     chosen.unwrap_or_else(|| base.to_path_buf())
 }
@@ -228,6 +238,24 @@ pub async fn rebuild(state: Arc<AppState>, reason: &str) -> Result<(), String> {
     if !state.rebuild.begin(0, reason) {
         return Err("a rebuild is already running".into());
     }
+    run_begun(state).await
+}
+
+/// Start a rebuild in the background; `false` when one is already running.
+/// Registered before returning, so two callers can't both start one and an
+/// immediate `/health` shows it.
+pub fn spawn(state: Arc<AppState>, reason: &str) -> bool {
+    if !state.rebuild.begin(0, reason) {
+        return false;
+    }
+    tokio::spawn(async move {
+        let _ = run_begun(state).await;
+    });
+    true
+}
+
+/// The rebuild after [`RebuildStatus::begin`] succeeded.
+async fn run_begun(state: Arc<AppState>) -> Result<(), String> {
     let st = state.clone();
     let total = tokio::task::spawn_blocking(move || st.store.count_by_type())
         .await
@@ -252,11 +280,26 @@ async fn rebuild_inner(state: &Arc<AppState>) -> Result<(), String> {
     let generation = generation_of(&base, &old_path) + 1;
     let new_path = generation_path(&base, generation);
     delete_files(&new_path);
+    let result = build_and_switch(state, old_path, new_path.clone(), generation).await;
+    if result.is_err() {
+        // Nothing switched: the partial generation is only disk space.
+        delete_files(&new_path);
+    }
+    result
+}
+
+async fn build_and_switch(state: &Arc<AppState>, old_path: PathBuf, new_path: PathBuf, generation: u32) -> Result<(), String> {
     tracing::info!("Building search index generation {generation} ({}) in the background", new_path.display());
     let started = Instant::now();
 
-    // Record writes from now on, before reading the store.
-    state.index.lock().await.start_journal();
+    // Record writes from now on, before reading the store. Under the gate:
+    // a write in flight (index written, store not yet) would otherwise be
+    // in neither the journal nor, if the store page was already read, the
+    // new index.
+    {
+        let _gate = state.write_gate.write().await;
+        state.index.lock().await.start_journal();
+    }
 
     let st = state.clone();
     let np = new_path.clone();
@@ -302,7 +345,14 @@ async fn rebuild_inner(state: &Arc<AppState>) -> Result<(), String> {
         .map_err(|_| "index still shared".to_string())?
         .into_inner()
         .unwrap_or_else(|e| e.into_inner());
-    replay(state, &new_index, rest);
+    // Off the async workers, still under the gate (the last few writes).
+    let st = state.clone();
+    let new_index = tokio::task::spawn_blocking(move || {
+        replay(&st, &new_index, rest);
+        new_index
+    })
+    .await
+    .map_err(|e| e.to_string())?;
     new_index
         .set_meta(crate::handlers::reindex::FINGERPRINT_KEY, &fingerprint)
         .map_err(|e| e.to_string())?;
@@ -325,4 +375,51 @@ async fn rebuild_inner(state: &Arc<AppState>) -> Result<(), String> {
         delete_files(&old_path);
     });
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make(path: &Path, ready: bool) {
+        let index = SearchIndex::open(path).unwrap();
+        if ready {
+            mark_ready(&index);
+        }
+    }
+
+    #[test]
+    fn current_keeps_only_the_newest_ready_generation() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path().join("search_index.sqlite");
+        make(&base, false);
+        make(&generation_path(&base, 1), true);
+        make(&generation_path(&base, 2), true);
+        make(&generation_path(&base, 3), false);
+
+        // Without clean-up (backup): nothing deleted.
+        assert_eq!(current(&base, false), generation_path(&base, 2));
+        assert!(base.exists() && generation_path(&base, 1).exists() && generation_path(&base, 3).exists());
+
+        // Startup: the unfinished g3 and the older g1 and g0 go, with their full text.
+        assert_eq!(current(&base, true), generation_path(&base, 2));
+        let left: Vec<String> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|n| !n.ends_with("-wal") && !n.ends_with("-shm"))
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        assert_eq!(left, ["search_index.g2.fts.sqlite", "search_index.g2.sqlite"]);
+    }
+
+    #[test]
+    fn current_falls_back_to_generation_zero() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path().join("search_index.sqlite");
+        make(&base, false);
+        make(&generation_path(&base, 1), false);
+        assert_eq!(current(&base, true), base);
+        assert!(base.exists() && !generation_path(&base, 1).exists());
+    }
 }

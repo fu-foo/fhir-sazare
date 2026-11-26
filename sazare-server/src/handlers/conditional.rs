@@ -29,9 +29,6 @@ pub async fn conditional_update(
     Path(resource_type): Path<String>,
     request: Request,
 ) -> Result<Response, (StatusCode, Json<Value>)> {
-    // Index and store writes happen under the write gate (shared), so an index
-    // switch never finds a write between its two steps.
-    let _write_gate = state.write_gate.read().await;
     let audit_ctx = AuditContext::from_request(&request);
     let auth_user = request.extensions().get::<AuthUser>().cloned();
 
@@ -49,6 +46,11 @@ pub async fn conditional_update(
             )
         })?
         .to_bytes();
+    // Index and store writes happen under the write gate (shared), so an index
+    // switch never finds a write between its two steps. Taken once the body
+    // is in: a slow upload must not hold up a switch (or, behind a waiting
+    // switch, every other write).
+    let _write_gate = state.write_gate.read().await;
 
     let body_value: Value = serde_json::from_slice(&bytes).map_err(|e| {
         (
