@@ -567,6 +567,23 @@ async fn patient_scoped_searches_return_exactly_the_compartment() {
     assert_eq!(ids("/Observation?_count=1&_offset=1").await, (vec![], Some(1)));
     let (_, b) = c.get("/Observation?_summary=count", &t).await;
     assert_eq!(b["total"], 1);
+    // A count is a count: not a bound (_total=none), not a page (_count).
+    let (_, b) = c.get("/Observation?_summary=count&_total=none&_count=0", &t).await;
+    assert_eq!(b["total"], 1);
+    let (_, b) = c.get("/Observation?status=final&_summary=count&_count=1&_total=none", ADMIN_KEY).await;
+    assert_eq!(b["total"], 4, "o-p1, o-p2, o-hist, o-abs");
+    // Conditional create decides on what the caller may see: of the four
+    // final Observations, p1 sees one — it exists (200), no 412.
+    let r = c.http.post(format!("{}/Observation", c.base)).bearer_auth(&t)
+        .header("Content-Type", "application/fhir+json").header("If-None-Exist", "status=final")
+        .body(obs("o-new", "Patient/p1").to_string()).send().await.unwrap();
+    assert_eq!(r.status().as_u16(), 200, "the caller's one match exists");
+    let b: Value = r.json().await.unwrap();
+    assert_eq!(b["id"], "o-p1");
+    let r = c.http.post(format!("{}/Observation", c.base)).bearer_auth(ADMIN_KEY)
+        .header("Content-Type", "application/fhir+json").header("If-None-Exist", "status=final")
+        .body(obs("o-new", "Patient/p1").to_string()).send().await.unwrap();
+    assert_eq!(r.status().as_u16(), 412, "several matches for an unrestricted caller");
     // Another patient's token sees the other side.
     let t2 = jwt("patient/*.read", Some("p2"));
     let (_, b) = c.get("/Task", &t2).await;

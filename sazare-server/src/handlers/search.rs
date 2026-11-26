@@ -221,14 +221,18 @@ async fn do_search(
         let (q, rt, au) = (query.clone(), resource_type.clone(), auth_user.clone());
         let total = crate::with_index_reader(&state, move |st, index| {
             let executor = SearchExecutor::new(&st.store, index);
+            // The count only: no page, no order, and the total always (a
+            // `_total=none` here would make it a bound, not a count).
+            let mut q = q;
+            q.count = Some(0);
+            q.offset = None;
+            q.sort.clear();
+            q.omit_total = false;
             // A compartment-restricted user counts only what they may see.
             if au.as_ref().is_some_and(|u| u.compartment_restricted(&rt, 's')) {
-                let mut q = q;
-                q.count = Some(0);
-                q.offset = None;
                 return crate::compartment_search(st, &executor, index, au.as_ref(), &rt, &q).map(|(_, total)| total);
             }
-            executor.search(&rt, &q).map(|ids| ids.len())
+            executor.search_with_total(&rt, &q).map(|(_, total)| total)
         })
         .await
         .map_err(|e| {

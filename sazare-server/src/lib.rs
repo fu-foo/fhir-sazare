@@ -236,6 +236,30 @@ pub fn compartment_search(
     Ok((ids, total))
 }
 
+/// The first `n` matches of `query` the user may see (paging, sorting and the
+/// total aside): enough for the 0 / 1 / many decisions of conditional
+/// operations without reading every match.
+pub fn visible_upto(
+    state: &AppState,
+    executor: &SearchExecutor<'_>,
+    index: &SearchIndex,
+    auth_user: Option<&auth::AuthUser>,
+    resource_type: &str,
+    query: &sazare_core::SearchQuery,
+    n: usize,
+) -> Result<Vec<String>, String> {
+    let mut q = query.clone();
+    q.count = Some(n);
+    q.offset = None;
+    q.sort.clear();
+    q.omit_total = true;
+    if auth_user.is_some_and(|u| u.compartment_restricted(resource_type, 's')) {
+        compartment_search(state, executor, index, auth_user, resource_type, &q).map(|(ids, _)| ids)
+    } else {
+        executor.search_with_total(resource_type, &q).map(|(ids, _)| ids)
+    }
+}
+
 /// Conditional create check
 pub async fn conditional_create_check(
     state: &Arc<AppState>,
@@ -251,10 +275,7 @@ pub async fn conditional_create_check(
     let index = state.index.lock().await;
     let executor = SearchExecutor::new(&state.store, &index);
 
-    let ids = match executor
-        .search(resource_type, &query)
-        .and_then(|ids| visible_matches(state, &executor, auth_user, resource_type, ids))
-    {
+    let ids = match visible_upto(state, &executor, &index, auth_user, resource_type, &query, 2) {
         Ok(ids) => ids,
         Err(e) => return ConditionalResult::SearchError(e),
     };

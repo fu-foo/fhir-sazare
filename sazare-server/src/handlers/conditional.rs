@@ -80,9 +80,8 @@ pub async fn conditional_update(
     let (match_id, is_create) = {
         let index = state.index.lock().await;
         let executor = SearchExecutor::new(&state.store, &index);
-        let ids = executor
-            .search(&resource_type, &query)
-            .and_then(|ids| crate::visible_matches(&state, &executor, auth_user.as_ref(), &resource_type, ids))
+        // 0 / 1 / many: two matches decide.
+        let ids = crate::visible_upto(&state, &executor, &index, auth_user.as_ref(), &resource_type, &query, 2)
             .map_err(|e| {
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
@@ -296,9 +295,8 @@ pub async fn conditional_delete(
     let (ids, resource_to_check) = {
         let index = state.index.lock().await;
         let executor = SearchExecutor::new(&state.store, &index);
-        let ids = executor
-            .search(&resource_type, &query)
-            .and_then(|ids| crate::visible_matches(&state, &executor, auth_user.as_ref(), &resource_type, ids))
+        // 0 / 1 / many: two matches decide.
+        let ids = crate::visible_upto(&state, &executor, &index, auth_user.as_ref(), &resource_type, &query, 2)
             .map_err(|e| {
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
