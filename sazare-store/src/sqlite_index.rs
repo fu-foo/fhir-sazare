@@ -1292,7 +1292,7 @@ mod tests {
     #[test]
     fn test_search_text_japanese_phrases_and_columns() {
         let index = SearchIndex::open(":memory:").unwrap();
-        put_text(&index, "c1", "山田太郎 2型糖尿病 HbA1c 8.2%", "2型糖尿病 E11 山田太郎 2型糖尿病 HbA1c 8.2%");
+        put_text(&index, "c1", "外来 2型糖尿病 HbA1c 8.2%", "2型糖尿病 E11 外来 2型糖尿病 HbA1c 8.2%");
         put_text(&index, "c2", "高血圧症", "高血圧症 I10 Hypertension");
         put_text(&index, "c3", "", "Type 2 diabetes mellitus");
         let q = |col: &str, v: &str| {
@@ -1301,7 +1301,7 @@ mod tests {
             ids
         };
         assert_eq!(q("content", "糖尿病"), vec!["c1"]); // 3+ chars: trigram index
-        assert_eq!(q("content", "山田"), vec!["c1"]); // 2 chars: LIKE fallback
+        assert_eq!(q("content", "外来"), vec!["c1"]); // 2 chars: LIKE fallback
         assert_eq!(q("content", "hba1c"), vec!["c1"]); // case-insensitive
         assert_eq!(q("content", "diabetes mellitus"), vec!["c3"]); // all terms
         assert_eq!(q("content", "\"type 2 diabetes\""), vec!["c3"]); // phrase

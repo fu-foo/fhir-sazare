@@ -1515,7 +1515,7 @@ async fn test_search_by_profile() {
         "resourceType": "Patient",
         "meta": {"profile": [jp_patient]},
         "identifier": [{"system": "urn:oid:1.2.392.100495.20.3.51.1", "value": "1"}],
-        "name": [{"family": "山田"}]
+        "name": [{"family": "見本"}]
     })).await;
     // A non-JP patient that must not match.
     create(&client, &base_url, "Patient", &json!({"resourceType": "Patient", "name": [{"family": "Doe"}]})).await;
@@ -1674,7 +1674,7 @@ async fn test_full_text_search_and_total_none() {
         "subject": {"reference": "Patient/p1"},
         "code": {"coding": [{"system": "http://hl7.org/fhir/sid/icd-10", "code": "E11"}], "text": "2型糖尿病"},
         "text": {"status": "generated",
-                 "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\">山田さん: HbA1c 8.2%</div>"}
+                 "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\">外来: HbA1c 8.2%</div>"}
     }))
     .await;
     // Imported resources are indexed too (batched writes).
@@ -1697,7 +1697,7 @@ async fn test_full_text_search_and_total_none() {
     assert_eq!(total("_content=essential%20hypertension").await, 1);
     assert_eq!(total("_content=hypertension%20diabetes").await, 0);
     assert_eq!(total("_content=hypertension,E11").await, 2); // comma = OR
-    assert_eq!(total("_text=%E5%B1%B1%E7%94%B0").await, 1); // 山田 (two characters)
+    assert_eq!(total("_text=%E5%A4%96%E6%9D%A5").await, 1); // 外来 (two characters)
     assert_eq!(total("_text=E11").await, 0); // _text is the narrative only
 
     // Updates replace the text; deletes remove it.

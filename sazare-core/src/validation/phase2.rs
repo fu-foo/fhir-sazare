@@ -220,7 +220,7 @@ impl Phase2Validator {
     /// (Uri/Code/String/Canonical) and `patternCodeableConcept` /
     /// `patternCoding` (the resource coding must contain the pattern's
     /// system+code). Constraints we don't understand are skipped, so conforming
-    /// data is never rejected (guarded by the JP example fixtures).
+    /// data is never rejected (guarded in CI by loading every JP Core example).
     fn validate_fixed_pattern(
         resource: &Value,
         resource_type: &str,

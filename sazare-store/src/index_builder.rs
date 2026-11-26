@@ -857,7 +857,7 @@ mod tests {
             "resourceType": "Patient",
             "name": [
                 {"text": "Yamada Taro"},
-                {"text": "ヤマダ タロウ", "extension": [{
+                {"text": "ミホン ハジメ", "extension": [{
                     "url": "http://hl7.org/fhir/StructureDefinition/iso21090-EN-representation",
                     "valueCode": "SYL"
                 }]}
@@ -870,7 +870,7 @@ mod tests {
             .filter(|(n, t, _, _)| n == "name-phonetic" && t == "string")
             .map(|(_, _, v, _)| v)
             .collect();
-        assert_eq!(kana, vec![&"ヤマダ タロウ".to_lowercase()]);
+        assert_eq!(kana, vec![&"ミホン ハジメ".to_lowercase()]);
     }
 
     /// Register one custom SearchParameter and return the `(value, system)`
@@ -1591,11 +1591,11 @@ mod tests {
             "text": {"status": "generated",
                      "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>2型糖尿病 &amp; 高血圧</p><p>HbA1c&nbsp;8.2</p></div>"},
             "code": {"coding": [{"system": "http://hl7.org/fhir/sid/icd-10", "code": "E11", "display": "2型糖尿病"}]},
-            "subject": {"reference": "Patient/p1", "display": "山田 太郎"}
+            "subject": {"reference": "Patient/p1", "display": "見本 患者"}
         });
         let t = resource_text(&r);
         assert_eq!(t.narrative, "2型糖尿病 & 高血圧 HbA1c 8.2");
-        for want in ["E11", "2型糖尿病", "山田 太郎", "generated", "2型糖尿病 & 高血圧"] {
+        for want in ["E11", "2型糖尿病", "見本 患者", "generated", "2型糖尿病 & 高血圧"] {
             assert!(t.content.contains(want), "{want} missing from {:?}", t.content);
         }
         // Markup, ids, references and meta are not content.

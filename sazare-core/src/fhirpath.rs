@@ -626,15 +626,15 @@ mod tests {
             "resourceType": "Patient",
             "name": [
                 {"extension": [{"url": "http://hl7.org/fhir/StructureDefinition/iso21090-EN-representation", "valueCode": "IDE"}],
-                 "use": "usual", "text": "山田 太郎"},
+                 "use": "usual", "text": "見本 一"},
                 {"extension": [{"url": "http://hl7.org/fhir/StructureDefinition/iso21090-EN-representation", "valueCode": "SYL"}],
-                 "use": "usual", "text": "ヤマダ タロウ"},
+                 "use": "usual", "text": "ミホン ハジメ"},
                 {"extension": [{"url": "http://hl7.org/fhir/StructureDefinition/iso21090-EN-representation", "valueCode": "SYL"}],
-                 "use": "old", "text": "スズキ タロウ"}
+                 "use": "old", "text": "テスト ハジメ"}
             ]
         });
         let e = parse("Patient.name.where(extension('http://hl7.org/fhir/StructureDefinition/iso21090-EN-representation').value.ofType(code)='SYL' and use='usual').text").unwrap();
-        assert_eq!(strs(&evaluate(&e, &pat)), vec!["ヤマダ タロウ"]);
+        assert_eq!(strs(&evaluate(&e, &pat)), vec!["ミホン ハジメ"]);
     }
 
     #[test]

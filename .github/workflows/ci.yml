@@ -30,9 +30,10 @@ jobs:
       - name: Search benchmark
         run: MAX_MS=500 bench/run.sh 10000 5 | tee -a "$GITHUB_STEP_SUMMARY"
 
-  # JP Core end to end: fetch the JP Core package and jpfhir-terminology,
-  # start sazare on them, load the package's 76 examples, and check every
-  # JP Core search parameter plus profile and code-system validation.
+  # An implementation guide end to end, with JP Core: fetch the package and its
+  # terminology with the generic IG script, start sazare on them, load the
+  # package's 76 examples, and check every JP Core search parameter plus profile
+  # and code-system validation (ci/jp_core_check.sh).
   jp-core:
     runs-on: ubuntu-latest
     steps:
@@ -41,22 +42,23 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release
       - name: Fetch JP Core and its terminology
-        run: bash examples/jp-core/setup.sh --terminology "$RUNNER_TEMP/jp"
+        run: |
+          bash examples/ig/setup.sh --dir "$RUNNER_TEMP/jp" --terminology \
+            https://jpfhir.jp/fhir/core/1.2.0/package.tgz \
+            --terminology-package https://jpfhir.jp/fhir/core/terminology/jpfhir-terminology.r4-2.2611.0.tgz
       - name: Start sazare on JP Core
         working-directory: ${{ runner.temp }}/jp
         run: |
-          SAZARE_PORT=18080 SAZARE_DATA_DIR="$RUNNER_TEMP/jp/data" \
-            "$GITHUB_WORKSPACE/target/release/sazare-server" > server.log 2>&1 &
-          for i in $(seq 1 30); do
-            curl -fs http://localhost:18080/health >/dev/null && break
-            sleep 1
-          done
-          grep -E 'custom profiles|SearchParameter|Terminology|Skipping' server.log
-      - name: Load examples and check searches and validation
-        run: SAZARE_URL=http://localhost:18080 bash examples/jp-core/load_examples.sh "$RUNNER_TEMP/jp"
+          printf 'server:\n  port: 18080\nstorage:\n  data_dir: "data"\n' > config.yaml
+          "$GITHUB_WORKSPACE/target/release/sazare-server" start --config config.yaml
+          grep -E 'custom profiles|SearchParameter|Terminology|Skipping' data/logs/sazare.log
+      - name: Load the examples
+        run: SAZARE_URL=http://localhost:18080 bash examples/ig/load_examples.sh "$RUNNER_TEMP/jp"
+      - name: Check JP Core searches and validation
+        run: SAZARE_URL=http://localhost:18080 bash ci/jp_core_check.sh "$RUNNER_TEMP/jp"
       - name: Server log
         if: always()
-        run: tail -50 "$RUNNER_TEMP/jp/server.log" || true
+        run: tail -50 "$RUNNER_TEMP/jp/data/logs/sazare.log" || true
 
   # Backup → restore round trip as documented: online --backup, restore only
   # resources + audit, let the index and full text rebuild, compare searches.

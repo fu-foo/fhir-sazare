@@ -18,8 +18,8 @@
 - **Search** — Parameter-based search, chain search (`subject:Patient.name=...`), reverse chain (`_has:Observation:subject:code=...`), `_include`, `_revinclude`, `_sort`, full text (`_content`, `_text` — Japanese included)
 - **Conditional operations** — Conditional create (`If-None-Exist`), update, and delete
 - **Resource filtering** — `_summary` (5 modes) and `_elements` support
-- **Validation** — Multi-phase validation against US Core profiles; load any other IG by dropping its profiles in a `profiles/` directory
-- **JP Core** — One script loads the JP Core 1.2.0 package: its profiles validate, all 8 of its search parameters (kana name, insured person number, prefecture, …) work, and with `--terminology` JP code systems are checked too — see [`examples/jp-core/`](examples/jp-core/README.md)
+- **Validation** — Multi-phase validation against US Core profiles built in
+- **Any implementation guide** — Load an IG's package (profiles, search parameters, code systems) at startup with one script; tested in CI with JP Core (all 76 package examples validate, all 8 search parameters work) — see [`examples/ig/`](examples/ig/README.md)
 - **US Core conformance** — Passes the Inferno US Core v7 & v8 FHIR API test suites (`examples/us-core-seed.json` for v7, `examples/us-core-v8-seed.json` for v8; the TLS test requires an HTTPS deployment)
 - **Custom search parameters** — Drop FHIR `SearchParameter` resources into a `searchparameters/` directory; their FHIRPath `expression` is compiled by a bounded evaluator (unsupported expressions are rejected at load, never mis-evaluated)
 - **Bulk data** — NDJSON `$import`, and `$export` both synchronous and async (FHIR Bulk Data Access IG: `Prefer: respond-async` kick-off, status poll, manifest, `_type`/`_since`/`_outputFormat`)
@@ -432,8 +432,8 @@ Define your own search parameters without rebuilding. Drop a FHIR
 `SearchParameter` resource into a `searchparameters/` directory next to the
 binary; its `expression` (FHIRPath) is compiled at startup by a bounded
 evaluator, and the parameter then works like any built-in one. This is also how
-an Implementation Guide's search params are supplied — e.g. JP Core's kana-name
-search alongside its profiles in `profiles/`, with nothing baked into the core.
+an implementation guide's search params are supplied, alongside its profiles in
+`profiles/`, with nothing baked into the core.
 When the set of parameters changes (a file added or edited, or new built-ins
 after an upgrade), the next start rebuilds the index automatically so existing
 data is covered; `POST /$reindex` does the same without a restart.
@@ -464,12 +464,11 @@ FHIR precision: `probability=0.8` matches [0.75, 0.85)). Expressions
 outside the subset (e.g. `resolve()` navigation, boolean logic) are rejected at
 load — never silently mis-evaluated into wrong results.
 
-**JP Core**: `bash examples/jp-core/setup.sh` downloads the JP Core package into
-`profiles/` and `searchparameters/`; all 8 of its search parameters load.
-`--terminology` also fills `terminology/` (CodeSystems/ValueSets) so required
-bindings to JP code systems are validated. See
-[`examples/jp-core/README.md`](examples/jp-core/README.md) for
-Docker and the full parameter list.
+**Implementation guides**: `bash examples/ig/setup.sh <package-url>` downloads an
+IG's package into `profiles/` and `searchparameters/` (and with `--terminology`,
+its code systems into `terminology/`, so required bindings are validated). See
+[`examples/ig/README.md`](examples/ig/README.md) for Docker, default profiles and
+what is checked.
 
 ### Conditional Create
 
