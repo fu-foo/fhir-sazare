@@ -163,8 +163,8 @@ impl<'a> SearchExecutor<'a> {
         // Each criterion narrows the running result (AND). The membership test
         // goes through a HashSet: a Vec::contains here is O(n*m) and took
         // seconds once both sides held tens of thousands of ids.
-        let mut narrow = |ids: Vec<String>| {
-            result = Some(match result.take() {
+        fn narrow(result: &mut Option<Vec<String>>, ids: Vec<String>) -> bool {
+            *result = Some(match result.take() {
                 None => ids,
                 Some(existing) => {
                     let keep: HashSet<String> = ids.into_iter().collect();
@@ -172,21 +172,40 @@ impl<'a> SearchExecutor<'a> {
                 }
             });
             result.as_ref().is_some_and(|ids| ids.is_empty())
-        };
+        }
 
         'criteria: {
-            for param in &query.parameters {
-                if narrow(self.search_parameter(resource_type, param)?) {
+            // Most selective kinds first (a reference or id usually leaves a
+            // handful of candidates), then let each further parameter look
+            // only at the candidates left (`set_scope`): `patient=X&code=Y`
+            // then reads X's few resources, not every resource coded Y.
+            let mut params: Vec<&SearchParameter> = query.parameters.iter().collect();
+            params.sort_by_key(|p| selectivity_rank(p));
+            let scoped = std::cell::Cell::new(false);
+            let _clear = ScopeGuard { index: self.index, active: &scoped };
+            for param in params {
+                let within = if scoped.get() { result.as_deref() } else { None };
+                let ids = self.search_parameter_within(resource_type, param, within)?;
+                if narrow(&mut result, ids) {
                     break 'criteria;
                 }
+                if let Some(current) = result.as_ref()
+                    && current.len() <= SCOPE_MAX
+                {
+                    self.index.set_scope(resource_type, current).map_err(|e| e.to_string())?;
+                    scoped.set(true);
+                }
             }
+            // Chains and _has search other resource types: no scope.
+            self.index.clear_scope();
+            scoped.set(false);
             for chain in &query.chain_parameters {
-                if narrow(self.search_chain(resource_type, chain)?) {
+                if narrow(&mut result, self.search_chain(resource_type, chain)?) {
                     break 'criteria;
                 }
             }
             for has in &query.has_parameters {
-                if narrow(self.search_has(resource_type, has)?) {
+                if narrow(&mut result, self.search_has(resource_type, has)?) {
                     break 'criteria;
                 }
             }
@@ -212,6 +231,25 @@ impl<'a> SearchExecutor<'a> {
         resource_type: &str,
         param: &SearchParameter,
     ) -> Result<Vec<String>, String> {
+        self.search_parameter_within(resource_type, param, None)
+    }
+
+    /// [`Self::search_parameter`] where only `within` can still match (the
+    /// candidates earlier criteria left): `:not` / `:missing` then complement
+    /// against those instead of every resource of the type. The result may
+    /// include ids outside `within`; the caller intersects anyway.
+    fn search_parameter_within(
+        &self,
+        resource_type: &str,
+        param: &SearchParameter,
+        within: Option<&[String]>,
+    ) -> Result<Vec<String>, String> {
+        let universe = || -> Result<Vec<String>, String> {
+            match within {
+                Some(ids) => Ok(ids.to_vec()),
+                None => self.store.list_ids(resource_type).map_err(|e| e.to_string()),
+            }
+        };
         // `:missing` — presence/absence of the parameter, independent of value.
         if param.modifier.as_deref() == Some("missing") {
             let want_missing = match param.value.trim() {
@@ -227,7 +265,7 @@ impl<'a> SearchExecutor<'a> {
                 return Ok(present);
             }
             let present: std::collections::HashSet<String> = present.into_iter().collect();
-            let all = self.store.list_ids(resource_type).map_err(|e| e.to_string())?;
+            let all = universe()?;
             return Ok(all.into_iter().filter(|id| !present.contains(id)).collect());
         }
 
@@ -240,7 +278,7 @@ impl<'a> SearchExecutor<'a> {
                 .search_parameter(resource_type, &inner)?
                 .into_iter()
                 .collect();
-            let all = self.store.list_ids(resource_type).map_err(|e| e.to_string())?;
+            let all = universe()?;
             return Ok(all.into_iter().filter(|id| !matched.contains(id)).collect());
         }
 
@@ -624,9 +662,107 @@ fn parse_reference(reference: &str) -> Option<(&str, &str)> {
     }
 }
 
+/// Candidate sets up to this size restrict the remaining parameters of a
+/// search to themselves (a temp table of ids); larger ones aren't worth it.
+const SCOPE_MAX: usize = 20_000;
+
+/// Order in which to evaluate a search's parameters: the kinds that usually
+/// narrow most go first. Only the order changes — the result is the same AND.
+fn selectivity_rank(p: &SearchParameter) -> u8 {
+    match (p.name.as_str(), p.modifier.as_deref(), &p.param_type) {
+        // Negations and presence tests read the whole type: last.
+        (_, Some("not" | "missing"), _) => 6,
+        ("_text" | "_content", _, _) => 5,
+        ("_id", _, _) => 0,
+        (_, _, SearchParamType::Reference) => 1,
+        ("identifier", _, _) => 1,
+        (_, _, SearchParamType::Token) => 2,
+        (_, _, SearchParamType::String) => 3,
+        (_, _, SearchParamType::Date | SearchParamType::Number) => 4,
+    }
+}
+
+/// Ends an index scope however the search returns (including `?`).
+struct ScopeGuard<'a> {
+    index: &'a SearchIndex,
+    active: &'a std::cell::Cell<bool>,
+}
+
+impl Drop for ScopeGuard<'_> {
+    fn drop(&mut self) {
+        if self.active.get() {
+            self.index.clear_scope();
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Narrowing (selectivity order + candidate scope) must not change any
+    /// result: compare multi-parameter searches with a brute-force filter.
+    #[test]
+    fn narrowed_searches_match_brute_force() {
+        use crate::{resource_text, IndexBuilder, IndexUpdate};
+        use sazare_core::SearchParamRegistry;
+        let registry = SearchParamRegistry::new();
+        let store = SqliteStore::open(":memory:").unwrap();
+        let index = SearchIndex::open(":memory:").unwrap();
+        let mut all = Vec::new();
+        let mut updates = Vec::new();
+        for i in 0..300 {
+            let id = format!("o{i:03}");
+            let mut obs = serde_json::json!({
+                "resourceType": "Observation", "id": id,
+                "status": if i % 3 == 0 { "final" } else { "preliminary" },
+                "code": {"coding": [{"system": "http://loinc.org", "code": format!("c{}", i % 7)}]},
+                "subject": {"reference": format!("Patient/p{}", i % 10)},
+                "effectiveDateTime": format!("20{:02}-01-01", 10 + i % 12)
+            });
+            if i % 5 == 0 {
+                obs.as_object_mut().unwrap().remove("status");
+            }
+            store.put_with_version("Observation", &id, "1", obs.to_string().as_bytes()).unwrap();
+            updates.push(IndexUpdate {
+                resource_type: "Observation".into(),
+                resource_id: id.clone(),
+                entries: IndexBuilder::extract_indices_with_registry(&registry, "Observation", &obs),
+                text: resource_text(&obs),
+            });
+            all.push(obs);
+        }
+        index.replace_many(&updates).unwrap();
+        let exec = SearchExecutor::new(&store, &index);
+
+        let field = |o: &Value, f: &str| o.pointer(f).and_then(|v| v.as_str()).map(str::to_string);
+        let check = |q: &str, keep: &dyn Fn(&Value) -> bool| {
+            let query = SearchQuery::parse_with_registry(q, Some("Observation"), &registry).unwrap();
+            let got = exec.search("Observation", &query).unwrap();
+            let mut want: Vec<String> = all.iter().filter(|o| keep(o)).map(|o| field(o, "/id").unwrap()).collect();
+            want.sort();
+            assert_eq!(got, want, "{q}");
+        };
+        let subj = |o: &Value| field(o, "/subject/reference");
+        let code = |o: &Value| field(o, "/code/coding/0/code");
+        let status = |o: &Value| field(o, "/status");
+        let year = |o: &Value| field(o, "/effectiveDateTime").map(|d| d[..4].parse::<i32>().unwrap()).unwrap();
+
+        check("code=c3&patient=p4", &|o| code(o).as_deref() == Some("c3") && subj(o).as_deref() == Some("Patient/p4"));
+        check("subject=Patient/p4&code=c3", &|o| code(o).as_deref() == Some("c3") && subj(o).as_deref() == Some("Patient/p4"));
+        check("patient=p4&status:not=final", &|o| subj(o).as_deref() == Some("Patient/p4") && status(o).as_deref() != Some("final"));
+        check("patient=p4&status:missing=true", &|o| subj(o).as_deref() == Some("Patient/p4") && status(o).is_none());
+        check("patient=p4&status:missing=false", &|o| subj(o).as_deref() == Some("Patient/p4") && status(o).is_some());
+        check("patient=p2&date=ge2015", &|o| subj(o).as_deref() == Some("Patient/p2") && year(o) >= 2015);
+        check("code=c1,c2&patient=p1,p3&status=preliminary", &|o| {
+            matches!(code(o).as_deref(), Some("c1" | "c2"))
+                && matches!(subj(o).as_deref(), Some("Patient/p1" | "Patient/p3"))
+                && status(o).as_deref() == Some("preliminary")
+        });
+        check("_id=o007&code=c0", &|o| field(o, "/id").as_deref() == Some("o007") && code(o).as_deref() == Some("c0"));
+        // Scope doesn't leak into the next search.
+        check("code=c3", &|o| code(o).as_deref() == Some("c3"));
+    }
 
     #[test]
     fn test_parse_reference() {

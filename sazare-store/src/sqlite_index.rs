@@ -157,6 +157,9 @@ fn collect_distinct_ids<P: rusqlite::Params>(
 /// SQLite-backed search index
 pub struct SearchIndex {
     conn: Connection,
+    /// While set, single-parameter searches of this resource type only look
+    /// at the ids in `temp.search_scope` (see [`SearchIndex::set_scope`]).
+    scope: std::cell::RefCell<Option<String>>,
     /// Full text (`_text` / `_content`) lives in its own database file. FTS5
     /// commits in a file shared with the large `search_index` table cost
     /// ~10 ms each (measured: 0.2 ms in a file of its own), which made every
@@ -271,7 +274,7 @@ impl SearchIndex {
         // Refresh planner statistics where they are missing or stale. Bounded by
         // analysis_limit so startup stays fast on large indexes.
         conn.execute_batch("PRAGMA analysis_limit=1000; PRAGMA optimize=0x10002;")?;
-        Ok(Self { conn, text })
+        Ok(Self { conn, text, scope: std::cell::RefCell::new(None) })
     }
 
     /// Add an index entry
@@ -537,6 +540,55 @@ impl SearchIndex {
         collect_distinct_ids(&mut stmt, rusqlite::params_from_iter(bind.iter()))
     }
 
+    /// Restrict the following parameter searches of `resource_type` to `ids`
+    /// — the candidates an earlier, more selective criterion of the same
+    /// search left. Each search then visits only those ids (through the
+    /// `(resource_type, resource_id, param_name, …)` unique index) instead of
+    /// every resource of the type with a matching value. [`clear_scope`]
+    /// ends it.
+    ///
+    /// [`clear_scope`]: SearchIndex::clear_scope
+    pub fn set_scope(&self, resource_type: &str, ids: &[String]) -> Result<()> {
+        self.conn.execute_batch(
+            "CREATE TEMP TABLE IF NOT EXISTS search_scope (sid TEXT PRIMARY KEY) WITHOUT ROWID;
+             DELETE FROM temp.search_scope;",
+        )?;
+        let tx = self.conn.unchecked_transaction()?;
+        {
+            let mut ins = tx.prepare_cached("INSERT OR IGNORE INTO temp.search_scope (sid) VALUES (?1)")?;
+            for id in ids {
+                ins.execute(params![id])?;
+            }
+        }
+        tx.commit()?;
+        *self.scope.borrow_mut() = Some(resource_type.to_string());
+        Ok(())
+    }
+
+    /// End a [`SearchIndex::set_scope`] restriction.
+    pub fn clear_scope(&self) {
+        *self.scope.borrow_mut() = None;
+    }
+
+    /// Prepare a `SELECT resource_id FROM search_index WHERE …` query, scoped
+    /// to the candidate ids when a scope for `resource_type` is active: the
+    /// candidates drive the loop (CROSS JOIN fixes the order) and each is
+    /// looked up by id.
+    fn prepare_param_query(&self, resource_type: &str, sql: &str) -> Result<rusqlite::Statement<'_>> {
+        let scoped = self.scope.borrow().as_deref() == Some(resource_type);
+        if !scoped {
+            return Ok(self.conn.prepare(sql)?);
+        }
+        let rewritten = sql
+            .replacen(
+                "FROM search_index",
+                "FROM temp.search_scope CROSS JOIN search_index",
+                1,
+            )
+            .replacen("WHERE", "WHERE resource_id = sid AND", 1);
+        Ok(self.conn.prepare(&rewritten)?)
+    }
+
     /// Token search (code, identifier, etc.)
     pub fn search_token(
         &self,
@@ -546,7 +598,7 @@ impl SearchIndex {
         code: &str,
     ) -> Result<Vec<String>> {
         if let Some(sys) = system {
-            let mut stmt = self.conn.prepare(
+            let mut stmt = self.prepare_param_query(resource_type, 
                 r#"
                 SELECT resource_id FROM search_index
                 WHERE resource_type = ?1
@@ -557,7 +609,7 @@ impl SearchIndex {
             )?;
             collect_distinct_ids(&mut stmt, params![resource_type, param_name, sys, code])
         } else {
-            let mut stmt = self.conn.prepare(
+            let mut stmt = self.prepare_param_query(resource_type, 
                 r#"
                 SELECT resource_id FROM search_index
                 WHERE resource_type = ?1
@@ -583,7 +635,7 @@ impl SearchIndex {
             // optimization needs case_sensitive_like or a NOCASE column), so
             // bound the scan with the equivalent range [abc, abc\u{10FFFF}) on
             // idx_sp_lower and keep the LIKE as an exact residual filter.
-            let mut stmt = self.conn.prepare(
+            let mut stmt = self.prepare_param_query(resource_type, 
                 "SELECT resource_id FROM search_index \
                  WHERE resource_type = ?1 AND param_name = ?2 \
                    AND value_string_lower >= ?3 AND value_string_lower < ?4 \
@@ -611,7 +663,7 @@ impl SearchIndex {
             ),
         };
 
-        let mut stmt = self.conn.prepare(sql)?;
+        let mut stmt = self.prepare_param_query(resource_type, sql)?;
         collect_distinct_ids(&mut stmt, params![resource_type, param_name, bound])
     }
 
@@ -623,7 +675,7 @@ impl SearchIndex {
         param_name: &str,
         code: &str,
     ) -> Result<Vec<String>> {
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.prepare_param_query(resource_type, 
             "SELECT resource_id FROM search_index \
              WHERE resource_type = ?1 AND param_name = ?2 \
                AND value_string = ?3 AND value_system IS NULL",
@@ -638,7 +690,7 @@ impl SearchIndex {
         param_name: &str,
         system: &str,
     ) -> Result<Vec<String>> {
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.prepare_param_query(resource_type, 
             "SELECT resource_id FROM search_index \
              WHERE resource_type = ?1 AND param_name = ?2 AND value_system = ?3",
         )?;
@@ -648,7 +700,7 @@ impl SearchIndex {
     /// Distinct resource ids that have at least one index entry for `param_name`
     /// (used to implement the `:missing` and `:not` modifiers).
     pub fn ids_with_param(&self, resource_type: &str, param_name: &str) -> Result<Vec<String>> {
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.prepare_param_query(resource_type, 
             "SELECT resource_id FROM search_index \
              WHERE resource_type = ?1 AND param_name = ?2",
         )?;
@@ -662,7 +714,7 @@ impl SearchIndex {
         param_name: &str,
         reference: &str,
     ) -> Result<Vec<String>> {
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.prepare_param_query(resource_type, 
             r#"
             SELECT resource_id FROM search_index
             WHERE resource_type = ?1
@@ -806,7 +858,7 @@ impl SearchIndex {
              WHERE resource_type = ?1 AND param_name = ?2
                AND value_date_start IS NOT NULL AND ({cond})"
         );
-        let mut stmt = self.conn.prepare(&query)?;
+        let mut stmt = self.prepare_param_query(resource_type, &query)?;
         collect_distinct_ids(&mut stmt, params![resource_type, param_name, qs, qe])
     }
 
@@ -894,7 +946,7 @@ impl SearchIndex {
              WHERE resource_type = ?1 AND param_name = ?2
                AND value_number IS NOT NULL AND ({cond})"
         );
-        let mut stmt = self.conn.prepare(&query)?;
+        let mut stmt = self.prepare_param_query(resource_type, &query)?;
         collect_distinct_ids(&mut stmt, params![resource_type, param_name, lo, hi])
     }
 }
