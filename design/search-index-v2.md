@@ -352,10 +352,9 @@ forward-only).
 - **Sort ties** — *decided:* unspecified (insertion order in practice). Ties no longer need
   ids, so a sort on a low-cardinality key (`_sort=status`) streams like any other.
   Listed as not covered in the stability policy.
-- **`:exact` is case-insensitive today** (it compares lower-cased values); FHIR defines it
-  as exact. v2 stores the original string, so it can follow the spec — a behavior change
-  to decide (proposed: follow the spec, listed under Behavior changes; the differential
-  tests treat it as an intended difference).
+- **`:exact` was case-insensitive** (it compared lower-cased values); FHIR defines it as
+  exact. *Decided:* follow the spec — fixed already in v1 (before this redesign), so v1 and
+  v2 agree and the differential tests need no exception.
 - **Disk and I/O during the build**: see §4.5 (peak space, throttling).
 - **Reference forms** (versioned, absolute same-server URLs, foreign URLs, `urn:`,
   contained) must map exactly as today; the differential tests include each.
