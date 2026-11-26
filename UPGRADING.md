@@ -43,6 +43,9 @@ into `data_dir`, delete the two `search_index*` files, start the older binary).
 
 ### To 0.15.0
 
+- **The first start rebuilds the search index once** (string values are now indexed as
+  written, for a case-sensitive `:exact`); the log says so. Plan for it on large data
+  sets — about a minute per 100k resources.
 - **The command line has commands now.** `sazare-server` alone prints help instead of
   starting the server. Use `sazare-server start` (background) / `stop` / `status`, or
   `sazare-server run` in the foreground. `--backup <dir>` became `sazare-server backup <dir>`.
