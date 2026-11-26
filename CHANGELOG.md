@@ -4,7 +4,7 @@ All notable changes to sazare. Versions follow [Semantic Versioning](https://sem
 until 1.0, a minor version (0.x.0) may change behavior — those changes are listed under
 **Behavior changes**. See [UPGRADING.md](UPGRADING.md) for how to upgrade.
 
-## Unreleased
+## 0.16.0 — 2026-11-26
 
 ### Changed
 - **Index rebuilds happen in the background.** When the search index has to be rebuilt —
@@ -17,7 +17,6 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
   (`sazare_index_rebuild_active`, `sazare_index_rebuild_remaining`). `index.rebuild:
   blocking` restores the old wait; `manual` rebuilds only on `POST /$reindex`.
 - `POST /$reindex` starts a background rebuild and answers 202 (409 while one runs).
-
 - **Search index v2.** A new index format: integer keys for resource types, parameters,
   code systems and resources, one table per kind of value, and queries compiled to a
   single SQL statement driven by the most selective criterion. At 10M resources the index

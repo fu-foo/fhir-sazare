@@ -809,8 +809,11 @@ MAX_MS=500 bench/run.sh       # exit non-zero if a query is slower than 500ms
 ```
 
 Reference numbers (10k Patients / 50k Observations, one desktop CPU): import
-~2,200 resources/s; single-resource lookups and selective searches under 3ms;
-the broadest searches (50k matches, `_has` over 5k sources) about 30ms.
+~5,000 resources/s; single-resource lookups and selective searches about 1 ms; the
+broadest (an exact total over 50k matches) about 25 ms. At 10M resources, pages and
+patient-scoped searches stay in milliseconds and the index is 6 GB (plus 9 GB of full
+text); exact totals over millions of matches take seconds, `_total=none` skips them —
+see the [design document](design/search-index-v2.md) for the numbers.
 
 ---
 
