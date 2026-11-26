@@ -804,10 +804,25 @@ the broadest searches (50k matches, `_has` over 5k sources) about 30ms.
 
 ## Roadmap
 
-- [x] Runtime-loadable profiles (US Core embedded; other IGs from a `profiles/` directory)
-- [x] Multi-level chain search
-- [x] Reverse chain search (`_has`)
-- [x] Subscription via WebSocket
+**Toward 1.0** (tracked in [#11](https://github.com/fu-foo/fhir-sazare/issues/11))
+- Search index v2: integer keys and set operations inside SQLite — page-sized work at
+  10M resources, a much smaller index ([design](design/search-index-v2.md))
+- Index rebuilds in the background: no startup wait after an upgrade
+- Built-in search parameters derived from the R4 definitions — complete coverage
+  ([#34](https://github.com/fu-foo/fhir-sazare/issues/34))
+- Stability policy: what 1.0 promises
+- End-to-end and security review before the release
+
+**After 1.0**
+- Quantity, composite and uri search parameters
+- FHIRPath: `or`, `exists()` in custom search parameters
+- Topic-based Subscriptions on R4 (the R5 Subscriptions Backport IG)
+- Signed binaries (macOS notarization, Windows code signing)
+
+**FHIR versions**: sazare implements R4 (4.0.1), the version US Core, JP Core, IPS and
+current regulation are built on. There are no plans for R4B or R5; the next version to
+support is R6, once it is published and in use. Search parameters and the index are
+designed so that a version is mostly data (which definitions are loaded), not code.
 
 ---
 
