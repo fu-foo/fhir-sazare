@@ -235,12 +235,7 @@ async fn do_search(
             executor.search_with_total(&rt, &q).map(|(_, total)| total)
         })
         .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!(OperationOutcome::storage_error(e))),
-            )
-        })?;
+        .map_err(search_error)?;
 
         return Ok(super::fhir_json(StatusCode::OK, json!({
             "resourceType": "Bundle",
@@ -257,19 +252,7 @@ async fn do_search(
     let (mut resources, total, included, revincluded) =
         crate::with_index_reader(&state, move |st, index| run_search(st, index, &rt, &q, au.as_ref()))
             .await
-            .map_err(|e| {
-                if e.starts_with(sazare_store::INDEX_NOT_READY) {
-                    // Answerable once the background rebuild has switched.
-                    return (
-                        StatusCode::SERVICE_UNAVAILABLE,
-                        Json(json!(OperationOutcome::error(IssueType::Transient, e))),
-                    );
-                }
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(json!(OperationOutcome::storage_error(e))),
-                )
-            })?;
+            .map_err(search_error)?;
 
     // Apply _summary / _elements filtering
     for resource in &mut resources {
@@ -392,6 +375,15 @@ async fn do_search(
 
 fn bad_request(msg: String) -> (StatusCode, Json<Value>) {
     (StatusCode::BAD_REQUEST, Json(json!(OperationOutcome::error(IssueType::Invalid, msg))))
+}
+
+/// A search that failed: 503 when only the index being built can answer it
+/// (a quantity search on a v1 index during the upgrade), else 500.
+fn search_error(e: String) -> (StatusCode, Json<Value>) {
+    if e.starts_with(sazare_store::INDEX_NOT_READY) {
+        return (StatusCode::SERVICE_UNAVAILABLE, Json(json!(OperationOutcome::error(IssueType::Transient, e))));
+    }
+    (StatusCode::INTERNAL_SERVER_ERROR, Json(json!(OperationOutcome::storage_error(e))))
 }
 
 /// The index-side part of a search: the page of matches, the total, and the

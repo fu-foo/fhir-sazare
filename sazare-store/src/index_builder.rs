@@ -5,18 +5,22 @@ use serde_json::Value;
 pub struct IndexBuilder;
 
 /// A Quantity (or Age, Duration, Distance, Count, SimpleQuantity) or Money
-/// as an index row: `"<number>|<code>|<unit>"` (the number's JSON text, so
+/// as an index row: `"<number>␟<code>␟<unit>"` (U+001F between; the number's JSON text, so
 /// its precision survives) and the system. Money's currency is its code, in
 /// the ISO 4217 system. `None` without a numeric value.
 pub fn quantity_row(node: &Value) -> Option<(String, Option<String>)> {
     let value = node.get("value").filter(|v| v.is_number())?;
     if let Some(currency) = node.get("currency").and_then(Value::as_str) {
-        return Some((format!("{value}|{currency}|{currency}"), Some("urn:iso:std:iso:4217".to_string())));
+        return Some((format!("{value}{QUANTITY_SEP}{currency}{QUANTITY_SEP}{currency}"), Some("urn:iso:std:iso:4217".to_string())));
     }
     let text = |k: &str| node.get(k).and_then(Value::as_str).unwrap_or("");
     let system = node.get("system").and_then(Value::as_str).map(str::to_string);
-    Some((format!("{value}|{}|{}", text("code"), text("unit")), system))
+    Some((format!("{value}{QUANTITY_SEP}{}{QUANTITY_SEP}{}", text("code"), text("unit")), system))
 }
+
+/// Between the parts of a quantity index row: a control character no code or
+/// unit contains (a `|` could be part of a local code).
+pub const QUANTITY_SEP: char = '\u{1F}';
 
 /// Bump when the way resources are turned into index rows changes (not just
 /// the parameter set), so existing indexes are rebuilt on upgrade.

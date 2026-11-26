@@ -276,9 +276,10 @@ impl SearchQuery {
             } else if param_type == SearchParamType::Number {
                 let (prefix, number) = parse_number_prefix(&value);
                 // Reject at parse time (a 400), comma-separated alternatives
-                // each checked; `:missing` takes true/false instead.
+                // each checked (each with its own prefix); `:missing` takes
+                // true/false instead.
                 if modifier.as_deref() != Some("missing")
-                    && number.split(',').any(|n| n.trim().parse::<f64>().is_err())
+                    && alternatives(&number).iter().any(|n| parse_number_prefix(n).1.trim().parse::<f64>().is_err())
                 {
                     return Err(format!("Invalid number '{value}' for parameter '{param_name}'"));
                 }
@@ -286,11 +287,18 @@ impl SearchQuery {
             } else if param_type == SearchParamType::Quantity {
                 // `[prefix]number[|system|code]`: the number is checked here
                 // (a 400), the system and code are matched by the index.
+                // With pipes it is `number|system|code`: one pipe (`5.4|mg`,
+                // a token habit) would silently match nothing.
                 let (prefix, rest) = parse_number_prefix(&value);
                 if modifier.as_deref() != Some("missing")
-                    && rest.split(',').any(|q| q.split('|').next().unwrap_or("").trim().parse::<f64>().is_err())
+                    && alternatives(&rest).iter().any(|q| {
+                        let q = parse_number_prefix(q).1;
+                        !matches!(q.matches('|').count(), 0 | 2) || q.split('|').next().unwrap_or("").trim().parse::<f64>().is_err()
+                    })
                 {
-                    return Err(format!("Invalid quantity '{value}' for parameter '{param_name}'"));
+                    return Err(format!(
+                        "Invalid quantity '{value}' for parameter '{param_name}': expected [prefix]number, number|system|code or number||code"
+                    ));
                 }
                 (prefix, rest)
             } else {
@@ -457,6 +465,30 @@ pub fn parse_number_prefix(value: &str) -> (Option<String>, String) {
         }
     }
     (Some("eq".to_string()), value.to_string())
+}
+
+/// The comma-separated alternatives of a value (OR), trimmed, empty ones left out.
+fn alternatives(value: &str) -> Vec<&str> {
+    value.split(',').map(str::trim).filter(|v| !v.is_empty()).collect()
+}
+
+/// The alternatives of a date, number or quantity parameter, each with its own
+/// prefix: the first's was taken off at parse time (`p.prefix`), the others
+/// still carry theirs (`ge2020,lt2019`, `gt140,90` — the second is `eq`).
+/// Any other parameter: its alternatives, no prefix.
+pub fn prefixed_alternatives(p: &SearchParameter) -> Vec<(Option<String>, String)> {
+    let alts = alternatives(&p.value);
+    alts.iter()
+        .enumerate()
+        .map(|(i, v)| match (&p.param_type, i) {
+            (SearchParamType::Date | SearchParamType::Number | SearchParamType::Quantity, 0) => {
+                (p.prefix.clone(), v.to_string())
+            }
+            (SearchParamType::Date, _) => parse_date_prefix(v),
+            (SearchParamType::Number | SearchParamType::Quantity, _) => parse_number_prefix(v),
+            _ => (None, v.to_string()),
+        })
+        .collect()
 }
 
 /// Parse date prefix from value (ge2020-01-01 -> (Some("ge"), "2020-01-01")).

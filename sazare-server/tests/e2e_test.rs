@@ -2108,9 +2108,18 @@ async fn test_quantity_search() {
     assert_eq!(ids("component-value-quantity=ge140|http://unitsofmeasure.org|mm[Hg]").await, [high.as_str()]);
     assert_eq!(ids("component-value-quantity=lt80||mmHg").await, [normal.as_str()], "||code also matches the unit");
     assert_eq!(ids("value-quantity:missing=true&code=85354-9&_sort=_id").await.len(), 2);
-    assert_eq!(ids("code=29463-7&_sort=-value-quantity").await, [w85, w70]);
+    assert_eq!(ids("code=29463-7&_sort=-value-quantity").await, vec![w85.clone(), w70.clone()]);
     let r = c.get(format!("{base}/Observation?value-quantity=heavy")).send().await.unwrap();
     assert_eq!(r.status(), 400, "not a number");
+    let r = c.get(format!("{base}/Observation?value-quantity=70|kg")).send().await.unwrap();
+    assert_eq!(r.status(), 400, "one pipe: number|system|code needs two");
+    // Alternatives, each with its own prefix.
+    let mut both = ids("value-quantity=gt80||kg,lt71||kg").await;
+    both.sort();
+    let mut want = vec![w70.clone(), w85.clone()];
+    want.sort();
+    assert_eq!(both, want);
+    assert_eq!(ids("value-quantity=gt80||kg,70.2||kg").await.len(), 2, "the second is eq, not gt");
     let meta: Value = c.get(format!("{base}/metadata")).send().await.unwrap().json().await.unwrap();
     let obs = meta["rest"][0]["resource"].as_array().unwrap().iter().find(|r| r["type"] == "Observation").unwrap().clone();
     let vq = obs["searchParam"].as_array().unwrap().iter().find(|p| p["name"] == "value-quantity").cloned();
