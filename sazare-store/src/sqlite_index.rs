@@ -86,7 +86,7 @@ fn escape_like(s: &str) -> String {
     out
 }
 
-/// One resource's index rows for [`SearchIndex::replace_many`].
+/// One resource's index rows for [`V1Index::replace_many`].
 #[derive(Debug, Clone)]
 pub struct IndexUpdate {
     pub resource_type: String,
@@ -106,7 +106,7 @@ pub struct ResourceText {
 
 /// Split a `_text`/`_content` value into terms: whitespace-separated, with
 /// "double-quoted phrases" kept whole.
-fn split_text_terms(query: &str) -> Vec<String> {
+pub(crate) fn split_text_terms(query: &str) -> Vec<String> {
     let mut terms = Vec::new();
     let mut rest = query.trim();
     while !rest.is_empty() {
@@ -126,7 +126,7 @@ fn split_text_terms(query: &str) -> Vec<String> {
     terms
 }
 
-/// `(resource_id, numeric key, text key)` — see [`SearchIndex::sort_values`].
+/// `(resource_id, numeric key, text key)` — see [`V1Index::sort_values`].
 pub type SortValue = (String, Option<f64>, Option<String>);
 
 /// Run a `SELECT resource_id ...` statement and return the ids de-duplicated,
@@ -154,15 +154,17 @@ fn collect_distinct_ids<P: rusqlite::Params>(
     Ok(ids)
 }
 
-/// SQLite-backed search index
-pub struct SearchIndex {
+/// The v1 search index (index format 2 and before): one wide table of text
+/// values. Kept to serve searches from an existing v1 index while its v2
+/// replacement is built in the background; new indexes are v2.
+pub struct V1Index {
     conn: Connection,
     /// While set, single-parameter searches of this resource type only look
-    /// at the ids in `temp.search_scope` (see [`SearchIndex::set_scope`]).
+    /// at the ids in `temp.search_scope` (see [`V1Index::set_scope`]).
     scope: std::cell::RefCell<Option<String>>,
     /// While set, the resources whose index rows were written, so a new index
     /// generation being built beside this one can replay them
-    /// ([`SearchIndex::start_journal`]).
+    /// ([`V1Index::start_journal`]).
     journal: std::cell::RefCell<Option<std::collections::HashSet<(String, String)>>>,
     /// Full text (`_text` / `_content`) lives in its own database file. FTS5
     /// commits in a file shared with the large `search_index` table cost
@@ -173,7 +175,7 @@ pub struct SearchIndex {
 }
 
 #[allow(clippy::result_large_err)]
-impl SearchIndex {
+impl V1Index {
     /// Ordered schema migrations (see `crate::migrate`). Append-only.
     const MIGRATIONS: &'static [&'static str] = &[
         // v1 — initial schema.
@@ -236,7 +238,7 @@ impl SearchIndex {
         "#,
     ];
 
-    /// Schema of the full-text database (see [`SearchIndex::text`]).
+    /// Schema of the full-text database (see [`V1Index::text`]).
     /// `resource_text_key` maps a resource to its FTS rowid: FTS5 can't index
     /// ordinary columns, so deleting by (type, id) inside the FTS table would
     /// scan it on every write. The trigram tokenizer matches substrings,
@@ -614,7 +616,7 @@ impl SearchIndex {
     /// every resource of the type with a matching value. [`clear_scope`]
     /// ends it.
     ///
-    /// [`clear_scope`]: SearchIndex::clear_scope
+    /// [`clear_scope`]: V1Index::clear_scope
     pub fn set_scope(&self, resource_type: &str, ids: &[String]) -> Result<()> {
         self.conn.execute_batch(
             "CREATE TEMP TABLE IF NOT EXISTS search_scope (sid TEXT PRIMARY KEY) WITHOUT ROWID;
@@ -632,7 +634,7 @@ impl SearchIndex {
         Ok(())
     }
 
-    /// End a [`SearchIndex::set_scope`] restriction.
+    /// End a [`V1Index::set_scope`] restriction.
     pub fn clear_scope(&self) {
         *self.scope.borrow_mut() = None;
     }
@@ -1036,65 +1038,13 @@ fn number_with_precision(value: &str) -> Option<(f64, f64)> {
     Some((v, 0.5 * 10f64.powi(exp - decimals)))
 }
 
-/// A pool of read-only [`SearchIndex`] connections for searches, so a slow
-/// search (an exact total over millions of matches) doesn't hold the writer
-/// — or other searches — up. Empty for an in-memory index (callers then use
-/// the writer).
-pub struct IndexReaders {
-    pool: Vec<std::sync::Mutex<SearchIndex>>,
-    next: std::sync::atomic::AtomicUsize,
-}
-
-impl IndexReaders {
-    /// `n` read-only connections to the index at `path` (which must exist:
-    /// open the writer first).
-    pub fn open(path: impl AsRef<Path>, n: usize) -> Result<Self> {
-        let path = path.as_ref();
-        let mut pool = Vec::new();
-        if path.as_os_str() != ":memory:" {
-            for _ in 0..n {
-                pool.push(std::sync::Mutex::new(SearchIndex::open_read_only(path)?));
-            }
-        }
-        Ok(Self { pool, next: std::sync::atomic::AtomicUsize::new(0) })
-    }
-
-    /// No readers: every search uses the writer.
-    pub fn none() -> Self {
-        Self { pool: Vec::new(), next: std::sync::atomic::AtomicUsize::new(0) }
-    }
-
-    /// A reader to use now: the first free one, else (all busy) wait for the
-    /// next in turn. `None` when the pool is empty.
-    pub fn get(&self) -> Option<std::sync::MutexGuard<'_, SearchIndex>> {
-        if self.pool.is_empty() {
-            return None;
-        }
-        for r in &self.pool {
-            if let Ok(g) = r.try_lock() {
-                return Some(g);
-            }
-        }
-        let i = self.next.fetch_add(1, std::sync::atomic::Ordering::Relaxed) % self.pool.len();
-        Some(self.pool[i].lock().unwrap_or_else(|e| e.into_inner()))
-    }
-
-    pub fn len(&self) -> usize {
-        self.pool.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.pool.is_empty()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_token_search() {
-        let index = SearchIndex::open(":memory:").unwrap();
+        let index = V1Index::open(":memory:").unwrap();
 
         index
             .add_index(
@@ -1121,7 +1071,7 @@ mod tests {
 
     #[test]
     fn test_string_search() {
-        let index = SearchIndex::open(":memory:").unwrap();
+        let index = V1Index::open(":memory:").unwrap();
 
         index
             .add_index("Patient", "123", "family", "string", Some("Doe"), None)
@@ -1152,7 +1102,7 @@ mod tests {
 
     #[test]
     fn test_reference_search() {
-        let index = SearchIndex::open(":memory:").unwrap();
+        let index = V1Index::open(":memory:").unwrap();
 
         index
             .add_index("Observation", "o1", "subject", "reference", Some("Patient/123"), None)
@@ -1167,7 +1117,7 @@ mod tests {
 
     #[test]
     fn test_referenced_targets() {
-        let index = SearchIndex::open(":memory:").unwrap();
+        let index = V1Index::open(":memory:").unwrap();
         // Two observations point at Patient/123, one at Patient/456, one elsewhere.
         index.add_index("Observation", "o1", "patient", "reference", Some("Patient/123"), None).unwrap();
         index.add_index("Observation", "o2", "patient", "reference", Some("Patient/123"), None).unwrap();
@@ -1191,7 +1141,7 @@ mod tests {
 
     #[test]
     fn test_date_search() {
-        let index = SearchIndex::open(":memory:").unwrap();
+        let index = V1Index::open(":memory:").unwrap();
 
         index
             .add_index("Patient", "p1", "birthdate", "date", Some("1990-01-01"), None)
@@ -1209,7 +1159,7 @@ mod tests {
 
     #[test]
     fn test_date_range_period_vs_instant() {
-        let index = SearchIndex::open(":memory:").unwrap();
+        let index = V1Index::open(":memory:").unwrap();
         // A point dateTime Observation and a Period-valued Observation sharing a start.
         index
             .add_index("Observation", "point", "date", "date", Some("2025-12-01T09:15:00-05:00"), None)
@@ -1247,7 +1197,7 @@ mod tests {
 
     #[test]
     fn test_token_system_edge_forms() {
-        let index = SearchIndex::open(":memory:").unwrap();
+        let index = V1Index::open(":memory:").unwrap();
         index.add_index("Obs", "withsys", "code", "token", Some("1234-5"), Some("http://loinc.org")).unwrap();
         index.add_index("Obs", "nosys", "code", "token", Some("1234-5"), None).unwrap();
 
@@ -1261,7 +1211,7 @@ mod tests {
 
     #[test]
     fn test_string_contains_and_like_escaping() {
-        let index = SearchIndex::open(":memory:").unwrap();
+        let index = V1Index::open(":memory:").unwrap();
         index.add_index("Patient", "p1", "name", "string", Some("Moreau"), None).unwrap();
         index.add_index("Patient", "p2", "name", "string", Some("50%off"), None).unwrap();
 
@@ -1276,7 +1226,7 @@ mod tests {
 
     #[test]
     fn test_date_sa_eb_prefixes() {
-        let index = SearchIndex::open(":memory:").unwrap();
+        let index = V1Index::open(":memory:").unwrap();
         index.add_index("Obs", "early", "date", "date", Some("2020-01-01"), None).unwrap();
         index.add_index("Obs", "late", "date", "date", Some("2025-01-01"), None).unwrap();
 
@@ -1302,7 +1252,7 @@ mod tests {
     fn test_date_subsecond_eq_does_not_collide() {
         // Two instants in the same second but different microseconds (e.g. two
         // resources' _lastUpdated) must not match each other under eq.
-        let index = SearchIndex::open(":memory:").unwrap();
+        let index = V1Index::open(":memory:").unwrap();
         index
             .add_index("Observation", "a", "_lastUpdated", "date", Some("2026-05-30T09:49:12.133115+00:00"), None)
             .unwrap();
@@ -1318,7 +1268,7 @@ mod tests {
 
     #[test]
     fn test_string_prefix_is_case_insensitive_and_literal() {
-        let index = SearchIndex::open(":memory:").unwrap();
+        let index = V1Index::open(":memory:").unwrap();
         for (id, v) in [("1", "Doe"), ("2", "DOE-Smith"), ("3", "Do_e"), ("4", "Dzoe")] {
             index.add_index("Patient", id, "family", "string", Some(v), None).unwrap();
         }
@@ -1332,7 +1282,7 @@ mod tests {
 
     #[test]
     fn test_results_are_deduplicated() {
-        let index = SearchIndex::open(":memory:").unwrap();
+        let index = V1Index::open(":memory:").unwrap();
         // Two given names on one resource → two index rows, one result.
         index.add_index("Patient", "1", "given", "string", Some("Anna"), None).unwrap();
         index.add_index("Patient", "1", "given", "string", Some("Annabel"), None).unwrap();
@@ -1342,7 +1292,7 @@ mod tests {
 
     #[test]
     fn test_number_search_prefixes_and_precision() {
-        let index = SearchIndex::open(":memory:").unwrap();
+        let index = V1Index::open(":memory:").unwrap();
         for (id, v) in [("a", "0.8"), ("b", "100"), ("c", "100.4"), ("d", "105"), ("e", "-3")] {
             index.add_index("RiskAssessment", id, "probability", "number", Some(v), None).unwrap();
         }
@@ -1367,7 +1317,7 @@ mod tests {
 
     #[test]
     fn test_sort_values_by_id_matches_full_scan() {
-        let index = SearchIndex::open(":memory:").unwrap();
+        let index = V1Index::open(":memory:").unwrap();
         for i in 0..1200 {
             let id = format!("o{i:04}");
             index.add_index("Observation", &id, "date", "date", Some(&format!("2024-01-{:02}", i % 28 + 1)), None).unwrap();
@@ -1386,14 +1336,14 @@ mod tests {
         assert_eq!(by_id, full);
     }
 
-    fn put_text(index: &SearchIndex, id: &str, narrative: &str, content: &str) {
+    fn put_text(index: &V1Index, id: &str, narrative: &str, content: &str) {
         let text = ResourceText { narrative: narrative.into(), content: content.into() };
         index.replace_resource_index("Condition", id, &[], &text).unwrap();
     }
 
     #[test]
     fn test_search_text_japanese_phrases_and_columns() {
-        let index = SearchIndex::open(":memory:").unwrap();
+        let index = V1Index::open(":memory:").unwrap();
         put_text(&index, "c1", "外来 2型糖尿病 HbA1c 8.2%", "2型糖尿病 E11 外来 2型糖尿病 HbA1c 8.2%");
         put_text(&index, "c2", "高血圧症", "高血圧症 I10 Hypertension");
         put_text(&index, "c3", "", "Type 2 diabetes mellitus");
@@ -1441,7 +1391,7 @@ mod tests {
 
     #[test]
     fn test_replace_resource_index() {
-        let index = SearchIndex::open(":memory:").unwrap();
+        let index = V1Index::open(":memory:").unwrap();
         let entry = |v: &str| ("status".to_string(), "token".to_string(), v.to_string(), None);
         let none = ResourceText::default();
         index.replace_resource_index("Observation", "o1", &[entry("preliminary")], &none).unwrap();
@@ -1452,7 +1402,7 @@ mod tests {
 
     #[test]
     fn test_search_reference_any() {
-        let index = SearchIndex::open(":memory:").unwrap();
+        let index = V1Index::open(":memory:").unwrap();
         for (id, r) in [("o1", "Patient/a"), ("o2", "Patient/b"), ("o3", "Patient/c")] {
             index.add_index("Observation", id, "subject", "reference", Some(r), None).unwrap();
         }
@@ -1468,7 +1418,7 @@ mod tests {
     /// single-patient lookups cost tens of ms at ~50k resources.
     #[test]
     fn test_lookups_use_selective_index_without_stats() {
-        let index = SearchIndex::open(":memory:").unwrap();
+        let index = V1Index::open(":memory:").unwrap();
         let plan = |sql: &str| -> String {
             let mut stmt = index.conn.prepare(&format!("EXPLAIN QUERY PLAN {sql}")).unwrap();
             let rows = stmt

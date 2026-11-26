@@ -13,7 +13,7 @@
    once** and builds a new index in the background, switching to it when it is complete;
    until then searches use the previous index and may miss what the new one adds.
    `GET /health` shows the progress (`"index": {"state": "rebuilding", "done": …, "total": …}`)
-   and the log says `Switched to search index generation N`. Expect roughly 3,000
+   and the log says `Switched to search index generation N`. Expect roughly 5,000
    resources per second; plan disk space for the old and the new index side by side.
    `index.rebuild: blocking` waits for the rebuild before serving; `manual` only rebuilds
    on `POST /$reindex`.
@@ -53,6 +53,12 @@ into `data_dir`, delete the two `search_index*` files, start the older binary).
   `search_index.gN.sqlite` (index generations); the newest complete one is used.
 - `POST /$reindex` answers 202 at once and rebuilds in the background (it used to block
   until done and answer 200 with counts); 409 while a rebuild runs.
+- **The search index is rebuilt once in a new format (index v2)**: about a tenth of the
+  size (6 GB instead of ~60 GB at 10M resources) and faster searches. The old index keeps
+  answering searches until the new one is complete; plan the time (about 30 minutes per
+  10M resources) and the disk space for the new index next to the old one. Unsorted
+  searches now come back in index order rather than by id (the order of an unsorted search
+  is unspecified; use `_sort` for an order).
 
 ### To 0.15.0
 

@@ -6,7 +6,8 @@ pub struct IndexBuilder;
 
 /// Bump when the way resources are turned into index rows changes (not just
 /// the parameter set), so existing indexes are rebuilt on upgrade.
-pub const INDEX_FORMAT: u32 = 2;
+/// 3: index v2 (integer keys, a table per value kind).
+pub const INDEX_FORMAT: u32 = 3;
 
 impl IndexBuilder {
     /// Extract all searchable indices from a resource using a registry.

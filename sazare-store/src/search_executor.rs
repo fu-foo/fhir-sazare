@@ -1,4 +1,6 @@
 use crate::sqlite_index::StringMatch;
+use crate::search_index::Engine;
+use crate::sqlite_index::V1Index;
 use crate::{SearchIndex, SqliteStore};
 use sazare_core::{ChainParameter, HasParameter, SearchParameter, SearchParamType, SearchQuery};
 use serde_json::Value;
@@ -6,7 +8,7 @@ use std::collections::HashSet;
 
 /// Split a chained / reverse-chained value into (prefix, value): date params
 /// carry a comparator prefix (`ge2020-01-01`) just like top-level ones.
-fn split_prefix(param_type: &SearchParamType, value: &str) -> (Option<String>, String) {
+pub(crate) fn split_prefix(param_type: &SearchParamType, value: &str) -> (Option<String>, String) {
     if *param_type == SearchParamType::Date {
         sazare_core::search_param::parse_date_prefix(value)
     } else if *param_type == SearchParamType::Number {
@@ -16,7 +18,8 @@ fn split_prefix(param_type: &SearchParamType, value: &str) -> (Option<String>, S
     }
 }
 
-/// Execute FHIR search queries
+/// Execute FHIR search queries on whichever index engine is open: v2, or a
+/// v1 index still serving while its v2 replacement is built.
 pub struct SearchExecutor<'a> {
     store: &'a SqliteStore,
     index: &'a SearchIndex,
@@ -24,6 +27,164 @@ pub struct SearchExecutor<'a> {
 
 impl<'a> SearchExecutor<'a> {
     pub fn new(store: &'a SqliteStore, index: &'a SearchIndex) -> Self {
+        Self { store, index }
+    }
+
+    /// The page of ids `query` asks for.
+    pub fn search(&self, resource_type: &str, query: &SearchQuery) -> Result<Vec<String>, String> {
+        self.search_with_total(resource_type, query).map(|(ids, _)| ids)
+    }
+
+    /// The page of ids `query` asks for (`_sort`, `_offset`, `_count`) and
+    /// the total number of matches.
+    pub fn search_with_total(&self, resource_type: &str, query: &SearchQuery) -> Result<(Vec<String>, usize), String> {
+        match self.index.engine() {
+            Engine::V1(index) => V1Executor::new(self.store, index).search_with_total(resource_type, query),
+            Engine::V2(index) => index.search_with_total(resource_type, query),
+        }
+    }
+
+    /// Load full resources for the given IDs
+    pub fn load_resources(
+        &self,
+        resource_type: &str,
+        ids: &[String],
+    ) -> Result<Vec<Value>, String> {
+        let mut resources = Vec::new();
+
+        for id in ids {
+            match self.store.get(resource_type, id) {
+                Ok(Some(data)) => {
+                    let resource: Value = serde_json::from_slice(&data)
+                        .map_err(|e| format!("Failed to parse resource: {}", e))?;
+                    resources.push(resource);
+                }
+                Ok(None) => {
+                    // Resource was deleted or index is stale, skip
+                }
+                Err(e) => {
+                    return Err(format!("Failed to load resource {}/{}: {}", resource_type, id, e));
+                }
+            }
+        }
+
+        Ok(resources)
+    }
+
+    /// Process _revinclude parameter to load resources that reference the search results.
+    ///
+    /// Each revinclude spec is `TargetType:search-param`, e.g. `Observation:subject`.
+    /// For each resource in the search results, find TargetType resources whose
+    /// search-param references `{resource_type}/{id}`.
+    pub fn process_revincludes(
+        &self,
+        resources: &[Value],
+        resource_type: &str,
+        revincludes: &[String],
+    ) -> Result<Vec<Value>, String> {
+        let mut included = Vec::new();
+        let mut seen_ids: HashSet<String> = HashSet::new();
+
+        let references: Vec<String> = resources
+            .iter()
+            .filter_map(|r| r.get("id").and_then(|v| v.as_str()))
+            .filter(|id| !id.is_empty())
+            .map(|id| format!("{resource_type}/{id}"))
+            .collect();
+
+        for revinclude_spec in revincludes {
+            let parts: Vec<&str> = revinclude_spec.split(':').collect();
+            if parts.len() != 2 {
+                continue;
+            }
+            let (target_type, search_param) = (parts[0], parts[1]);
+
+            let mut matching_ids = self
+                .index
+                .search_reference_any(target_type, search_param, &references)
+                .map_err(|e| e.to_string())?;
+            matching_ids.sort_unstable();
+
+            for mid in &matching_ids {
+                if !seen_ids.insert(format!("{target_type}/{mid}")) {
+                    continue;
+                }
+                if let Ok(Some(data)) = self.store.get(target_type, mid)
+                    && let Ok(val) = serde_json::from_slice::<Value>(&data)
+                {
+                    included.push(val);
+                }
+            }
+        }
+
+        Ok(included)
+    }
+
+    /// Process _include parameter to load related resources.
+    ///
+    /// `registry` maps a search-parameter name to the JSON element it reads, so
+    /// `_include`s whose parameter name differs from the element resolve
+    /// correctly (`Observation:patient` → `subject`, hyphenated
+    /// `general-practitioner` → `generalPractitioner`). Results are de-duplicated
+    /// (a resource SHALL appear once in a searchset Bundle).
+    pub fn process_includes(
+        &self,
+        resources: &[Value],
+        includes: &[String],
+        registry: &sazare_core::SearchParamRegistry,
+    ) -> Result<Vec<Value>, String> {
+        let mut included = Vec::new();
+        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+        for include_spec in includes {
+            // Spec: `SourceType:search-param` or `SourceType:search-param:TargetType`.
+            // The optional target type is only a filter on the included results.
+            let parts: Vec<&str> = include_spec.split(':').collect();
+            if parts.len() < 2 || parts.len() > 3 {
+                continue;
+            }
+            let source_type = parts[0];
+            let search_param = parts[1];
+            let target_filter = parts.get(2).copied();
+
+            // Resolve the JSON element the parameter reads (registry first, then
+            // the parameter name itself / its choice + camelCase fallbacks).
+            let element = registry
+                .reference_element(source_type, search_param)
+                .unwrap_or_else(|| search_param.to_string());
+
+            for resource in resources {
+                for reference in extract_references(resource, &element) {
+                    if let Some((ref_type, ref_id)) = parse_reference(&reference) {
+                        if let Some(t) = target_filter
+                            && t != ref_type
+                        {
+                            continue;
+                        }
+                        let key = format!("{ref_type}/{ref_id}");
+                        if !seen.insert(key) {
+                            continue;
+                        }
+                        if let Ok(Some(data)) = self.store.get(ref_type, ref_id) {
+                            included.push(serde_json::from_slice(&data).unwrap_or_default());
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(included)
+    }
+}
+
+/// Searches on a v1 index.
+pub struct V1Executor<'a> {
+    store: &'a SqliteStore,
+    index: &'a V1Index,
+}
+
+impl<'a> V1Executor<'a> {
+    pub fn new(store: &'a SqliteStore, index: &'a V1Index) -> Self {
         Self { store, index }
     }
 
@@ -462,138 +623,6 @@ impl<'a> SearchExecutor<'a> {
             .referenced_targets(&has.source_type, &has.reference_param, &source_ids, resource_type)
             .map_err(|e| e.to_string())
     }
-
-    /// Load full resources for the given IDs
-    pub fn load_resources(
-        &self,
-        resource_type: &str,
-        ids: &[String],
-    ) -> Result<Vec<Value>, String> {
-        let mut resources = Vec::new();
-
-        for id in ids {
-            match self.store.get(resource_type, id) {
-                Ok(Some(data)) => {
-                    let resource: Value = serde_json::from_slice(&data)
-                        .map_err(|e| format!("Failed to parse resource: {}", e))?;
-                    resources.push(resource);
-                }
-                Ok(None) => {
-                    // Resource was deleted or index is stale, skip
-                }
-                Err(e) => {
-                    return Err(format!("Failed to load resource {}/{}: {}", resource_type, id, e));
-                }
-            }
-        }
-
-        Ok(resources)
-    }
-
-    /// Process _revinclude parameter to load resources that reference the search results.
-    ///
-    /// Each revinclude spec is `TargetType:search-param`, e.g. `Observation:subject`.
-    /// For each resource in the search results, find TargetType resources whose
-    /// search-param references `{resource_type}/{id}`.
-    pub fn process_revincludes(
-        &self,
-        resources: &[Value],
-        resource_type: &str,
-        revincludes: &[String],
-    ) -> Result<Vec<Value>, String> {
-        let mut included = Vec::new();
-        let mut seen_ids: HashSet<String> = HashSet::new();
-
-        let references: Vec<String> = resources
-            .iter()
-            .filter_map(|r| r.get("id").and_then(|v| v.as_str()))
-            .filter(|id| !id.is_empty())
-            .map(|id| format!("{resource_type}/{id}"))
-            .collect();
-
-        for revinclude_spec in revincludes {
-            let parts: Vec<&str> = revinclude_spec.split(':').collect();
-            if parts.len() != 2 {
-                continue;
-            }
-            let (target_type, search_param) = (parts[0], parts[1]);
-
-            let mut matching_ids = self
-                .index
-                .search_reference_any(target_type, search_param, &references)
-                .map_err(|e| e.to_string())?;
-            matching_ids.sort_unstable();
-
-            for mid in &matching_ids {
-                if !seen_ids.insert(format!("{target_type}/{mid}")) {
-                    continue;
-                }
-                if let Ok(Some(data)) = self.store.get(target_type, mid)
-                    && let Ok(val) = serde_json::from_slice::<Value>(&data)
-                {
-                    included.push(val);
-                }
-            }
-        }
-
-        Ok(included)
-    }
-
-    /// Process _include parameter to load related resources.
-    ///
-    /// `registry` maps a search-parameter name to the JSON element it reads, so
-    /// `_include`s whose parameter name differs from the element resolve
-    /// correctly (`Observation:patient` → `subject`, hyphenated
-    /// `general-practitioner` → `generalPractitioner`). Results are de-duplicated
-    /// (a resource SHALL appear once in a searchset Bundle).
-    pub fn process_includes(
-        &self,
-        resources: &[Value],
-        includes: &[String],
-        registry: &sazare_core::SearchParamRegistry,
-    ) -> Result<Vec<Value>, String> {
-        let mut included = Vec::new();
-        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
-
-        for include_spec in includes {
-            // Spec: `SourceType:search-param` or `SourceType:search-param:TargetType`.
-            // The optional target type is only a filter on the included results.
-            let parts: Vec<&str> = include_spec.split(':').collect();
-            if parts.len() < 2 || parts.len() > 3 {
-                continue;
-            }
-            let source_type = parts[0];
-            let search_param = parts[1];
-            let target_filter = parts.get(2).copied();
-
-            // Resolve the JSON element the parameter reads (registry first, then
-            // the parameter name itself / its choice + camelCase fallbacks).
-            let element = registry
-                .reference_element(source_type, search_param)
-                .unwrap_or_else(|| search_param.to_string());
-
-            for resource in resources {
-                for reference in extract_references(resource, &element) {
-                    if let Some((ref_type, ref_id)) = parse_reference(&reference) {
-                        if let Some(t) = target_filter
-                            && t != ref_type
-                        {
-                            continue;
-                        }
-                        let key = format!("{ref_type}/{ref_id}");
-                        if !seen.insert(key) {
-                            continue;
-                        }
-                        if let Ok(Some(data)) = self.store.get(ref_type, ref_id) {
-                            included.push(serde_json::from_slice(&data).unwrap_or_default());
-                        }
-                    }
-                }
-            }
-        }
-
-        Ok(included)
-    }
 }
 
 /// Extract the reference strings an `_include`/`_revinclude` search param points
@@ -684,7 +713,7 @@ fn selectivity_rank(p: &SearchParameter) -> u8 {
 
 /// Ends an index scope however the search returns (including `?`).
 struct ScopeGuard<'a> {
-    index: &'a SearchIndex,
+    index: &'a V1Index,
     active: &'a std::cell::Cell<bool>,
 }
 
@@ -882,6 +911,7 @@ mod tests {
         let index = SearchIndex::open(":memory:").unwrap();
         for id in ["p1", "p2", "p3", "p4"] {
             put(&store, "Patient", id, serde_json::json!({"resourceType":"Patient","id":id}));
+            index.add_index("Patient", id, "_id", "token", Some(id), None).unwrap();
         }
         // p4 has no birthdate; p1 and p3 share one.
         index.add_index("Patient", "p1", "birthdate", "date", Some("1980-05-01"), None).unwrap();
@@ -917,6 +947,10 @@ mod tests {
         put(&store, "Patient", "p1", serde_json::json!({"resourceType":"Patient","id":"p1"}));
         put(&store, "Patient", "p2", serde_json::json!({"resourceType":"Patient","id":"p2"}));
         put(&store, "Patient", "p3", serde_json::json!({"resourceType":"Patient","id":"p3"}));
+        // Every stored resource is indexed (its _id at least), as the server does.
+        for id in ["p1", "p2", "p3"] {
+            index.add_index("Patient", id, "_id", "token", Some(id), None).unwrap();
+        }
         // Only p1, p2 have a gender indexed.
         index.add_index("Patient", "p1", "gender", "token", Some("male"), None).unwrap();
         index.add_index("Patient", "p2", "gender", "token", Some("female"), None).unwrap();

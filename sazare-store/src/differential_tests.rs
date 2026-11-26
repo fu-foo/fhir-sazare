@@ -16,7 +16,7 @@ use serde_json::{json, Value};
 
 use crate::sqlite_index::fhir_date_range;
 use crate::index_v2::IndexV2;
-use crate::{resource_text, IndexBuilder, IndexUpdate, SearchExecutor, SearchIndex, SqliteStore};
+use crate::{resource_text, IndexBuilder, IndexUpdate, SqliteStore, V1Executor, V1Index};
 
 /// A search implementation under test: the v1 executor or index v2.
 trait Backend {
@@ -24,12 +24,12 @@ trait Backend {
     fn search_with_total(&self, rt: &str, q: &SearchQuery) -> (Vec<String>, usize);
 }
 
-impl Backend for SearchExecutor<'_> {
+impl Backend for V1Executor<'_> {
     fn search(&self, rt: &str, q: &SearchQuery) -> Vec<String> {
-        SearchExecutor::search(self, rt, q).unwrap()
+        V1Executor::search(self, rt, q).unwrap()
     }
     fn search_with_total(&self, rt: &str, q: &SearchQuery) -> (Vec<String>, usize) {
-        SearchExecutor::search_with_total(self, rt, q).unwrap()
+        V1Executor::search_with_total(self, rt, q).unwrap()
     }
 }
 
@@ -301,9 +301,9 @@ fn query(rng: &mut Rng, resource_type: &str, patients: usize) -> String {
 /// Build a store and index for `resources`; return them with each resource's
 /// extracted entries.
 #[allow(clippy::type_complexity)]
-fn load(resources: &[Value], registry: &SearchParamRegistry) -> (SqliteStore, SearchIndex, IndexV2, HashMap<(String, String), Entries>) {
+fn load(resources: &[Value], registry: &SearchParamRegistry) -> (SqliteStore, V1Index, IndexV2, HashMap<(String, String), Entries>) {
     let store = SqliteStore::open(":memory:").unwrap();
-    let index = SearchIndex::open(":memory:").unwrap();
+    let index = V1Index::open(":memory:").unwrap();
     let mut entries = HashMap::new();
     let mut updates = vec![];
     for r in resources {
@@ -331,7 +331,7 @@ fn run(which: Which, seed: u64, patients: usize, observations: usize, queries: u
     let registry = SearchParamRegistry::new();
     let resources = dataset(&mut rng, patients, observations);
     let (store, index, v2, entries) = load(&resources, &registry);
-    let v1 = SearchExecutor::new(&store, &index);
+    let v1 = V1Executor::new(&store, &index);
     let exec: &dyn Backend = match which {
         Which::V1 => &v1,
         Which::V2 => &v2,
@@ -404,7 +404,7 @@ fn run_sorted(which: Which, seed: u64, patients: usize, observations: usize, que
     let registry = SearchParamRegistry::new();
     let resources = dataset(&mut rng, patients, observations);
     let (store, index, v2, entries) = load(&resources, &registry);
-    let v1 = SearchExecutor::new(&store, &index);
+    let v1 = V1Executor::new(&store, &index);
     let exec: &dyn Backend = match which {
         Which::V1 => &v1,
         Which::V2 => &v2,
@@ -444,6 +444,13 @@ fn run_sorted(which: Which, seed: u64, patients: usize, observations: usize, que
             parsed.offset = Some(offset);
             let (page, page_total) = exec.search_with_total(rt, &parsed);
             assert_eq!(page_total, total, "seed {seed}: total on a page of {rt}?{q}");
+            // `_total=none`: the same page, and a bound that says whether
+            // another page follows (the handler's next link).
+            parsed.omit_total = true;
+            let (same, bound) = exec.search_with_total(rt, &parsed);
+            parsed.omit_total = false;
+            assert_eq!(same, page, "seed {seed}: page of {rt}?{q} with _total=none");
+            assert_eq!(bound > offset + size, total > offset + size, "seed {seed}: next page of {rt}?{q} with _total=none");
             paged.extend(page);
         }
         assert_eq!(paged, all, "seed {seed}: pages of {rt}?{q} (size {size})");

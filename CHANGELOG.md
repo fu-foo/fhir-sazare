@@ -18,7 +18,25 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
   blocking` restores the old wait; `manual` rebuilds only on `POST /$reindex`.
 - `POST /$reindex` starts a background rebuild and answers 202 (409 while one runs).
 
+- **Search index v2.** A new index format: integer keys for resource types, parameters,
+  code systems and resources, one table per kind of value, and queries compiled to a
+  single SQL statement driven by the most selective criterion. At 10M resources the index
+  is 6 GB instead of ~60 GB, and searches that took seconds to a minute answer in
+  milliseconds (unsorted and sorted pages of 9.6M Observations: 0.1–0.4 ms instead of
+  0.7–62 s); totals stay exact. An existing index is rebuilt in the background on first
+  start, the old one serving searches until the switch (see UPGRADING.md).
+- `_total=none` now skips counting the matches (the next link still appears when there is
+  a next page): the cheap way to page through searches matching millions of resources.
+
+### Behavior changes
+- Unsorted search results come back in index order (insertion order for an unfiltered
+  search) instead of by id. The order of an unsorted search is unspecified; use `_sort`.
+  Ties in `_sort` keep insertion order.
+
 ### Tests
+- Upgrade check in CI: a data dir written by 0.15.1 opened by this build — searches answered
+  by the old index during the background rebuild and by the new one after the switch match
+  the old release's, and a write made during the rebuild is found.
 - Differential search tests: generated datasets (case and accent variants, repeated and
   missing values, open periods, references) × generated queries (tokens in all four forms,
   string modifiers, date prefixes, `:missing`, `:not`, OR lists, chains, `_has`, `_sort`,

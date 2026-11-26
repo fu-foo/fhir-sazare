@@ -1,11 +1,14 @@
 //! Search index v2 (design/search-index-v2.md §4): integer keys, one table per
 //! value kind, set operations in SQLite.
 //!
-//! This first cut is about correctness against the reference model
-//! (`differential_tests`): every query is one SQL statement driven by its most
-//! selective criterion, the others checked per candidate. The ordered-walk
-//! optimizations for `_sort` (§4.3) come next; sorting here gathers the
-//! candidates' keys and sorts them.
+//! Every query is one SQL statement driven by its most selective criterion,
+//! the others checked per candidate (`EXISTS` probes on the by-resource
+//! indexes). Totals are counted on their own; sorted pages over large sets
+//! walk the sort key's index. Checked against a reference model of the FHIR
+//! search rules by `differential_tests`.
+//!
+//! Full text (`_text`, `_content`) is an FTS5 table in a file of its own
+//! (`<index>.fts.sqlite`), attached as `fts`, its rowid the resource's `rid`.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -14,8 +17,12 @@ use std::path::Path;
 use rusqlite::{params, params_from_iter, Connection, OptionalExtension};
 use sazare_core::{ChainParameter, HasParameter, SearchParamType, SearchParameter, SearchQuery, SortKey};
 
-use crate::sqlite_index::{fhir_date_range, IndexUpdate};
-use crate::Result;
+use crate::sqlite_index::{fhir_date_range, split_text_terms, IndexUpdate, ResourceText};
+use crate::{Result, StoreError};
+
+const TEXT_SCHEMA: &str = r#"
+CREATE VIRTUAL TABLE IF NOT EXISTS fts.resource_text USING fts5(narrative, content, tokenize = 'trigram');
+"#;
 
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS rtype (tid INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL);
@@ -42,6 +49,7 @@ CREATE INDEX IF NOT EXISTS v_ref_r ON v_ref (rid, pid);
 CREATE INDEX IF NOT EXISTS v_ref_t ON v_ref (target, pid, rid);
 CREATE TABLE IF NOT EXISTS v_ref_text (pid INT, value TEXT, rid INT, PRIMARY KEY (pid, value, rid)) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS v_ref_text_r ON v_ref_text (rid, pid);
+CREATE TABLE IF NOT EXISTS index_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 "#;
 
 const VALUE_TABLES: [&str; 6] = ["v_token", "v_string", "v_date", "v_number", "v_ref", "v_ref_text"];
@@ -146,12 +154,79 @@ pub struct IndexV2 {
 }
 
 impl IndexV2 {
+    /// Open (creating if needed) the index at `path` and its full text beside
+    /// it (`search_index.sqlite` → `search_index.fts.sqlite`; `:memory:`
+    /// stays in memory).
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
+        let path = path.as_ref();
         let conn = Connection::open(path)?;
         conn.busy_timeout(std::time::Duration::from_secs(5))?;
         conn.execute_batch("PRAGMA journal_mode=WAL;")?;
         conn.execute_batch(SCHEMA)?;
-        Ok(Self { conn, tids: Default::default(), pids: Default::default(), sids: Default::default() })
+        Self::attach_text(&conn, path)?;
+        conn.execute_batch("PRAGMA fts.journal_mode=WAL;")?;
+        conn.execute_batch(TEXT_SCHEMA)?;
+        Ok(Self::with(conn))
+    }
+
+    /// Open an existing index read-only, for searches beside the writer.
+    pub fn open_read_only(path: impl AsRef<Path>) -> Result<Self> {
+        use rusqlite::OpenFlags;
+        let path = path.as_ref();
+        let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX)?;
+        conn.busy_timeout(std::time::Duration::from_secs(5))?;
+        // Attached files open with the main connection's flags: read-only too.
+        Self::attach_text(&conn, path)?;
+        Ok(Self::with(conn))
+    }
+
+    fn attach_text(conn: &Connection, path: &Path) -> Result<()> {
+        let text = if path.as_os_str() == ":memory:" {
+            ":memory:".to_string()
+        } else {
+            path.with_extension("fts.sqlite")
+                .to_str()
+                .ok_or_else(|| StoreError::Other(format!("index path is not UTF-8: {}", path.display())))?
+                .to_string()
+        };
+        conn.execute("ATTACH DATABASE ?1 AS fts", params![text])?;
+        Ok(())
+    }
+
+    fn with(conn: Connection) -> Self {
+        Self { conn, tids: Default::default(), pids: Default::default(), sids: Default::default() }
+    }
+
+    /// Forget cached dictionary keys (after a failed write rolled some back).
+    fn forget(&self) {
+        self.tids.borrow_mut().clear();
+        self.pids.borrow_mut().clear();
+        self.sids.borrow_mut().clear();
+    }
+
+    // ---- metadata -----------------------------------------------------------
+
+    pub fn get_meta(&self, key: &str) -> Result<Option<String>> {
+        Ok(self.conn.query_row("SELECT value FROM index_meta WHERE key = ?1", params![key], |r| r.get(0)).optional()?)
+    }
+
+    pub fn set_meta(&self, key: &str, value: &str) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO index_meta (key, value) VALUES (?1, ?2) ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+            params![key, value],
+        )?;
+        Ok(())
+    }
+
+    /// No resource indexed (an existence check).
+    pub fn is_empty(&self) -> Result<bool> {
+        let any: bool = self.conn.query_row("SELECT EXISTS (SELECT 1 FROM rkey WHERE present = 1)", [], |r| r.get(0))?;
+        Ok(!any)
+    }
+
+    /// Some resource has full text (an existence check).
+    pub fn has_text(&self) -> Result<bool> {
+        Ok(self.conn.query_row("SELECT EXISTS (SELECT 1 FROM fts.resource_text)", [], |r| r.get(0))?)
     }
 
     // ---- dictionaries -------------------------------------------------------
@@ -234,15 +309,61 @@ impl IndexV2 {
 
     /// Replace the index rows of each resource (one transaction).
     pub fn replace_many(&self, items: &[IndexUpdate]) -> Result<()> {
+        let r = self.write_many(items);
+        if r.is_err() {
+            self.forget();
+        }
+        r
+    }
+
+    /// Add one value to a resource's rows (keeping the others).
+    pub fn add_value(&self, resource_type: &str, id: &str, name: &str, kind: &str, value: &str, system: Option<&str>) -> Result<()> {
+        let tx = self.conn.unchecked_transaction()?;
+        let tid = self.tid(resource_type, true)?.expect("created");
+        let rid = self.rid(tid, id, true)?;
+        let (pid, _) = self.pid(tid, name, Some(kind))?.expect("created");
+        let had: bool = self.conn.query_row(
+            &format!("SELECT EXISTS (SELECT 1 FROM {t} INDEXED BY {t}_r WHERE rid = ?1 AND pid = ?2)", t = table_for(kind)),
+            params![rid, pid],
+            |r| r.get(0),
+        )?;
+        if self.write_value(pid, kind, value, system, rid)? && had {
+            self.conn.execute("UPDATE param SET multi = 1 WHERE pid = ?1 AND multi = 0", params![pid])?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// One resource's rows and full text.
+    pub fn replace_one(&self, resource_type: &str, id: &str, entries: &[(String, String, String, Option<String>)], text: &ResourceText) -> Result<()> {
+        self.replace_many(&[IndexUpdate {
+            resource_type: resource_type.to_string(),
+            resource_id: id.to_string(),
+            entries: entries.to_vec(),
+            text: text.clone(),
+        }])
+    }
+
+    fn write_many(&self, items: &[IndexUpdate]) -> Result<()> {
         let tx = self.conn.unchecked_transaction()?;
         for u in items {
             let tid = self.tid(&u.resource_type, true)?.expect("created");
             let rid = self.rid(tid, &u.resource_id, true)?;
             self.clear_rows(rid)?;
+            // Extraction adds a bare-id copy after each reference ("Patient/1"
+            // → "1"). For a local reference the key table answers bare-id
+            // searches; for an absolute URL the copy is kept as text.
+            let local_ids: std::collections::HashSet<(&str, &str)> = u
+                .entries
+                .iter()
+                .filter(|e| e.1 == "reference")
+                .filter_map(|e| local_reference(&e.2).map(|(_, id)| (e.0.as_str(), id)))
+                .collect();
             let mut per_pid: HashMap<i64, usize> = HashMap::new();
             for (name, kind, value, system) in &u.entries {
                 let (pid, _) = self.pid(tid, name, Some(kind))?.expect("created");
-                if self.write_value(pid, kind, value, system.as_deref(), rid)? {
+                let bare_of_local = kind == "reference" && local_ids.contains(&(name.as_str(), value.as_str()));
+                if !bare_of_local && self.write_value(pid, kind, value, system.as_deref(), rid)? {
                     *per_pid.entry(pid).or_default() += 1;
                 }
             }
@@ -251,13 +372,17 @@ impl IndexV2 {
                     self.conn.execute("UPDATE param SET multi = 1 WHERE pid = ?1 AND multi = 0", params![pid])?;
                 }
             }
+            self.conn.execute(
+                "INSERT INTO fts.resource_text (rowid, narrative, content) VALUES (?1, ?2, ?3)",
+                params![rid, u.text.narrative, u.text.content],
+            )?;
         }
         tx.commit()?;
         Ok(())
     }
 
-    /// Write one value; `false` when it isn't stored (e.g. the bare-id copy of
-    /// a reference, which v2 resolves through the key table instead).
+    /// Write one value; `false` when it isn't stored (an unparsable date or
+    /// number).
     fn write_value(&self, pid: i64, kind: &str, value: &str, system: Option<&str>, rid: i64) -> Result<bool> {
         match kind {
             "string" => {
@@ -305,8 +430,7 @@ impl IndexV2 {
                         params![pid, target, rid],
                     )?;
                 }
-                // The bare-id copy v1 extraction adds next to "Type/id".
-                None if !value.contains(['/', ':', '#']) => return Ok(false),
+                // Absolute URLs, urn:, #contained, and bare ids of absolute URLs.
                 None => {
                     self.conn.execute(
                         "INSERT OR IGNORE INTO v_ref_text (pid, value, rid) VALUES (?1, ?2, ?3)",
@@ -329,6 +453,7 @@ impl IndexV2 {
         for t in VALUE_TABLES {
             self.conn.execute(&format!("DELETE FROM {t} WHERE rid = ?1"), params![rid])?;
         }
+        self.conn.execute("DELETE FROM fts.resource_text WHERE rowid = ?1", params![rid])?;
         Ok(())
     }
 
@@ -355,8 +480,51 @@ impl IndexV2 {
 
     // ---- search -------------------------------------------------------------
 
+    /// Ids of `resource_type` whose reference parameter `param` points at any
+    /// of `references` (`Type/id`, a bare id, or a URL) — `_revinclude`,
+    /// `$everything`.
+    pub fn referencing(&self, resource_type: &str, param: &str, references: &[String]) -> Result<Vec<String>> {
+        let Some(tid) = self.tid(resource_type, false)? else { return Ok(Vec::new()) };
+        let mut seen = std::collections::HashSet::new();
+        for r in references {
+            let p = SearchParameter {
+                name: param.to_string(),
+                value: r.clone(),
+                modifier: None,
+                prefix: None,
+                param_type: SearchParamType::Reference,
+            };
+            let c = self.parameter(tid, &p)?;
+            seen.extend(self.rids(&c.set)?);
+        }
+        let mut rids: Vec<i64> = seen.into_iter().collect();
+        rids.sort_unstable();
+        self.ids_for(&rids)
+    }
+
+    /// Errors a query's values can carry (`:missing` not true/false, a
+    /// number that doesn't parse), as the 400 message.
+    fn validate(query: &SearchQuery) -> std::result::Result<(), String> {
+        for p in &query.parameters {
+            if p.modifier.as_deref() == Some("missing") {
+                let v = p.value.trim();
+                if v != "true" && v != "false" {
+                    return Err(format!(":missing expects true|false, got '{v}'"));
+                }
+            } else if p.param_type == SearchParamType::Number && !matches!(p.name.as_str(), "_text" | "_content") {
+                for v in p.value.split(',').map(str::trim).filter(|v| !v.is_empty()) {
+                    if v.parse::<f64>().is_err() {
+                        return Err(format!("Invalid number '{}' for parameter '{}'", v, p.name));
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Ids matching `query` (no paging), in no particular order.
     pub fn search(&self, resource_type: &str, query: &SearchQuery) -> std::result::Result<Vec<String>, String> {
+        Self::validate(query)?;
         let Some(c) = self.compile(resource_type, query).map_err(|e| e.to_string())? else {
             return Ok(Vec::new());
         };
@@ -369,6 +537,7 @@ impl IndexV2 {
         resource_type: &str,
         query: &SearchQuery,
     ) -> std::result::Result<(Vec<String>, usize), String> {
+        Self::validate(query)?;
         let Some(c) = self.compile(resource_type, query).map_err(|e| e.to_string())? else {
             return Ok((Vec::new(), 0));
         };
@@ -376,30 +545,42 @@ impl IndexV2 {
         let err = |e: crate::StoreError| e.to_string();
         let sql = c.select();
         let filter = (!c.unfiltered).then_some(&sql);
-        let total = self.count(tid, c.count_sql.as_ref().or(filter)).map_err(err)?;
+        // `_total=none`: no count. One row past the page says whether there
+        // is a next one; the "total" returned is then only that bound.
+        let exact = !query.omit_total || c.unfiltered;
+        let total = if exact { Some(self.count(tid, c.count_sql.as_ref().or(filter)).map_err(err)?) } else { None };
         let offset = query.offset.unwrap_or(0);
-        let page: Vec<i64> = if query.sort.is_empty() {
+        let count = query.count.map(|n| if exact { n } else { n + 1 });
+        let large = match total {
+            Some(t) => t as i64 > GATHER_MAX,
+            None => self.probe_count(&sql).map_err(err)? > GATHER_MAX,
+        };
+        let mut page: Vec<i64> = if query.sort.is_empty() {
             // Unsorted: the page straight off the query, in index order (the
             // order of an unsorted search is unspecified).
             let paged = Sql::new(
                 format!("{} LIMIT ? OFFSET ?", sql.text),
-                [sql.args.clone(), vec![Arg::Int(query.count.map_or(-1, |n| n as i64)), Arg::Int(offset as i64)]].concat(),
+                [sql.args.clone(), vec![Arg::Int(count.map_or(-1, |n| n as i64)), Arg::Int(offset as i64)]].concat(),
             );
             self.rids(&paged).map_err(err)?
-        } else if c.unfiltered || total as i64 > GATHER_MAX {
+        } else if c.unfiltered || large {
             // Sorted over a large set: walk the first key's index in order and
             // stop at the page, instead of gathering every candidate's key.
-            let want = offset.saturating_add(query.count.unwrap_or(usize::MAX / 2));
+            let want = offset.saturating_add(count.unwrap_or(usize::MAX / 2));
             self.walk_sorted(tid, &query.sort, filter, want).map_err(err)?.into_iter().skip(offset).collect()
         } else {
             let mut rids = self.rids(&sql).map_err(err)?;
             self.sort_rids(tid, &query.sort, &mut rids).map_err(err)?;
             let mut page: Vec<i64> = rids.into_iter().skip(offset).collect();
-            if let Some(n) = query.count {
+            if let Some(n) = count {
                 page.truncate(n);
             }
             page
         };
+        let total = total.unwrap_or(offset + page.len());
+        if let Some(n) = query.count {
+            page.truncate(n);
+        }
         let ids = self.ids_for(&page).map_err(err)?;
         Ok((ids, total))
     }
@@ -445,7 +626,9 @@ impl IndexV2 {
             let mut group: Vec<i64> = Vec::new();
             let mut group_key: Option<rusqlite::types::Value> = None;
             let flush = |group: &mut Vec<i64>, out: &mut Vec<i64>| -> Result<()> {
-                if group.len() > 1 && keys.len() > 1 {
+                // Equal first keys: by the remaining keys, then insertion
+                // order (the walk's DESC would otherwise reverse it).
+                if group.len() > 1 {
                     self.sort_rids(tid, &keys[1..], group)?;
                 }
                 out.append(group);
@@ -682,6 +865,9 @@ impl IndexV2 {
 
     /// One search parameter (with its modifier and comma alternatives).
     fn parameter(&self, tid: i64, p: &SearchParameter) -> Result<Criterion> {
+        if matches!(p.name.as_str(), "_text" | "_content") && p.modifier.is_none() {
+            return Ok(self.text(tid, p));
+        }
         let pid = self.pid(tid, &p.name, None)?;
         let all = Sql::new("SELECT rid FROM rkey INDEXED BY rkey_live WHERE tid = ? AND present = 1", vec![Arg::Int(tid)]);
         let none = Criterion { set: Sql::new("SELECT 0 AS rid WHERE 0", vec![]), probe: Sql::new("0", vec![]), seekable: true, rank: 0, unique: true, equality: false };
@@ -714,8 +900,15 @@ impl IndexV2 {
         let mut sets = Vec::new();
         let mut probes = Vec::new();
         let mut seekable = true;
+        let mut alternatives = Vec::new();
         for v in values {
-            let Some((t, cond, args, index, seek)) = self.condition(pid, &kind, p, v)? else { continue };
+            alternatives.extend(self.condition(pid, &kind, p, v)?);
+            if kind == "reference" && !v.contains(['/', ':', '#']) {
+                // A bare id also matches the bare-id copy of an absolute URL.
+                alternatives.push(("v_ref_text", "value = ?".to_string(), vec![Arg::Text(v.into())], None, true));
+            }
+        }
+        for (t, cond, args, index, seek) in alternatives {
             let using = match index {
                 Some(i) => format!("INDEXED BY {i}"),
                 None => "NOT INDEXED".to_string(),
@@ -861,17 +1054,66 @@ impl IndexV2 {
         .map(|o| o.map(|(cond, args, index, seek): (String, Vec<Arg>, Option<&'static str>, bool)| (t, cond, args, index, seek)))
     }
 
+    /// `_text` (narrative) / `_content` (whole resource): every term (or
+    /// "quoted phrase") occurs, case-insensitively, as a substring; comma
+    /// values are alternatives. Terms of 3+ characters go through the trigram
+    /// index, shorter ones (a two-character Japanese surname) through LIKE.
+    fn text(&self, tid: i64, p: &SearchParameter) -> Criterion {
+        let column = if p.name == "_text" { "narrative" } else { "content" };
+        let mut sets = Vec::new();
+        let mut probes = Vec::new();
+        let mut seekable = true;
+        for v in p.value.split(',') {
+            let terms = split_text_terms(v);
+            if terms.is_empty() {
+                continue;
+            }
+            let (long, short): (Vec<String>, Vec<String>) = terms.into_iter().partition(|t| t.chars().count() >= 3);
+            let mut cond = String::new();
+            let mut args = Vec::new();
+            if long.is_empty() {
+                seekable = false;
+            } else {
+                let q = long.iter().map(|t| format!("\"{}\"", t.replace('"', "\"\""))).collect::<Vec<_>>().join(" AND ");
+                cond.push_str(" AND t.resource_text MATCH ?");
+                args.push(Arg::Text(format!("{column} : ({q})")));
+            }
+            for t in short {
+                cond.push_str(&format!(" AND t.{column} LIKE ? ESCAPE '\\'"));
+                args.push(Arg::Text(format!("%{}%", escape_like(&t))));
+            }
+            sets.push(Sql::new(
+                format!("SELECT k.rid AS rid FROM fts.resource_text t CROSS JOIN rkey k ON k.rid = t.rowid WHERE k.tid = ?{cond}"),
+                [vec![Arg::Int(tid)], args.clone()].concat(),
+            ));
+            probes.push(Sql::new(format!("EXISTS (SELECT 1 FROM fts.resource_text t WHERE t.rowid = ?X?{cond})"), args));
+        }
+        if sets.is_empty() {
+            return Criterion { set: Sql::new("SELECT 0 AS rid WHERE 0", vec![]), probe: Sql::new("0", vec![]), seekable: true, rank: 0, unique: true, equality: false };
+        }
+        let set = Sql::new(
+            sets.iter().map(|s| s.text.clone()).collect::<Vec<_>>().join(" UNION "),
+            sets.iter().flat_map(|s| s.args.clone()).collect(),
+        );
+        let probe = Sql::new(
+            format!("({})", probes.iter().map(|s| s.text.clone()).collect::<Vec<_>>().join(" OR ")),
+            probes.iter().flat_map(|s| s.args.clone()).collect(),
+        );
+        Criterion { set, probe, seekable, rank: 5, unique: true, equality: false }
+    }
+
     /// A chain: rids whose reference (through each hop) reaches a target that
     /// matches the terminal parameter.
     fn chain(&self, tid: i64, c: &ChainParameter) -> Result<Criterion> {
         // Walk outward: the set of target rids at the end, then back hop by hop.
         let last = c.links.last().expect("a chain has a link");
         let ttid = self.tid(&last.target_type, false)?.unwrap_or(-1);
+        let (prefix, value) = crate::search_executor::split_prefix(&c.target_param_type, &c.value);
         let terminal = SearchParameter {
             name: c.target_param.clone(),
-            value: c.value.clone(),
+            value,
             modifier: None,
-            prefix: None,
+            prefix,
             param_type: c.target_param_type.clone(),
         };
         let mut targets = self.parameter(ttid, &terminal)?.set;
@@ -908,11 +1150,12 @@ impl IndexV2 {
     /// references (existing resources of this type only).
     fn has(&self, tid: i64, h: &HasParameter) -> Result<Criterion> {
         let stid = self.tid(&h.source_type, false)?.unwrap_or(-1);
+        let (prefix, value) = crate::search_executor::split_prefix(&h.target_param_type, &h.value);
         let inner = SearchParameter {
             name: h.target_param.clone(),
-            value: h.value.clone(),
+            value,
             modifier: None,
-            prefix: None,
+            prefix,
             param_type: h.target_param_type.clone(),
         };
         let sources = self.parameter(stid, &inner)?.set;

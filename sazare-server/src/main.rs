@@ -348,10 +348,15 @@ async fn serve(args: Vec<String>) {
     // Whether the index must be rebuilt, and why. The rebuild itself runs once
     // the server is up (index.rebuild: background), before it (blocking), or
     // on POST /$reindex (manual).
+    // A v1 index (sazare 0.15 and before) is always replaced, even with no
+    // resources: it keeps serving searches until the v2 index takes over.
+    let v1 = index.is_v1();
     let rebuild_reason: Option<&'static str> = match index.is_empty() {
-        Ok(empty) if empty || text_missing || params_changed => {
+        Ok(empty) if empty || text_missing || params_changed || v1 => {
             // An existence check, not a full load of every resource.
-            if store.has_any().unwrap_or(false) {
+            if v1 {
+                Some("the index is in the v1 format")
+            } else if store.has_any().unwrap_or(false) {
                 Some(if empty {
                     "the index is empty"
                 } else if text_missing {

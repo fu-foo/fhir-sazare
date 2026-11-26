@@ -71,6 +71,25 @@ jobs:
       - run: cargo build --release
       - run: bash ci/backup_roundtrip.sh
 
+  # Upgrade path: a data dir written by the last release before index v2
+  # (0.15.1) opened by this build — searches answered by the old index while
+  # the new one builds, then by the new one, must match the old release's.
+  upgrade:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release
+      - name: Previous release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download v0.15.1 -p sazare-server-linux-amd64.tar.gz -D "$RUNNER_TEMP/old"
+          tar -xzf "$RUNNER_TEMP/old/sazare-server-linux-amd64.tar.gz" -C "$RUNNER_TEMP/old"
+          find "$RUNNER_TEMP/old" -name sazare-server -type f
+      - run: python3 ci/upgrade_check.py "$(find "$RUNNER_TEMP/old" -name sazare-server -type f | head -1)" target/release/sazare-server 2000
+
   # The image runs as an unprivileged user. Upgrade path: a data volume written
   # by an older (root) image must keep working without manual steps.
   docker:

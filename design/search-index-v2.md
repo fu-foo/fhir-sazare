@@ -418,7 +418,65 @@ the executor would generate them.
    expanded as `UNION ALL` hit a row once per branch and keep the `DISTINCT` (or are
    written as one `WHERE … OR …`). (Second review.)
 
+## 9. Milestone 3: implementation notes and results
+
+Implemented in `sazare-store/src/index_v2.rs`; `SearchIndex` / `SearchExecutor` are now a
+thin layer choosing the engine by what the file holds (`search_index.rs`): **v2** for every
+new index, **v1** only for an index written by 0.15 or before, which keeps serving searches
+while its v2 replacement is built as a new generation (§4.5) and is deleted after the
+switch. `INDEX_FORMAT` is 3; a v1 file is always rebuilt (even with no resources), so v1
+never takes writes for long and its code can go in a later release.
+
+Where the implementation differs from §4:
+
+1. **Totals and pages are separate statements.** The total is `type_count` without
+   criteria, else a count of the compiled query; the page is the same query with
+   `LIMIT/OFFSET` (unsorted) or a walk of the first sort key's index (sorted, more than
+   5,000 matches), stopping at the page. Ties in a walk keep insertion order (rid).
+2. **Broad totals merge instead of probing.** When every seekable criterion is large and
+   they are equality sets of similar size (sized with a capped count), the total is an
+   `INTERSECT` of them (~0.4 µs a row) rather than a probe per driver row (~2.5 µs):
+   `category&status` over 9.6M, 25 s → 4.7 s. Ranges and small drivers keep probing (an
+   unconditional `INTERSECT` made `patient&code&date` 10 s).
+3. **Chains can drive** (a bounded probe count says when the targets are few):
+   `subject:Patient.family` 0.7 s → 0.1 ms.
+4. **Full text** stays in its own file (`<index>.fts.sqlite`), attached to the index
+   connection as `fts`, with the FTS rowid = `rid` (no key table); `_text`/`_content` are
+   ordinary criteria (seekable when a term has 3+ characters).
+5. **References**: extraction still emits a bare-id copy of each reference. For a local
+   `Type/id` it is dropped (bare-id searches resolve through `rkey(id)`); for an absolute
+   URL it is kept in `v_ref_text`, so `subject=123` still finds
+   `http://other/fhir/Patient/123` as in v1.
+6. **`_compartment` pid** (§4.2) is not used: compartment access (`$everything`,
+   `_revinclude`) goes through ordinary reference criteria, fast enough per patient.
+
+Checked by the differential tests (v1 and v2 against the reference model; the large-set
+paths forced in tests by small thresholds, and each verified to catch a planted error),
+the existing unit, e2e and security suites (now on v2), and `ci/upgrade_check.py`
+(0.15.1 data dir → this build: searches during and after the rebuild match).
+
+10M resources (9.6M Observations), built from the resources by `examples/v2_bench.rs`:
+5,700 resources/s, 6.0 GB. Median of 3:
+
+| Query | Matches | v2 |
+|---|---:|---:|
+| `Observation?_count=20` | 9,600,000 | 0.1 ms |
+| `Observation?_sort=-date&_count=20` | 9,600,000 | 0.4 ms |
+| `Observation?code=8867-4&_sort=-date&_count=20` | 1,200,634 | 208 ms |
+| `Patient?_has:Observation:subject:code=8867-4&_count=20` | 295,875 | 1.5 s |
+| `Observation?category=vital-signs&status=final&_count=20` | 9,600,000 | 4.7 s |
+| `Observation?patient=p42&code=http://loinc.org\|8867-4` | 7 | 0.5 ms |
+| `Observation?patient=p42&code=8867-4&date=ge2020-01-01` | 5 | 0.8 ms |
+| `Observation?code=8867-4&date=ge2020-01-01&_count=20` | 654,873 | 657 ms |
+| `Patient?gender=female&birthdate=ge1980&_count=20` | 67,012 | 218 ms |
+| `Observation?subject:Patient.family=smith&_count=20` | 0 | 0.1 ms |
+
+The remaining seconds are exact totals over hundreds of thousands to millions of matches
+(decided: totals stay exact; `_total=none` skips them).
+
 ## Revision history
+
+- r5 — milestone 3 (§9): implementation notes, 10M results.
 
 - r4 — milestone 0 results (§8): go; `has_param` removed, explicit indexes for every
   probe and drive, unsorted pages in index order, `DISTINCT` only for multi-valued
