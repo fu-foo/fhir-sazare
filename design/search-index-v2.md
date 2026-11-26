@@ -1,6 +1,6 @@
 # Search index v2
 
-Status: **approved for milestone 0, revision 3** (after two external reviews) · Target: 0.15 (before 1.0) · Author: Claude Code, with the maintainer
+Status: **milestone 0 done — go; revision 4** (after two external reviews and the prototype) · Target: 0.15 (before 1.0) · Author: Claude Code, with the maintainer
 
 ## 1. Why
 
@@ -154,7 +154,6 @@ CREATE TABLE v_ref_text (pid INT, value TEXT, rid INT,                -- urn:, #
                          PRIMARY KEY (pid, value, rid)) WITHOUT ROWID;
 CREATE INDEX v_ref_text_r ON v_ref_text (rid, pid);
 
-CREATE TABLE has_param (pid INT, rid INT, PRIMARY KEY (pid, rid)) WITHOUT ROWID;  -- :missing, sort "missing last"
 CREATE TABLE type_count (tid INTEGER PRIMARY KEY, n INTEGER NOT NULL);           -- unfiltered totals
 ```
 
@@ -219,7 +218,7 @@ Plan := Leaf(param, values…)        -- one value table, OR over comma values
   in two systems, a comma OR, many sources in `_has`). Paging and counting use distinct
   rids: driving rows are de-duplicated in order (the value index yields each rid's rows
   together only for equality criteria; ranges and ORs go through `DISTINCT`), and `total`
-  is `count(DISTINCT rid)`. Milestone 0 measures that cost.
+  is `count(DISTINCT rid)`. Milestone 0 measured it (§8): a parameter that never has more than one value per resource skips the `DISTINCT`.
 - **`Has` and `Chain` results** are restricted to existing resources of the searched type:
   `target` joins `rkey` with `tid = <type> AND present = 1` (a `subject` may point at a
   Group, or at a deleted or never-created Patient).
@@ -231,7 +230,7 @@ Plan := Leaf(param, values…)        -- one value table, OR over comma values
   its first occurrence — exactly "lowest value ascending / highest descending". Further
   sort keys order resources with an equal key; beyond the last key the order is
   unspecified (rid order, i.e. insertion order, comes for free from the index). Rids
-  without a value (`has_param`) follow, in rid order. Only `_offset + _count` rows are
+  without a value follow, in rid order (found by probing the value table's `…_r` index). Only `_offset + _count` rows are
   produced.
   When the plan's driving set is small, the opposite order is cheaper (fetch the few
   candidates' values and sort them); the executor picks by the probe count. Because the
@@ -372,7 +371,54 @@ forward-only).
 - **Effort**: the executor (~900 lines) and index (~1,400 lines) are largely rewritten;
   the parsers, registry, extraction (`index_builder`) and handlers stay.
 
+## 8. Milestone 0 results (10M resources)
+
+Built from the 10M benchmark's v1 index with `design/m0/build_v2.py` (pure SQL over the
+v1 rows, so extraction is unchanged); queries in `design/m0/queries.py`, hand-written as
+the executor would generate them.
+
+**Size**: 6.0 GB with `has_param`, **5.1 GB without** (v1: 50.7 GB). Per B-tree: token
+0.98 + 0.98, date 0.56 × 3, reference 0.29 × 3, rkey 0.53 in all.
+
+| query (10M) | v1 | v2 page | v2 total |
+|---|---:|---:|---:|
+| `Observation?_count=20` | 1.5 s | 0.0 ms | `type_count` |
+| `Observation?_sort=-date&_count=20` | 249 s | 0.0 ms | `type_count` |
+| `Observation?code=8867-4&_sort=-date` | 195 s | 0.1 ms | 178 ms |
+| `Patient?_has:Observation:subject:code=8867-4` | 160 s | 0.1 ms | 502 ms |
+| `Observation?category=…&status=…` (all match) | 21–29 s | 0.0 ms | 3.6 s |
+| `Observation?patient=p42&code=…` | 1 ms | 0.1 ms | — |
+| `…&date=ge2020-01-01` | ≈6 s | 0.0 ms | — |
+| `Observation?code=8867-4&date=ge2020` | 6.3 s | 523 ms ⚠ | 571 ms |
+| `Patient?gender=female&birthdate=ge1980` | 0.16 s | 55 ms | 51 ms |
+| `Patient?family=…&_revinclude=Observation:subject` | 21 ms | 0.2 ms | — |
+| `date=ge2020` alone, count of 5.2M | — | — | 12.8 s ⚠ |
+| `status:missing=true` (no `has_param`) | — | — | 3.5 s |
+
+**Writes** (WAL, `synchronous=NORMAL`, index only): single-resource update median
+1.4 ms, p95 3.0 ms; batches of 1,000 new resources 2,900–4,100 / s.
+
+**Go.** Every target in §5 is met or within reach of a change found here:
+
+1. **`has_param` is removed.** It had no by-resource index, so every write scanned its
+   88.8M rows (found when the write test didn't finish). Presence is a probe of the value
+   table's `…_r` index instead; the 0.9 GB go too.
+2. **Every probe and every drive names its index** (`INDEXED BY`, `CROSS JOIN`). Without
+   statistics the planner chose a date range scan for a per-candidate probe
+   (`patient&code&date`: 1,143 ms → 0.0 ms once forced) and the wrong driving table for
+   `_has` (3.6 s → 0.5 s).
+3. **Unsorted pages stream in index order**, with no `ORDER BY`: the order of an unsorted
+   search is unspecified (§3), and ordering by rid across several `sid`s of a code forced
+   a sort (`code&date` page: 523 ms).
+4. **Single-valued parameters count without `DISTINCT`**: `param.multi` (kept on write)
+   says whether any resource has more than one value for the pid; when not, `count(*)`
+   replaces `count(DISTINCT rid)` (the temp B-tree made the 5.2M count 12.8 s).
+
 ## Revision history
+
+- r4 — milestone 0 results (§8): go; `has_param` removed, explicit indexes for every
+  probe and drive, unsorted pages in index order, `DISTINCT` only for multi-valued
+  parameters.
 
 - r3 — implementation notes from the second review: open-ended Periods and `max_span`,
   reference-counted old generation (delete when the last reader finishes), staging `pid`s
