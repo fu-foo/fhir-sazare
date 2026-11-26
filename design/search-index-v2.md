@@ -474,6 +474,29 @@ the existing unit, e2e and security suites (now on v2), and `ci/upgrade_check.py
 The remaining seconds are exact totals over hundreds of thousands to millions of matches
 (decided: totals stay exact; `_total=none` skips them).
 
+**Upgrade at 10M** (the 0.15 index, ~60 GB, opened by this build): the server answered in
+0.07 s and served searches from the v1 index during the rebuild (its own speeds: up to
+minutes for broad sorted searches); the v2 generation was built from 9.9M resources in
+51 min (~3,300/s with full text and the throttle), the switch replayed a write made
+meanwhile, and the v1 files were deleted. On disk: index 6.0 GB + full text 9.0 GB.
+
+Through the server afterwards (after the review fixes; warm, single request):
+
+| Query | Exact total | `_total=none` |
+|---|---:|---:|
+| `Observation?_count=20` | 1.1 ms | |
+| `Observation?_sort=-date&_count=20` | 1.6 ms | |
+| `Observation?code=8867-4&_sort=-date&_count=20` | 50 ms | |
+| `Patient?_has:Observation:subject:code=8867-4&_count=20` | 741 ms | 49 ms |
+| `Observation?category=vital-signs&status=final&_count=20` | 4.9 s | 6 ms |
+| `Observation?code=8867-4&date=ge2020-01-01&_count=20` | 659 ms | 13 ms |
+| `Patient?gender=female&birthdate=ge1980&_count=20` | 227 ms | |
+| `patient=p42&code=…` (± `date`) | 1.5–1.9 ms | |
+| `Patient/p42/$everything` | 1.9 ms | |
+
+A cold start (the OS cache holding neither file) is several times slower on the broad
+queries until the pages are read.
+
 ## Revision history
 
 - r5 — milestone 3 (§9): implementation notes, 10M results.
