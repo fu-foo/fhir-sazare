@@ -167,6 +167,45 @@ impl SearchIndex {
         }
     }
 
+    /// See [`IndexV2::set_tracking`] (a v1 index doesn't track).
+    pub fn set_tracking(&self, on: bool) {
+        if let Engine::V2(i) = &self.engine {
+            i.set_tracking(on);
+        }
+    }
+
+    /// See [`IndexV2::synced`]; `None` for a v1 index.
+    pub fn synced(&self) -> Result<Option<i64>> {
+        match &self.engine {
+            Engine::V1(_) => Ok(None),
+            Engine::V2(i) => i.synced(),
+        }
+    }
+
+    /// See [`IndexV2::mark_synced`]; nothing for a v1 index.
+    pub fn mark_synced(&self, seq: i64) -> Result<()> {
+        match &self.engine {
+            Engine::V1(_) => Ok(()),
+            Engine::V2(i) => i.mark_synced(seq),
+        }
+    }
+
+    /// See [`IndexV2::recent`]; none for a v1 index.
+    pub fn recent(&self) -> Result<Vec<(String, String)>> {
+        match &self.engine {
+            Engine::V1(_) => Ok(vec![]),
+            Engine::V2(i) => i.recent(),
+        }
+    }
+
+    /// See [`IndexV2::has_recent`].
+    pub fn has_recent(&self) -> Result<bool> {
+        match &self.engine {
+            Engine::V1(_) => Ok(false),
+            Engine::V2(i) => i.has_recent(),
+        }
+    }
+
     pub fn get_meta(&self, key: &str) -> Result<Option<String>> {
         match &self.engine {
             Engine::V1(i) => i.get_meta(key),

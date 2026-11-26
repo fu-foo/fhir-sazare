@@ -423,6 +423,13 @@ async fn serve(args: Vec<String>) {
         seen_jti: std::sync::Mutex::new(std::collections::HashMap::new()),
     });
 
+    // Put back what a crash cut in two between the store and the index,
+    // before anything reads or writes; then keep recording where they match.
+    if let Err(e) = sazare_server::consistency::catch_up(&state).await {
+        tracing::error!("Search index: catching up with the store failed: {e} (POST /$reindex rebuilds it)");
+    }
+    sazare_server::consistency::spawn_marker(state.clone());
+
     // `--demo`: load the curated sample dataset so a fresh run has something to
     // explore immediately.
     if want_demo {
@@ -602,6 +609,10 @@ async fn serve(args: Vec<String>) {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
     while rebuild.rebuild.is_running() && std::time::Instant::now() < deadline {
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    // Stopped cleanly: the next start has nothing to catch up on.
+    if let Err(e) = sazare_server::consistency::mark(&rebuild).await {
+        tracing::warn!("Search index: recording the point it matches the store failed: {e}");
     }
     tracing::info!("Server shut down gracefully");
 }

@@ -28,7 +28,8 @@
 | `search_index.sqlite` | Derived. Migrated, and rebuilt from the resources when the search parameters or index format changed. |
 | `search_index.fts.sqlite` | Derived (full text). Created and filled on first start. |
 
-Migrations are **forward-only**: an upgraded database can't be opened by an older version.
+Migrations are **forward-only**: an upgraded database can't be opened by an older version
+(from 0.17, a version refuses to start on a database written by a newer one).
 To go back, restore the backup from step 1 (copy `resources.sqlite` and `audit.sqlite`
 into `data_dir`, delete the two `search_index*` files, start the older binary).
 

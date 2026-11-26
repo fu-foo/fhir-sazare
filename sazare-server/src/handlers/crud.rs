@@ -729,7 +729,7 @@ pub async fn delete_resource(
 
 /// After a lost compare-and-swap: make the index match what is stored again —
 /// the stored resource's entries, or none if it no longer exists.
-async fn restore_index(state: &Arc<AppState>, resource_type: &str, id: &str) {
+pub(crate) async fn restore_index(state: &Arc<AppState>, resource_type: &str, id: &str) {
     let stored = state
         .store
         .get(resource_type, id)

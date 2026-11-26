@@ -22,6 +22,8 @@ use crate::{Result, StoreError};
 
 const TEXT_SCHEMA: &str = r#"
 CREATE VIRTUAL TABLE IF NOT EXISTS fts.resource_text USING fts5(narrative, content, tokenize = 'trigram');
+-- Written with each sync mark, so the mark's commit makes this file durable too.
+CREATE TABLE IF NOT EXISTS fts.synced (k INTEGER PRIMARY KEY, seq INT NOT NULL);
 "#;
 
 const SCHEMA: &str = r#"
@@ -34,6 +36,8 @@ CREATE TABLE IF NOT EXISTS rkey (rid INTEGER PRIMARY KEY AUTOINCREMENT, tid INT 
 CREATE INDEX IF NOT EXISTS rkey_live ON rkey (tid, rid) WHERE present = 1;
 CREATE INDEX IF NOT EXISTS rkey_id ON rkey (id);
 CREATE TABLE IF NOT EXISTS type_count (tid INTEGER PRIMARY KEY, n INT NOT NULL);
+-- Resources written since the index was last known to match the store.
+CREATE TABLE IF NOT EXISTS recent (rid INTEGER PRIMARY KEY);
 
 CREATE TABLE IF NOT EXISTS v_token (pid INT, code TEXT, sid INT, rid INT, PRIMARY KEY (pid, code, sid, rid)) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS v_token_r ON v_token (rid, pid, code, sid);
@@ -56,6 +60,9 @@ CREATE TABLE IF NOT EXISTS index_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL
 "#;
 
 const VALUE_TABLES: [&str; 7] = ["v_token", "v_string", "v_date", "v_number", "v_quantity", "v_ref", "v_ref_text"];
+
+/// `index_meta` key: the store change the index last matched.
+const SYNCED_KEY: &str = "store_synced";
 
 /// `index_meta` key: the format the index was written in.
 const FORMAT_KEY: &str = "index_format";
@@ -162,6 +169,8 @@ pub struct IndexV2 {
     sids: RefCell<HashMap<String, i64>>,
     /// `index_format`, read once: a file's format never changes once written.
     format: u32,
+    /// Writes are noted in `recent` (not while a new generation is filled).
+    track: std::cell::Cell<bool>,
 }
 
 impl IndexV2 {
@@ -173,9 +182,12 @@ impl IndexV2 {
         let conn = Connection::open(path)?;
         conn.busy_timeout(std::time::Duration::from_secs(5))?;
         conn.execute_batch(crate::WAL_PRAGMAS)?;
+        // No sync per commit: a power loss can drop the last commits, which
+        // the start after it indexes again from the store (see `mark_synced`).
+        conn.execute_batch("PRAGMA synchronous=NORMAL;")?;
         conn.execute_batch(SCHEMA)?;
         Self::attach_text(&conn, path)?;
-        conn.execute_batch("PRAGMA fts.journal_mode=WAL; PRAGMA fts.journal_size_limit=67108864;")?;
+        conn.execute_batch("PRAGMA fts.journal_mode=WAL; PRAGMA fts.journal_size_limit=67108864; PRAGMA fts.synchronous=NORMAL;")?;
         conn.execute_batch(TEXT_SCHEMA)?;
         let index = Self::with(conn)?;
         // A new (empty) index is in this release's format; one without the
@@ -226,7 +238,7 @@ impl IndexV2 {
     fn with(conn: Connection) -> Result<Self> {
         // Room for every write statement (rusqlite keeps 16 by default).
         conn.set_prepared_statement_cache_capacity(64);
-        let mut index = Self { conn, tids: Default::default(), pids: Default::default(), sids: Default::default(), format: 0 };
+        let mut index = Self { conn, tids: Default::default(), pids: Default::default(), sids: Default::default(), format: 0, track: std::cell::Cell::new(true) };
         index.format = index.get_meta(FORMAT_KEY)?.and_then(|v| v.parse().ok()).unwrap_or(3);
         Ok(index)
     }
@@ -363,6 +375,7 @@ impl IndexV2 {
         let tx = self.conn.unchecked_transaction()?;
         let tid = self.tid(resource_type, true)?.expect("created");
         let (rid, _) = self.rid(tid, id, true)?;
+        self.note(rid)?;
         let (pid, _) = self.pid(tid, name, Some(kind))?.expect("created");
         let has = self.has_value(pid, kind).with_rid(&rid.to_string());
         let had: bool = self.conn.query_row(&format!("SELECT {}", has.text), params_from_iter(has.args.iter()), |r| r.get(0))?;
@@ -388,6 +401,7 @@ impl IndexV2 {
         for u in items {
             let tid = self.tid(&u.resource_type, true)?.expect("created");
             let (rid, stored) = self.rid(tid, &u.resource_id, true)?;
+            self.note(rid)?;
             // A new resource has no rows to clear (all of them, in a rebuild).
             if stored {
                 self.clear_rows(rid)?;
@@ -485,6 +499,62 @@ impl IndexV2 {
         Ok(())
     }
 
+    fn note(&self, rid: i64) -> Result<()> {
+        if self.track.get() {
+            self.conn.prepare_cached("INSERT OR IGNORE INTO recent (rid) VALUES (?1)")?.execute(params![rid])?;
+        }
+        Ok(())
+    }
+
+    // ---- matching the store -------------------------------------------------
+
+    /// Note written resources in `recent` (on by default; off while a new
+    /// generation is filled from the store, which it matches by construction).
+    pub fn set_tracking(&self, on: bool) {
+        self.track.set(on);
+    }
+
+    /// The store change (`SqliteStore::change_seq`) the index was last known
+    /// to match, with no write in flight.
+    pub fn synced(&self) -> Result<Option<i64>> {
+        Ok(self.get_meta(SYNCED_KEY)?.and_then(|v| v.parse().ok()))
+    }
+
+    /// Record that the index matches the store up to change `seq` (no write
+    /// in flight): forget the resources written before.
+    ///
+    /// Durably: the store forgets its changes up to `seq` after this, so the
+    /// index must keep everything before the mark through a power loss.
+    /// Commits are otherwise not synced (`synchronous=NORMAL`); this one is
+    /// (`FULL`), in both files, which syncs each log with all it holds.
+    pub fn mark_synced(&self, seq: i64) -> Result<()> {
+        self.conn.execute_batch("PRAGMA synchronous=FULL; PRAGMA fts.synchronous=FULL;")?;
+        let r = (|| {
+            let tx = self.conn.unchecked_transaction()?;
+            self.set_meta(SYNCED_KEY, &seq.to_string())?;
+            self.conn.execute("DELETE FROM recent", [])?;
+            self.conn.execute("INSERT OR REPLACE INTO fts.synced (k, seq) VALUES (1, ?1)", params![seq])?;
+            tx.commit()?;
+            Ok(())
+        })();
+        self.conn.execute_batch("PRAGMA synchronous=NORMAL; PRAGMA fts.synchronous=NORMAL;")?;
+        r
+    }
+
+    /// Resources written since the last mark (`type`, `id`).
+    pub fn recent(&self) -> Result<Vec<(String, String)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT t.name, k.id FROM recent r JOIN rkey k ON k.rid = r.rid JOIN rtype t ON t.tid = k.tid",
+        )?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        Ok(rows.collect::<std::result::Result<_, _>>()?)
+    }
+
+    /// Anything written since the last mark.
+    pub fn has_recent(&self) -> Result<bool> {
+        Ok(self.conn.query_row("SELECT EXISTS (SELECT 1 FROM recent)", [], |r| r.get(0))?)
+    }
+
     /// A resource was deleted.
     pub fn remove(&self, resource_type: &str, id: &str) -> Result<()> {
         let Some(tid) = self.tid(resource_type, false)? else { return Ok(()) };
@@ -496,6 +566,7 @@ impl IndexV2 {
             .optional()?;
         if let Some((rid, present)) = r {
             let tx = self.conn.unchecked_transaction()?;
+            self.note(rid)?;
             self.clear_rows(rid)?;
             if present == 1 {
                 self.conn.execute("UPDATE rkey SET present = 0 WHERE rid = ?1", params![rid])?;

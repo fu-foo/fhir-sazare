@@ -34,6 +34,17 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
   `<data_dir>/exports/` (deleted with the job, and on the next start), and the
   synchronous response is streamed as it is read, a page of resources at a time.
 
+- **A crash no longer leaves the search index behind the store.** The two are separate
+  databases; a crash or power loss between a write's two commits left a stored resource
+  the index didn't find (a transaction Bundle or an `$import` stored first), or index
+  rows for a write the store never got — until the next `$reindex`. The store now
+  numbers every change to its resources, the index notes every resource it writes, and
+  every minute and at shutdown the index records the change it matches. A start after a
+  crash indexes again, from the store, only what changed after that point (logged as a
+  warning).
+- A database written by a newer sazare is refused at startup (migrations are
+  forward-only) instead of being opened.
+
 ### Added
 - **Quantity search parameters**: `[prefix]number|system|code`, `number||code` (the code
   or the unit, any system) or the number alone, with FHIR's implicit precision and the
@@ -46,6 +57,10 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
   until the new one is ready.
 
 ### Performance
+- **Writes wait for one disk sync, not three.** The search index no longer syncs each
+  commit to disk (`synchronous=NORMAL`): what a power loss drops from it is indexed again
+  from the store at the next start (see above). A single `PUT` on an NVMe disk: 21 ms →
+  10 ms.
 - **Faster index writes**: a rebuild and `$import` no longer clear rows a new resource
   can't have, and reuse their SQL statements. 300k resources: `$import` 72 s → 50 s, a
   rebuild 49 s → 27 s.

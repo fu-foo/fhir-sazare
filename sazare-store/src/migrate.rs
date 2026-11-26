@@ -14,6 +14,15 @@ use rusqlite::Connection;
 pub(crate) fn run_migrations(conn: &mut Connection, migrations: &[&str]) -> Result<()> {
     let current: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
     let target = migrations.len() as i64;
+    if current > target {
+        // Migrations are forward-only (UPGRADING.md): don't run on a schema
+        // this version doesn't know.
+        return Err(crate::error::StoreError::Other(format!(
+            "{} was written by a newer sazare (schema {current}; this version knows up to {target}). \
+             Run that version, or restore the backup taken before upgrading.",
+            conn.path().filter(|p| !p.is_empty()).unwrap_or("the database")
+        )));
+    }
     for version in current..target {
         let tx = conn.transaction()?;
         tx.execute_batch(migrations[version as usize])?;
@@ -67,5 +76,13 @@ mod tests {
                 .unwrap();
             assert_eq!(n, 1, "table {} should exist", t);
         }
+    }
+
+    #[test]
+    fn a_newer_schema_is_refused() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        run_migrations(&mut conn, &["CREATE TABLE a (id INTEGER);", "CREATE TABLE b (id INTEGER);"]).unwrap();
+        let e = run_migrations(&mut conn, &["CREATE TABLE a (id INTEGER);"]).unwrap_err();
+        assert!(e.to_string().contains("newer sazare"), "{e}");
     }
 }

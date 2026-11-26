@@ -5,7 +5,7 @@
 //!   - resource_history: Version history (resource_type, id, version_id)
 
 use crate::error::Result;
-use rusqlite::{params, Connection, OpenFlags, Transaction};
+use rusqlite::{params, Connection, OpenFlags, OptionalExtension, Transaction};
 use std::ops::Deref;
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -48,6 +48,25 @@ impl SqliteStore {
         );
         CREATE INDEX IF NOT EXISTS idx_resources_type ON resources(resource_type);
         CREATE INDEX IF NOT EXISTS idx_history_type ON resource_history(resource_type);
+        "#,
+        // v2 — every change to the current resources, numbered, for the
+        // search index to catch up with after a crash (see `changed_since`).
+        // Triggers, so no write path can miss it.
+        r#"
+        CREATE TABLE changes (
+            seq INTEGER PRIMARY KEY AUTOINCREMENT,
+            resource_type TEXT NOT NULL,
+            id TEXT NOT NULL
+        );
+        CREATE TRIGGER changes_insert AFTER INSERT ON resources BEGIN
+            INSERT INTO changes (resource_type, id) VALUES (NEW.resource_type, NEW.id);
+        END;
+        CREATE TRIGGER changes_update AFTER UPDATE ON resources BEGIN
+            INSERT INTO changes (resource_type, id) VALUES (NEW.resource_type, NEW.id);
+        END;
+        CREATE TRIGGER changes_delete AFTER DELETE ON resources BEGIN
+            INSERT INTO changes (resource_type, id) VALUES (OLD.resource_type, OLD.id);
+        END;
         "#,
     ];
 
@@ -104,6 +123,30 @@ impl SqliteStore {
         self.conn
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// The number of the last change to the current resources (0: none yet).
+    /// Read on the write connection: the latest commit.
+    pub fn change_seq(&self) -> Result<i64> {
+        let conn = self.conn();
+        let seq: Option<i64> = conn
+            .query_row("SELECT seq FROM sqlite_sequence WHERE name = 'changes'", [], |r| r.get(0))
+            .optional()?;
+        Ok(seq.unwrap_or(0))
+    }
+
+    /// The resources changed after change `seq` (each once).
+    pub fn changed_since(&self, seq: i64) -> Result<Vec<(String, String)>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare("SELECT DISTINCT resource_type, id FROM changes WHERE seq > ?1")?;
+        let rows = stmt.query_map(params![seq], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        Ok(rows.collect::<std::result::Result<_, _>>()?)
+    }
+
+    /// Drop the changes up to `seq` (the search index has them).
+    pub fn forget_changes(&self, seq: i64) -> Result<()> {
+        self.conn().execute("DELETE FROM changes WHERE seq <= ?1", params![seq])?;
+        Ok(())
     }
 
     /// Pick a connection for a read query: round-robin over the read pool, or

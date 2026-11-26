@@ -332,6 +332,8 @@ async fn build_and_switch(state: &Arc<AppState>, old_path: PathBuf, new_path: Pa
     let np = new_path.clone();
     let (new_index, n) = tokio::task::spawn_blocking(move || -> Result<(SearchIndex, u64), String> {
         let index = SearchIndex::open(&np).map_err(|e| e.to_string())?;
+        // Filled from the store: it matches it by construction (marked at the switch).
+        index.set_tracking(false);
         match fill(&st, &index) {
             Ok(n) => Ok((index, n)),
             Err(e) => {
@@ -391,6 +393,10 @@ async fn build_and_switch(state: &Arc<AppState>, old_path: PathBuf, new_path: Pa
     new_index
         .set_meta(crate::handlers::reindex::FINGERPRINT_KEY, &fingerprint)
         .map_err(|e| e.to_string())?;
+    // No write in flight, every one replayed: it matches the store.
+    let seq = state.store.change_seq().map_err(|e| e.to_string())?;
+    new_index.mark_synced(seq).map_err(|e| e.to_string())?;
+    new_index.set_tracking(true);
     mark_ready(&new_index);
     let readers = IndexReaders::open(&new_path, state.index_readers.capacity()).map_err(|e| e.to_string())?;
     let old_writer = std::mem::replace(&mut *writer, new_index);

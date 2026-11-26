@@ -10,6 +10,7 @@ pub mod bundle;
 pub mod compartment_check;
 pub mod apps;
 pub mod config;
+pub mod consistency;
 pub mod dashboard;
 pub mod demo;
 pub mod handlers;
