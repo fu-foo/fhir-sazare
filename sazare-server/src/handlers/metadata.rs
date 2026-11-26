@@ -331,6 +331,7 @@ fn get_search_params_from_registry(registry: &SearchParamRegistry, resource_type
             sazare_core::SearchParamType::Date => "date",
             sazare_core::SearchParamType::Reference => "reference",
             sazare_core::SearchParamType::Number => "number",
+            sazare_core::SearchParamType::Quantity => "quantity",
         };
         if seen.insert(def.name.clone()) {
             params.push(json!({"name": def.name, "type": type_str}));

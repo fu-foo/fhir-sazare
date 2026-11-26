@@ -5,7 +5,8 @@
   python3 sazare-core/search-parameters/generate.py search-parameters.json > sazare-core/search-parameters/r4.tsv
 
 One line per (base resource type, parameter): base, code, type, expression.
-Only the types sazare indexes (token, string, date, reference, number); the
+Only the types sazare indexes (token, string, date, reference, number,
+quantity); the
 Resource-level parameters (_id, _tag, ...) are built in separately. The
 registry adds these to the hand-written definitions for the parameters those
 don't cover (see SearchParamRegistry::new).
@@ -15,7 +16,7 @@ Source: HL7 FHIR R4 (4.0.1), CC0-1.0 (see NOTICE.md).
 import json
 import sys
 
-TYPES = {"token", "string", "date", "reference", "number"}
+TYPES = {"token", "string", "date", "reference", "number", "quantity"}
 
 
 def branches(expr):

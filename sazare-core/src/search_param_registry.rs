@@ -100,6 +100,7 @@ fn parse_r4_definitions() -> Vec<(String, SearchParamDef)> {
             "date" => SearchParamType::Date,
             "reference" => SearchParamType::Reference,
             "number" => SearchParamType::Number,
+            "quantity" => SearchParamType::Quantity,
             _ => continue,
         };
         let extraction = match (base, code) {
@@ -248,6 +249,7 @@ impl SearchParamRegistry {
             "date" => SearchParamType::Date,
             "reference" => SearchParamType::Reference,
             "number" => SearchParamType::Number,
+            "quantity" => SearchParamType::Quantity,
             other => return Err(format!("{code}: unsupported search parameter type '{other}'")),
         };
         let expr_str = sp
@@ -1648,7 +1650,7 @@ mod tests {
         // Every R4 row of a supported type compiled (none silently dropped).
         let rows = include_str!("../search-parameters/r4.tsv")
             .lines()
-            .filter(|l| !l.starts_with('#') && ["token", "string", "date", "reference", "number"].contains(&l.split('\t').nth(2).unwrap_or("")))
+            .filter(|l| !l.starts_with('#') && ["token", "string", "date", "reference", "number", "quantity"].contains(&l.split('\t').nth(2).unwrap_or("")))
             .count();
         assert_eq!(r4_definitions().len(), rows, "an R4 expression failed to compile");
     }

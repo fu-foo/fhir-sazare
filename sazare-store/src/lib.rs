@@ -17,5 +17,5 @@ pub use sqlite_store::SqliteStore;
 pub use search_index::{IndexReaders, SearchIndex};
 pub use sqlite_index::{IndexUpdate, ResourceText, V1Index};
 pub use sqlite_audit::{AuditLog, Operation};
-pub use search_executor::{SearchExecutor, V1Executor};
+pub use search_executor::{SearchExecutor, V1Executor, INDEX_NOT_READY};
 pub use index_builder::{resource_text, IndexBuilder, COMPARTMENT_PARAM, INDEX_FORMAT};

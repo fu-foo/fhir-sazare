@@ -18,6 +18,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -132,6 +133,22 @@ state = get("health").get("index", {}).get("state")
 print(f"new release up; index state: {state}")
 during = snapshot()
 compare("during the rebuild", before, during)
+
+
+def status(path):
+    try:
+        with urllib.request.urlopen(f"{BASE}/{path}", timeout=600) as r:
+            return r.status
+    except urllib.error.HTTPError as e:
+        return e.code
+
+
+# A search only the new index can answer (quantity): 503 while the old one serves.
+if get("health").get("index", {}).get("state") == "rebuilding":
+    code = status("Observation?value-quantity=gt0")
+    if code != 503 and get("health").get("index", {}).get("state") == "rebuilding":
+        sys.exit(f"a quantity search during the rebuild answered {code}, not 503")
+    print(f"quantity search during the rebuild: {code}")
 # A write while the rebuild runs: replayed into the new index.
 req = urllib.request.Request(f"{BASE}/Patient/upgrade-check", method="PUT",
                              data=json.dumps({"resourceType": "Patient", "id": "upgrade-check",
@@ -148,6 +165,8 @@ after = snapshot()
 # The resource written during the rebuild aside (it matches some searches).
 after = {q: (t - (1 if "upgrade-check" in ids else 0), ids - {"upgrade-check"}) for q, (t, ids) in after.items()}
 compare("after the switch", before, after)
+if status("Observation?value-quantity=gt0") != 200:
+    sys.exit("a quantity search after the switch failed")
 if get("Patient?family=Upgradecheck").get("total") != 1:
     sys.exit("the write made during the rebuild is not searchable")
 files = sorted(os.listdir(os.path.join(work, "data")))

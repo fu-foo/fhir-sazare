@@ -9,6 +9,7 @@ Account	subject	reference	Account.subject
 Account	type	token	Account.type
 ActivityDefinition	composed-of	reference	ActivityDefinition.relatedArtifact.where(type='composed-of').resource
 ActivityDefinition	context	token	(ActivityDefinition.useContext.value as CodeableConcept)
+ActivityDefinition	context-quantity	quantity	(ActivityDefinition.useContext.value as Quantity) | (ActivityDefinition.useContext.value as Range)
 ActivityDefinition	context-type	token	ActivityDefinition.useContext.code
 ActivityDefinition	date	date	ActivityDefinition.date
 ActivityDefinition	depends-on	reference	ActivityDefinition.relatedArtifact.where(type='depends-on').resource | ActivityDefinition.library
@@ -110,6 +111,7 @@ Bundle	message	reference	Bundle.entry[0].resource
 Bundle	timestamp	date	Bundle.timestamp
 Bundle	type	token	Bundle.type
 CapabilityStatement	context	token	(CapabilityStatement.useContext.value as CodeableConcept)
+CapabilityStatement	context-quantity	quantity	(CapabilityStatement.useContext.value as Quantity) | (CapabilityStatement.useContext.value as Range)
 CapabilityStatement	context-type	token	CapabilityStatement.useContext.code
 CapabilityStatement	date	date	CapabilityStatement.date
 CapabilityStatement	description	string	CapabilityStatement.description
@@ -167,10 +169,13 @@ ChargeItem	patient	reference	ChargeItem.subject.where(resolve() is Patient)
 ChargeItem	performer-actor	reference	ChargeItem.performer.actor
 ChargeItem	performer-function	token	ChargeItem.performer.function
 ChargeItem	performing-organization	reference	ChargeItem.performingOrganization
+ChargeItem	price-override	quantity	ChargeItem.priceOverride
+ChargeItem	quantity	quantity	ChargeItem.quantity
 ChargeItem	requesting-organization	reference	ChargeItem.requestingOrganization
 ChargeItem	service	reference	ChargeItem.service
 ChargeItem	subject	reference	ChargeItem.subject
 ChargeItemDefinition	context	token	(ChargeItemDefinition.useContext.value as CodeableConcept)
+ChargeItemDefinition	context-quantity	quantity	(ChargeItemDefinition.useContext.value as Quantity) | (ChargeItemDefinition.useContext.value as Range)
 ChargeItemDefinition	context-type	token	ChargeItemDefinition.useContext.code
 ChargeItemDefinition	date	date	ChargeItemDefinition.date
 ChargeItemDefinition	description	string	ChargeItemDefinition.description
@@ -225,6 +230,7 @@ ClinicalImpression	supporting-info	reference	ClinicalImpression.supportingInfo
 CodeSystem	code	token	CodeSystem.concept.code
 CodeSystem	content-mode	token	CodeSystem.content
 CodeSystem	context	token	(CodeSystem.useContext.value as CodeableConcept)
+CodeSystem	context-quantity	quantity	(CodeSystem.useContext.value as Quantity) | (CodeSystem.useContext.value as Range)
 CodeSystem	context-type	token	CodeSystem.useContext.code
 CodeSystem	date	date	CodeSystem.date
 CodeSystem	description	string	CodeSystem.description
@@ -269,6 +275,7 @@ CommunicationRequest	status	token	CommunicationRequest.status
 CommunicationRequest	subject	reference	CommunicationRequest.subject
 CompartmentDefinition	code	token	CompartmentDefinition.code
 CompartmentDefinition	context	token	(CompartmentDefinition.useContext.value as CodeableConcept)
+CompartmentDefinition	context-quantity	quantity	(CompartmentDefinition.useContext.value as Quantity) | (CompartmentDefinition.useContext.value as Range)
 CompartmentDefinition	context-type	token	CompartmentDefinition.useContext.code
 CompartmentDefinition	date	date	CompartmentDefinition.date
 CompartmentDefinition	description	string	CompartmentDefinition.description
@@ -296,6 +303,7 @@ Composition	subject	reference	Composition.subject
 Composition	title	string	Composition.title
 Composition	type	token	Composition.type
 ConceptMap	context	token	(ConceptMap.useContext.value as CodeableConcept)
+ConceptMap	context-quantity	quantity	(ConceptMap.useContext.value as Quantity) | (ConceptMap.useContext.value as Range)
 ConceptMap	context-type	token	ConceptMap.useContext.code
 ConceptMap	date	date	ConceptMap.date
 ConceptMap	description	string	ConceptMap.description
@@ -313,6 +321,7 @@ ConceptMap	target-code	token	ConceptMap.group.element.target.code
 ConceptMap	target-uri	reference	(ConceptMap.target as uri)
 ConceptMap	title	string	ConceptMap.title
 ConceptMap	version	token	ConceptMap.version
+Condition	abatement-age	quantity	Condition.abatement.as(Age) | Condition.abatement.as(Range)
 Condition	abatement-date	date	Condition.abatement.as(dateTime) | Condition.abatement.as(Period)
 Condition	abatement-string	string	Condition.abatement.as(string)
 Condition	asserter	reference	Condition.asserter
@@ -324,6 +333,7 @@ Condition	encounter	reference	Condition.encounter
 Condition	evidence	token	Condition.evidence.code
 Condition	evidence-detail	reference	Condition.evidence.detail
 Condition	identifier	token	Condition.identifier
+Condition	onset-age	quantity	Condition.onset.as(Age) | Condition.onset.as(Range)
 Condition	onset-date	date	Condition.onset.as(dateTime) | Condition.onset.as(Period)
 Condition	onset-info	string	Condition.onset.as(string)
 Condition	patient	reference	Condition.subject.where(resolve() is Patient)
@@ -480,6 +490,7 @@ DocumentReference	status	token	DocumentReference.status
 DocumentReference	subject	reference	DocumentReference.subject
 DocumentReference	type	token	DocumentReference.type
 EffectEvidenceSynthesis	context	token	(EffectEvidenceSynthesis.useContext.value as CodeableConcept)
+EffectEvidenceSynthesis	context-quantity	quantity	(EffectEvidenceSynthesis.useContext.value as Quantity) | (EffectEvidenceSynthesis.useContext.value as Range)
 EffectEvidenceSynthesis	context-type	token	EffectEvidenceSynthesis.useContext.code
 EffectEvidenceSynthesis	date	date	EffectEvidenceSynthesis.date
 EffectEvidenceSynthesis	description	string	EffectEvidenceSynthesis.description
@@ -499,6 +510,7 @@ Encounter	date	date	Encounter.period
 Encounter	diagnosis	reference	Encounter.diagnosis.condition
 Encounter	episode-of-care	reference	Encounter.episodeOfCare
 Encounter	identifier	token	Encounter.identifier
+Encounter	length	quantity	Encounter.length
 Encounter	location	reference	Encounter.location.location
 Encounter	location-period	date	Encounter.location.period
 Encounter	part-of	reference	Encounter.partOf
@@ -537,6 +549,7 @@ EpisodeOfCare	status	token	EpisodeOfCare.status
 EpisodeOfCare	type	token	EpisodeOfCare.type
 EventDefinition	composed-of	reference	EventDefinition.relatedArtifact.where(type='composed-of').resource
 EventDefinition	context	token	(EventDefinition.useContext.value as CodeableConcept)
+EventDefinition	context-quantity	quantity	(EventDefinition.useContext.value as Quantity) | (EventDefinition.useContext.value as Range)
 EventDefinition	context-type	token	EventDefinition.useContext.code
 EventDefinition	date	date	EventDefinition.date
 EventDefinition	depends-on	reference	EventDefinition.relatedArtifact.where(type='depends-on').resource
@@ -555,6 +568,7 @@ EventDefinition	topic	token	EventDefinition.topic
 EventDefinition	version	token	EventDefinition.version
 Evidence	composed-of	reference	Evidence.relatedArtifact.where(type='composed-of').resource
 Evidence	context	token	(Evidence.useContext.value as CodeableConcept)
+Evidence	context-quantity	quantity	(Evidence.useContext.value as Quantity) | (Evidence.useContext.value as Range)
 Evidence	context-type	token	Evidence.useContext.code
 Evidence	date	date	Evidence.date
 Evidence	depends-on	reference	Evidence.relatedArtifact.where(type='depends-on').resource
@@ -573,6 +587,7 @@ Evidence	topic	token	Evidence.topic
 Evidence	version	token	Evidence.version
 EvidenceVariable	composed-of	reference	EvidenceVariable.relatedArtifact.where(type='composed-of').resource
 EvidenceVariable	context	token	(EvidenceVariable.useContext.value as CodeableConcept)
+EvidenceVariable	context-quantity	quantity	(EvidenceVariable.useContext.value as Quantity) | (EvidenceVariable.useContext.value as Range)
 EvidenceVariable	context-type	token	EvidenceVariable.useContext.code
 EvidenceVariable	date	date	EvidenceVariable.date
 EvidenceVariable	depends-on	reference	EvidenceVariable.relatedArtifact.where(type='depends-on').resource
@@ -590,6 +605,7 @@ EvidenceVariable	title	string	EvidenceVariable.title
 EvidenceVariable	topic	token	EvidenceVariable.topic
 EvidenceVariable	version	token	EvidenceVariable.version
 ExampleScenario	context	token	(ExampleScenario.useContext.value as CodeableConcept)
+ExampleScenario	context-quantity	quantity	(ExampleScenario.useContext.value as Quantity) | (ExampleScenario.useContext.value as Range)
 ExampleScenario	context-type	token	ExampleScenario.useContext.code
 ExampleScenario	date	date	ExampleScenario.date
 ExampleScenario	identifier	token	ExampleScenario.identifier
@@ -638,6 +654,7 @@ Goal	start-date	date	(Goal.start as date)
 Goal	subject	reference	Goal.subject
 Goal	target-date	date	(Goal.target.due as date)
 GraphDefinition	context	token	(GraphDefinition.useContext.value as CodeableConcept)
+GraphDefinition	context-quantity	quantity	(GraphDefinition.useContext.value as Quantity) | (GraphDefinition.useContext.value as Range)
 GraphDefinition	context-type	token	GraphDefinition.useContext.code
 GraphDefinition	date	date	GraphDefinition.date
 GraphDefinition	description	string	GraphDefinition.description
@@ -721,6 +738,7 @@ ImmunizationRecommendation	support	reference	ImmunizationRecommendation.recommen
 ImmunizationRecommendation	target-disease	token	ImmunizationRecommendation.recommendation.targetDisease
 ImmunizationRecommendation	vaccine-type	token	ImmunizationRecommendation.recommendation.vaccineCode
 ImplementationGuide	context	token	(ImplementationGuide.useContext.value as CodeableConcept)
+ImplementationGuide	context-quantity	quantity	(ImplementationGuide.useContext.value as Quantity) | (ImplementationGuide.useContext.value as Range)
 ImplementationGuide	context-type	token	ImplementationGuide.useContext.code
 ImplementationGuide	date	date	ImplementationGuide.date
 ImplementationGuide	depends-on	reference	ImplementationGuide.dependsOn.uri
@@ -758,10 +776,13 @@ Invoice	patient	reference	Invoice.subject.where(resolve() is Patient)
 Invoice	recipient	reference	Invoice.recipient
 Invoice	status	token	Invoice.status
 Invoice	subject	reference	Invoice.subject
+Invoice	totalgross	quantity	Invoice.totalGross
+Invoice	totalnet	quantity	Invoice.totalNet
 Invoice	type	token	Invoice.type
 Library	composed-of	reference	Library.relatedArtifact.where(type='composed-of').resource
 Library	content-type	token	Library.content.contentType
 Library	context	token	(Library.useContext.value as CodeableConcept)
+Library	context-quantity	quantity	(Library.useContext.value as Quantity) | (Library.useContext.value as Range)
 Library	context-type	token	Library.useContext.code
 Library	date	date	Library.date
 Library	depends-on	reference	Library.relatedArtifact.where(type='depends-on').resource
@@ -810,6 +831,7 @@ Location	status	token	Location.status
 Location	type	token	Location.type
 Measure	composed-of	reference	Measure.relatedArtifact.where(type='composed-of').resource
 Measure	context	token	(Measure.useContext.value as CodeableConcept)
+Measure	context-quantity	quantity	(Measure.useContext.value as Quantity) | (Measure.useContext.value as Range)
 Measure	context-type	token	Measure.useContext.code
 Measure	date	date	Measure.date
 Measure	depends-on	reference	Measure.relatedArtifact.where(type='depends-on').resource | Measure.library
@@ -944,6 +966,7 @@ MedicinalProductPharmaceutical	target-species	token	MedicinalProductPharmaceutic
 MedicinalProductUndesirableEffect	subject	reference	MedicinalProductUndesirableEffect.subject
 MessageDefinition	category	token	MessageDefinition.category
 MessageDefinition	context	token	(MessageDefinition.useContext.value as CodeableConcept)
+MessageDefinition	context-quantity	quantity	(MessageDefinition.useContext.value as Quantity) | (MessageDefinition.useContext.value as Range)
 MessageDefinition	context-type	token	MessageDefinition.useContext.code
 MessageDefinition	date	date	MessageDefinition.date
 MessageDefinition	description	string	MessageDefinition.description
@@ -980,6 +1003,7 @@ MolecularSequence	window-end	number	MolecularSequence.referenceSeq.windowEnd
 MolecularSequence	window-start	number	MolecularSequence.referenceSeq.windowStart
 NamingSystem	contact	string	NamingSystem.contact.name
 NamingSystem	context	token	(NamingSystem.useContext.value as CodeableConcept)
+NamingSystem	context-quantity	quantity	(NamingSystem.useContext.value as Quantity) | (NamingSystem.useContext.value as Range)
 NamingSystem	context-type	token	NamingSystem.useContext.code
 NamingSystem	date	date	NamingSystem.date
 NamingSystem	description	string	NamingSystem.description
@@ -1011,9 +1035,11 @@ Observation	code	token	Observation.code
 Observation	combo-code	token	Observation.code | Observation.component.code
 Observation	combo-data-absent-reason	token	Observation.dataAbsentReason | Observation.component.dataAbsentReason
 Observation	combo-value-concept	token	(Observation.value as CodeableConcept) | (Observation.component.value as CodeableConcept)
+Observation	combo-value-quantity	quantity	(Observation.value as Quantity) | (Observation.value as SampledData) | (Observation.component.value as Quantity) | (Observation.component.value as SampledData)
 Observation	component-code	token	Observation.component.code
 Observation	component-data-absent-reason	token	Observation.component.dataAbsentReason
 Observation	component-value-concept	token	(Observation.component.value as CodeableConcept)
+Observation	component-value-quantity	quantity	(Observation.component.value as Quantity) | (Observation.component.value as SampledData)
 Observation	data-absent-reason	token	Observation.dataAbsentReason
 Observation	date	date	Observation.effective
 Observation	derived-from	reference	Observation.derivedFrom
@@ -1031,10 +1057,12 @@ Observation	status	token	Observation.status
 Observation	subject	reference	Observation.subject
 Observation	value-concept	token	(Observation.value as CodeableConcept)
 Observation	value-date	date	(Observation.value as dateTime) | (Observation.value as Period)
+Observation	value-quantity	quantity	(Observation.value as Quantity) | (Observation.value as SampledData)
 Observation	value-string	string	(Observation.value as string) | (Observation.value as CodeableConcept).text
 OperationDefinition	base	reference	OperationDefinition.base
 OperationDefinition	code	token	OperationDefinition.code
 OperationDefinition	context	token	(OperationDefinition.useContext.value as CodeableConcept)
+OperationDefinition	context-quantity	quantity	(OperationDefinition.useContext.value as Quantity) | (OperationDefinition.useContext.value as Range)
 OperationDefinition	context-type	token	OperationDefinition.useContext.code
 OperationDefinition	date	date	OperationDefinition.date
 OperationDefinition	description	string	OperationDefinition.description
@@ -1136,6 +1164,7 @@ Person	relatedperson	reference	Person.link.target.where(resolve() is RelatedPers
 Person	telecom	token	Person.telecom
 PlanDefinition	composed-of	reference	PlanDefinition.relatedArtifact.where(type='composed-of').resource
 PlanDefinition	context	token	(PlanDefinition.useContext.value as CodeableConcept)
+PlanDefinition	context-quantity	quantity	(PlanDefinition.useContext.value as Quantity) | (PlanDefinition.useContext.value as Range)
 PlanDefinition	context-type	token	PlanDefinition.useContext.code
 PlanDefinition	date	date	PlanDefinition.date
 PlanDefinition	definition	reference	PlanDefinition.action.definition
@@ -1211,6 +1240,7 @@ Provenance	target	reference	Provenance.target
 Provenance	when	date	(Provenance.occurred as dateTime)
 Questionnaire	code	token	Questionnaire.item.code
 Questionnaire	context	token	(Questionnaire.useContext.value as CodeableConcept)
+Questionnaire	context-quantity	quantity	(Questionnaire.useContext.value as Quantity) | (Questionnaire.useContext.value as Range)
 Questionnaire	context-type	token	Questionnaire.useContext.code
 Questionnaire	date	date	Questionnaire.date
 Questionnaire	description	string	Questionnaire.description
@@ -1266,6 +1296,7 @@ RequestGroup	status	token	RequestGroup.status
 RequestGroup	subject	reference	RequestGroup.subject
 ResearchDefinition	composed-of	reference	ResearchDefinition.relatedArtifact.where(type='composed-of').resource
 ResearchDefinition	context	token	(ResearchDefinition.useContext.value as CodeableConcept)
+ResearchDefinition	context-quantity	quantity	(ResearchDefinition.useContext.value as Quantity) | (ResearchDefinition.useContext.value as Range)
 ResearchDefinition	context-type	token	ResearchDefinition.useContext.code
 ResearchDefinition	date	date	ResearchDefinition.date
 ResearchDefinition	depends-on	reference	ResearchDefinition.relatedArtifact.where(type='depends-on').resource | ResearchDefinition.library
@@ -1284,6 +1315,7 @@ ResearchDefinition	topic	token	ResearchDefinition.topic
 ResearchDefinition	version	token	ResearchDefinition.version
 ResearchElementDefinition	composed-of	reference	ResearchElementDefinition.relatedArtifact.where(type='composed-of').resource
 ResearchElementDefinition	context	token	(ResearchElementDefinition.useContext.value as CodeableConcept)
+ResearchElementDefinition	context-quantity	quantity	(ResearchElementDefinition.useContext.value as Quantity) | (ResearchElementDefinition.useContext.value as Range)
 ResearchElementDefinition	context-type	token	ResearchElementDefinition.useContext.code
 ResearchElementDefinition	date	date	ResearchElementDefinition.date
 ResearchElementDefinition	depends-on	reference	ResearchElementDefinition.relatedArtifact.where(type='depends-on').resource | ResearchElementDefinition.library
@@ -1330,6 +1362,7 @@ RiskAssessment	probability	number	RiskAssessment.prediction.probability
 RiskAssessment	risk	token	RiskAssessment.prediction.qualitativeRisk
 RiskAssessment	subject	reference	RiskAssessment.subject
 RiskEvidenceSynthesis	context	token	(RiskEvidenceSynthesis.useContext.value as CodeableConcept)
+RiskEvidenceSynthesis	context-quantity	quantity	(RiskEvidenceSynthesis.useContext.value as Quantity) | (RiskEvidenceSynthesis.useContext.value as Range)
 RiskEvidenceSynthesis	context-type	token	RiskEvidenceSynthesis.useContext.code
 RiskEvidenceSynthesis	date	date	RiskEvidenceSynthesis.date
 RiskEvidenceSynthesis	description	string	RiskEvidenceSynthesis.description
@@ -1352,6 +1385,7 @@ SearchParameter	base	token	SearchParameter.base
 SearchParameter	code	token	SearchParameter.code
 SearchParameter	component	reference	SearchParameter.component.definition
 SearchParameter	context	token	(SearchParameter.useContext.value as CodeableConcept)
+SearchParameter	context-quantity	quantity	(SearchParameter.useContext.value as Quantity) | (SearchParameter.useContext.value as Range)
 SearchParameter	context-type	token	SearchParameter.useContext.code
 SearchParameter	date	date	SearchParameter.date
 SearchParameter	derived-from	reference	SearchParameter.derivedFrom
@@ -1410,6 +1444,7 @@ StructureDefinition	abstract	token	StructureDefinition.abstract
 StructureDefinition	base	reference	StructureDefinition.baseDefinition
 StructureDefinition	base-path	token	StructureDefinition.snapshot.element.base.path | StructureDefinition.differential.element.base.path
 StructureDefinition	context	token	(StructureDefinition.useContext.value as CodeableConcept)
+StructureDefinition	context-quantity	quantity	(StructureDefinition.useContext.value as Quantity) | (StructureDefinition.useContext.value as Range)
 StructureDefinition	context-type	token	StructureDefinition.useContext.code
 StructureDefinition	date	date	StructureDefinition.date
 StructureDefinition	derivation	token	StructureDefinition.derivation
@@ -1428,6 +1463,7 @@ StructureDefinition	title	string	StructureDefinition.title
 StructureDefinition	valueset	reference	StructureDefinition.snapshot.element.binding.valueSet
 StructureDefinition	version	token	StructureDefinition.version
 StructureMap	context	token	(StructureMap.useContext.value as CodeableConcept)
+StructureMap	context-quantity	quantity	(StructureMap.useContext.value as Quantity) | (StructureMap.useContext.value as Range)
 StructureMap	context-type	token	StructureMap.useContext.code
 StructureMap	date	date	StructureMap.date
 StructureMap	description	string	StructureMap.description
@@ -1448,6 +1484,7 @@ Substance	code	token	Substance.code | (Substance.ingredient.substance as Codeabl
 Substance	container-identifier	token	Substance.instance.identifier
 Substance	expiry	date	Substance.instance.expiry
 Substance	identifier	token	Substance.identifier
+Substance	quantity	quantity	Substance.instance.quantity
 Substance	status	token	Substance.status
 Substance	substance-reference	reference	(Substance.ingredient.substance as Reference)
 SubstanceSpecification	code	token	SubstanceSpecification.code.code
@@ -1483,6 +1520,7 @@ Task	requester	reference	Task.requester
 Task	status	token	Task.status
 Task	subject	reference	Task.for
 TerminologyCapabilities	context	token	(TerminologyCapabilities.useContext.value as CodeableConcept)
+TerminologyCapabilities	context-quantity	quantity	(TerminologyCapabilities.useContext.value as Quantity) | (TerminologyCapabilities.useContext.value as Range)
 TerminologyCapabilities	context-type	token	TerminologyCapabilities.useContext.code
 TerminologyCapabilities	date	date	TerminologyCapabilities.date
 TerminologyCapabilities	description	string	TerminologyCapabilities.description
@@ -1498,6 +1536,7 @@ TestReport	result	token	TestReport.result
 TestReport	tester	string	TestReport.tester
 TestReport	testscript	reference	TestReport.testScript
 TestScript	context	token	(TestScript.useContext.value as CodeableConcept)
+TestScript	context-quantity	quantity	(TestScript.useContext.value as Quantity) | (TestScript.useContext.value as Range)
 TestScript	context-type	token	TestScript.useContext.code
 TestScript	date	date	TestScript.date
 TestScript	description	string	TestScript.description
@@ -1511,6 +1550,7 @@ TestScript	title	string	TestScript.title
 TestScript	version	token	TestScript.version
 ValueSet	code	token	ValueSet.expansion.contains.code | ValueSet.compose.include.concept.code
 ValueSet	context	token	(ValueSet.useContext.value as CodeableConcept)
+ValueSet	context-quantity	quantity	(ValueSet.useContext.value as Quantity) | (ValueSet.useContext.value as Range)
 ValueSet	context-type	token	ValueSet.useContext.code
 ValueSet	date	date	ValueSet.date
 ValueSet	description	string	ValueSet.description

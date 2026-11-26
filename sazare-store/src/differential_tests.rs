@@ -157,6 +157,26 @@ fn dataset(rng: &mut Rng, patients: usize, observations: usize, dangling: bool) 
             2 => o["effectivePeriod"] = json!({"start": "2020-01-01", "end": date(rng)}),
             _ => o["effectiveDateTime"] = json!(date(rng)),
         }
+        if rng.chance(60) {
+            // Values at and around query values, in UCUM or not, a unit
+            // text differing from the code, and no system at all.
+            let value = *rng.pick(&[120.0, 120.4, 120.5, 119.5, 80.0, 98.6, 7.25, 140.0, 0.5]);
+            let (system, code, unit) = *rng.pick(&[
+                (Some("http://unitsofmeasure.org"), "mm[Hg]", "mmHg"),
+                (Some("http://unitsofmeasure.org"), "kg", "kg"),
+                (Some("http://unitsofmeasure.org"), "%", "%"),
+                (None, "", "mmHg"),
+                (Some("http://example.org/units"), "mm[Hg]", "mm[Hg]"),
+            ]);
+            let mut q = json!({"value": value, "unit": unit});
+            if let Some(sys) = system {
+                q["system"] = json!(sys);
+            }
+            if !code.is_empty() {
+                q["code"] = json!(code);
+            }
+            o["valueQuantity"] = q;
+        }
         out.push(o);
     }
     out
@@ -217,6 +237,38 @@ fn param_matches(entries: &Entries, p: &SearchParameter) -> bool {
                 }
             }
             SearchParamType::Number => false,
+            SearchParamType::Quantity => {
+                // Index rows: "<number>|<code>|<unit>" + system.
+                let mut row = value.splitn(3, '|');
+                let val: f64 = row.next().unwrap().parse().unwrap();
+                let (code, unit) = (row.next().unwrap_or(""), row.next().unwrap_or(""));
+                let mut q = v.splitn(3, '|');
+                let number = q.next().unwrap();
+                let units_match = match (q.next().unwrap_or(""), q.next().unwrap_or("")) {
+                    ("", "") => true,
+                    ("", c) => code == c || unit == c,
+                    (sys, c) => system.as_deref() == Some(sys) && (c.is_empty() || code == c),
+                };
+                // FHIR's implicit precision: `120` is [119.5, 120.5).
+                // With an exponent, the mantissa's digits count (`1e2`: one
+                // significant figure, [50, 150)), as for number parameters.
+                let qv: f64 = number.parse().unwrap();
+                let lower = number.to_ascii_lowercase();
+                let (mantissa, exp) = lower.split_once('e').map_or((lower.as_str(), 0), |(m, e)| (m, e.parse().unwrap()));
+                let decimals = mantissa.split_once('.').map_or(0, |(_, f)| f.len() as i32);
+                let half = 0.5 * 10f64.powi(exp - decimals);
+                let eq = val >= qv - half && val < qv + half;
+                units_match
+                    && match p.prefix.as_deref().unwrap_or("eq") {
+                        "ne" => !eq,
+                        "gt" | "sa" => val > qv,
+                        "ge" => val >= qv,
+                        "lt" | "eb" => val < qv,
+                        "le" => val <= qv,
+                        "ap" => (val - qv).abs() <= (qv.abs() * 0.1).max(half),
+                        _ => eq,
+                    }
+            }
         })
     })
 }
@@ -304,11 +356,18 @@ fn query(rng: &mut Rng, resource_type: &str, patients: usize) -> String {
                 0 => format!("subject:Patient.family={}", rng.pick(&["smi", "Gar", "ng", "o'b"])),
                 _ => format!("subject:Patient.gender={}", rng.pick(GENDERS)),
             },
+            (_, 4) if rng.chance(50) => format!(
+                "value-quantity={}{}{}",
+                rng.pick(&["", "ge", "le", "gt", "lt", "ne", "ap", "sa", "eb"]),
+                rng.pick(&["120", "120.0", "80", "98.6", "7.25", "140", "0.5", "1e2"]),
+                rng.pick(&["", "|http://unitsofmeasure.org|mm[Hg]", "||mm[Hg]", "||mmHg", "|http://unitsofmeasure.org|", "|http://example.org/units|mm[Hg]", "||kg"]),
+            ),
             (_, 4) => format!("date={}{}", rng.pick(&["", "ge", "le", "gt", "lt", "ne", "ap", "sa", "eb"]), date(rng)),
-            (_, _) => format!("{}:{}", rng.pick(&["status", "category", "date", "subject"]), rng.pick(&["missing=true", "missing=false", "not=final"]))
+            (_, _) => format!("{}:{}", rng.pick(&["status", "category", "date", "subject", "value-quantity"]), rng.pick(&["missing=true", "missing=false", "not=final"]))
                 .replace("category:not=final", "category:not=laboratory")
                 .replace("date:not=final", "date:missing=true")
-                .replace("subject:not=final", "subject:missing=false"),
+                .replace("subject:not=final", "subject:missing=false")
+                .replace("value-quantity:not=final", "value-quantity:missing=true"),
         };
         parts.push(part);
     }
@@ -358,6 +417,10 @@ fn run(which: Which, seed: u64, patients: usize, observations: usize, queries: u
     for _ in 0..queries {
         let rt = if rng.chance(40) { "Patient" } else { "Observation" };
         let q = query(&mut rng, rt, patients);
+        // Quantity: v2 only (a v1 index can't search it and says so).
+        if matches!(which, Which::V1) && q.contains("quantity") {
+            continue;
+        }
         let parsed = match SearchQuery::parse_with_registry(&q, Some(rt), &registry) {
             Ok(p) => p,
             Err(e) => panic!("seed {seed}: generated query {rt}?{q} doesn't parse: {e}"),
@@ -411,6 +474,9 @@ fn sort_key(entries: &Entries, param: &str, descending: bool) -> Option<String> 
     }).map(|(_, t, v, _)| {
         if t == "reference" {
             v.clone()
+        } else if t == "quantity" {
+            let val: f64 = v.split('|').next().unwrap().parse().unwrap();
+            format!("{:020.6}", val)
         } else if t == "date" {
             let start = v.split('/').next().and_then(fhir_date_range).map(|r| r.0).unwrap_or(i64::MIN);
             format!("{:020}", start as i128 - i64::MIN as i128)
@@ -437,10 +503,14 @@ fn run_sorted(which: Which, seed: u64, patients: usize, observations: usize, que
         let key = match (rt, which) {
             ("Patient", _) => *rng.pick(&["family", "birthdate"]),
             (_, Which::V2) if rng.chance(30) => "subject",
+            (_, Which::V2) if rng.chance(30) => "value-quantity",
             _ => "date",
         };
         let desc = rng.chance(50);
-        let filter = if rng.chance(50) { format!("{}&", query(&mut rng, rt, patients)) } else { String::new() };
+        let mut filter = if rng.chance(50) { format!("{}&", query(&mut rng, rt, patients)) } else { String::new() };
+        if matches!(which, Which::V1) && filter.contains("quantity") {
+            filter.clear();
+        }
         let q = format!("{filter}_sort={}{key}", if desc { "-" } else { "" });
         let mut parsed = SearchQuery::parse_with_registry(&q, Some(rt), &registry).unwrap();
         let (all, total) = exec.search_with_total(rt, &parsed);
