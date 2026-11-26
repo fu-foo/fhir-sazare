@@ -2,6 +2,7 @@
 """Upgrade check: a data dir written by an older release, opened by this one.
 
   ci/upgrade_check.py OLD_BIN NEW_BIN [patients]
+  OLD_CLI=legacy for a release before 0.15 (no `run` command).
 
 1. OLD_BIN: import a synthetic dataset, record the totals and id sets of a set
    of searches.
@@ -81,7 +82,10 @@ def start(binary, cfg, log):
         sys.exit(f"something already answers on port {PORT}")
     except OSError:
         pass
-    p = subprocess.Popen([binary, "run", "--config", cfg], stdout=log, stderr=subprocess.STDOUT)
+    # Before 0.15 the server ran with no command: `sazare-server --config <file>`.
+    legacy = binary == OLD_BIN and os.environ.get("OLD_CLI") == "legacy"
+    args = [binary, "--config", cfg] if legacy else [binary, "run", "--config", cfg]
+    p = subprocess.Popen(args, stdout=log, stderr=subprocess.STDOUT)
     RUNNING.append(p)
     for _ in range(300):
         if p.poll() is not None:
@@ -99,8 +103,17 @@ def stop(p):
     p.wait(timeout=120)
 
 
-def compare(label, want, got):
-    bad = [q for q in QUERIES if want[q] != got[q]]
+# Searches the old index may answer differently during the rebuild (its
+# format predates them): e.g. from 0.14 or before, `:exact` (case-sensitive
+# from 0.15, the old index stored strings lower-cased). Comma-separated.
+TRANSIENT = [q for q in os.environ.get("DURING_REBUILD_MAY_DIFFER", "").split(",") if q]
+
+
+def compare(label, want, got, allowed=()):
+    bad = [q for q in QUERIES if want[q] != got[q] and q not in allowed]
+    for q in allowed:
+        if want[q] != got[q]:
+            print(f"  {label}: {q}: differs, as expected ({want[q][0]} -> {got[q][0]})")
     for q in bad:
         (wt, wi), (gt, gi) = want[q], got[q]
         print(f"  {label}: {q}: total {wt} -> {gt}; missing {sorted(wi - gi)[:5]}, extra {sorted(gi - wi)[:5]}")
@@ -132,7 +145,7 @@ new = start(NEW_BIN, cfg, log)
 state = get("health").get("index", {}).get("state")
 print(f"new release up; index state: {state}")
 during = snapshot()
-compare("during the rebuild", before, during)
+compare("during the rebuild", before, during, TRANSIENT)
 
 
 def status(path):
