@@ -1162,17 +1162,23 @@ impl IndexV2 {
         let pid = self.pid(stid, &h.reference_param, None)?.map(|p| p.0).unwrap_or(-1);
         let targets = Sql::new(
             format!("SELECT target FROM v_ref INDEXED BY v_ref_r WHERE pid = ? AND rid IN ({})", sources.text),
-            [vec![Arg::Int(pid)], sources.args].concat(),
+            [vec![Arg::Int(pid)], sources.args.clone()].concat(),
         );
+        // Driving: walk the matching sources, follow their references to
+        // existing resources of this type, each once — a page stops early
+        // instead of materializing every target first.
         let set = Sql::new(
             format!(
-                "SELECT rid FROM rkey WHERE tid = ? AND present = 1 AND rid IN ({})",
-                targets.text
+                "SELECT DISTINCT v.target AS rid FROM ({}) s \
+                 CROSS JOIN v_ref v INDEXED BY v_ref_r ON v.rid = s.rid AND v.pid = ? \
+                 CROSS JOIN rkey k ON k.rid = v.target \
+                 WHERE k.tid = ? AND k.present = 1",
+                sources.text
             ),
-            [vec![Arg::Int(tid)], targets.args.clone()].concat(),
+            [sources.args, vec![Arg::Int(pid), Arg::Int(tid)]].concat(),
         );
         let probe = Sql::new(format!("?X? IN ({})", targets.text), targets.args);
-        Ok(Criterion { set, probe, seekable: false, rank: 5, unique: true, equality: false })
+        Ok(Criterion { set, probe, seekable: true, rank: 5, unique: true, equality: false })
     }
 }
 
