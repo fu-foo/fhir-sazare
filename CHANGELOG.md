@@ -4,6 +4,20 @@ All notable changes to sazare. Versions follow [Semantic Versioning](https://sem
 until 1.0, a minor version (0.x.0) may change behavior — those changes are listed under
 **Behavior changes**. See [UPGRADING.md](UPGRADING.md) for how to upgrade.
 
+## Unreleased
+
+### Performance
+Measured on 10M resources (300k Patients, 9.6M Observations, 68 GB):
+- **Startup no longer scans the database**: it checked whether the index was empty with
+  `COUNT(*)` and ran `PRAGMA optimize` (statistics) on every start — together over ten
+  minutes at this size. Existence checks and no statistics pass: 0.3 s. The indexes are
+  built to plan well without statistics.
+- **Multi-parameter searches narrow first**: the most selective kind of parameter is
+  evaluated first, and once the candidates are few, the remaining parameters are checked
+  only against them. `Observation?patient=X&code=Y` 1,023 ms → 1 ms;
+  `…&date=ge2020-01-01` 5,346 ms → 0.7 ms. `:not` / `:missing` complement against the
+  candidates instead of the whole type.
+
 ## 0.13.0 — 2026-11-26
 
 Security release: a second review (an external model's, verified line by line) found

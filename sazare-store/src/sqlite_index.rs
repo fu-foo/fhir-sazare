@@ -271,9 +271,10 @@ impl SearchIndex {
         conn.busy_timeout(std::time::Duration::from_secs(5))?;
         conn.execute_batch("PRAGMA journal_mode=WAL;")?;
         crate::migrate::run_migrations(&mut conn, Self::MIGRATIONS)?;
-        // Refresh planner statistics where they are missing or stale. Bounded by
-        // analysis_limit so startup stays fast on large indexes.
-        conn.execute_batch("PRAGMA analysis_limit=1000; PRAGMA optimize=0x10002;")?;
+        // No ANALYZE / PRAGMA optimize here: on a large index it takes minutes
+        // even with analysis_limit (measured: 78–140 s per index at 10M
+        // resources), and it ran on every start. The covering indexes are
+        // designed to give the right plans without statistics.
         Ok(Self { conn, text, scope: std::cell::RefCell::new(None) })
     }
 
@@ -471,6 +472,22 @@ impl SearchIndex {
 
     /// Number of resources with full text indexed (to detect an index built
     /// before full-text search existed).
+    /// Whether the index holds no entries at all. An existence check — on a
+    /// large index a COUNT(*) reads every row (minutes at 10M resources).
+    pub fn is_empty(&self) -> Result<bool> {
+        let any: bool = self
+            .conn
+            .query_row("SELECT EXISTS (SELECT 1 FROM search_index)", [], |row| row.get(0))?;
+        Ok(!any)
+    }
+
+    /// Whether any resource has full text indexed (existence check).
+    pub fn has_text(&self) -> Result<bool> {
+        Ok(self
+            .text
+            .query_row("SELECT EXISTS (SELECT 1 FROM resource_text_key)", [], |row| row.get(0))?)
+    }
+
     pub fn text_row_count(&self) -> Result<usize> {
         let count: i64 = self
             .text
@@ -582,7 +599,10 @@ impl SearchIndex {
         let rewritten = sql
             .replacen(
                 "FROM search_index",
-                "FROM temp.search_scope CROSS JOIN search_index",
+                // INDEXED BY: each candidate is looked up by (type, id) — left
+                // alone, the planner may range-scan a value index (a date
+                // range, say) for every candidate instead.
+                "FROM temp.search_scope CROSS JOIN search_index INDEXED BY idx_resource",
                 1,
             )
             .replacen("WHERE", "WHERE resource_id = sid AND", 1);

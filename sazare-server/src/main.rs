@@ -168,7 +168,8 @@ async fn main() {
     // following a schema change like added common params _id/_profile/_tag/etc.)
     // Also rebuild once when the full-text table is empty but the index
     // isn't — an index built before `_text`/`_content` existed.
-    let text_missing = index.text_row_count().map(|n| n == 0).unwrap_or(false);
+    // Existence checks only: counting the rows of a large index takes minutes.
+    let text_missing = index.has_text().map(|has| !has).unwrap_or(false);
     // Rebuild too when the search parameter definitions changed since the
     // index was built (new built-ins after an upgrade, an edited
     // searchparameters/ directory) — otherwise existing data stays invisible
@@ -179,8 +180,8 @@ async fn main() {
         .ok()
         .flatten()
         .is_none_or(|stored| stored != fingerprint);
-    match index.row_count() {
-        Ok(n) if n == 0 || text_missing || params_changed => {
+    match index.is_empty() {
+        Ok(empty) if empty || text_missing || params_changed => {
             // An existence check, not a full load of every resource.
             let store_has_data = store.has_any().unwrap_or(false);
             if !store_has_data {
@@ -189,7 +190,7 @@ async fn main() {
             if store_has_data {
                 tracing::info!(
                     "Search index {}; rebuilding from resource store...",
-                    if n == 0 {
+                    if empty {
                         "is empty"
                     } else if text_missing {
                         "has no full text yet (_text/_content)"
@@ -207,7 +208,7 @@ async fn main() {
                 }
             }
         }
-        Ok(n) => tracing::info!("Search index has {} entries", n),
+        Ok(_) => tracing::info!("Search index is up to date"),
         Err(e) => tracing::warn!("Failed to query search index size: {}", e),
     }
 
