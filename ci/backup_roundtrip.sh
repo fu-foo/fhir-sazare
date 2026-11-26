@@ -31,7 +31,12 @@ YAML
 start() {
   "$BIN" run --config "$WORK/$1.yaml" > "$WORK/$1.log" 2>&1 &
   PID=$!
-  for _ in $(seq 150); do curl -sf "$BASE/health" > /dev/null && return; sleep 0.2; done
+  # Up, and the search index ready: a restored data dir has no index, and the
+  # server answers while it rebuilds one in the background.
+  for _ in $(seq 600); do
+    curl -sf "$BASE/health" 2>/dev/null | grep -q '"state":"ready"' && return
+    sleep 0.2
+  done
   cat "$WORK/$1.log"; exit 1
 }
 

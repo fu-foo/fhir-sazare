@@ -772,7 +772,8 @@ To restore, stop the server and copy `resources.sqlite` and `audit.sqlite`
 back into `data_dir`. Leave `search_index.sqlite` and `search_index.fts.sqlite`
 out (delete the old ones): they are derived data, and the server rebuilds them
 from the resources on startup, so the index is guaranteed to match the restored resources even if the backup was
-taken mid-write.
+taken mid-write. The server answers at once and rebuilds the index in the background; searches are
+complete once `GET /health` reports `"index": {"state": "ready"}`.
 
 ---
 
