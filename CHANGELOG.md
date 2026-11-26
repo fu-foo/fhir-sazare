@@ -7,6 +7,10 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
 ## Unreleased
 
 ### Fixed
+- `sazare-server stop` could fall back to terminating the server (SIGTERM / `taskkill`)
+  instead of asking it to stop: the control port judged the first network segment of
+  the request alone, and the token header could arrive in a later one. It now reads the
+  whole request, and `stop` sends it in one write.
 - Basic-auth passwords (`password_hash`) are verified off the async worker threads, at most
   four at a time: a burst of wrong passwords — loopback addresses (reverse proxies) are not
   locked out — could otherwise occupy every worker, and each Argon2 check also takes

@@ -142,12 +142,23 @@ pub async fn serve_control(token: String, shutdown: Arc<tokio::sync::Notify>) ->
             let token = token.clone();
             let shutdown = shutdown.clone();
             tokio::spawn(async move {
-                let mut buf = vec![0u8; 4096];
-                let n = match tokio::time::timeout(Duration::from_secs(5), stream.read(&mut buf)).await {
-                    Ok(Ok(n)) => n,
-                    _ => return,
+                // Read up to the end of the headers: a request can arrive in
+                // several segments, and judging the first one alone refused a
+                // stop whose token header hadn't arrived yet.
+                let mut buf = Vec::with_capacity(1024);
+                let read_headers = async {
+                    let mut chunk = [0u8; 1024];
+                    while !buf.windows(4).any(|w| w == b"\r\n\r\n") && buf.len() < 8192 {
+                        match stream.read(&mut chunk).await {
+                            Ok(0) | Err(_) => break,
+                            Ok(n) => buf.extend_from_slice(&chunk[..n]),
+                        }
+                    }
                 };
-                let request = String::from_utf8_lossy(&buf[..n]);
+                if tokio::time::timeout(Duration::from_secs(5), read_headers).await.is_err() {
+                    return;
+                }
+                let request = String::from_utf8_lossy(&buf);
                 let authorized = request.starts_with("POST /shutdown ")
                     && request.lines().any(|l| {
                         l.split_once(':').is_some_and(|(k, v)| {
@@ -311,11 +322,13 @@ fn request_shutdown(info: &RunInfo) -> std::io::Result<()> {
         .map_err(|_| std::io::Error::other("bad control address"))?;
     let mut s = TcpStream::connect_timeout(&addr, Duration::from_secs(5))?;
     s.set_read_timeout(Some(Duration::from_secs(5)))?;
-    write!(
-        s,
+    // One write: the whole request in one piece (the server reads to the end of
+    // the headers anyway).
+    let request = format!(
         "POST /shutdown HTTP/1.1\r\nHost: {}\r\nX-Sazare-Token: {}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
         info.control, info.token
-    )?;
+    );
+    s.write_all(request.as_bytes())?;
     let mut reply = String::new();
     let _ = s.read_to_string(&mut reply);
     if reply.starts_with("HTTP/1.1 202") {
@@ -447,5 +460,33 @@ pub fn logs(config: &ServerConfig, args: &[String]) -> i32 {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A stop request split into small pieces with pauses between them (as a
+    /// slow or busy client may send it) is still accepted; a wrong token isn't.
+    #[tokio::test]
+    async fn control_accepts_a_request_in_pieces() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let stop = Arc::new(tokio::sync::Notify::new());
+        let addr = serve_control("tok123".into(), stop.clone()).await.unwrap();
+        let send = |token: &'static str| async move {
+            let mut s = tokio::net::TcpStream::connect(addr).await.unwrap();
+            let req = format!("POST /shutdown HTTP/1.1\r\nHost: x\r\nX-Sazare-Token: {token}\r\n\r\n");
+            for piece in req.as_bytes().chunks(7) {
+                s.write_all(piece).await.unwrap();
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            let mut reply = String::new();
+            let _ = s.read_to_string(&mut reply).await;
+            reply
+        };
+        assert!(send("wrong").await.starts_with("HTTP/1.1 403"));
+        assert!(send("tok123").await.starts_with("HTTP/1.1 202"));
+        tokio::time::timeout(Duration::from_secs(2), stop.notified()).await.expect("stop notified");
     }
 }
