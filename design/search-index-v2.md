@@ -86,9 +86,13 @@ test suite enumerates them):
 - `_include` / `_revinclude` (validated targets), patient-compartment filtering of
   matches and included resources.
 - `_sort` with several keys, `-` for descending; a resource with several values sorts by
-  its lowest (asc) / highest (desc); resources without a value last; ties by id.
-- `_count` (default 100, max 1000), `_offset`, `total` (accurate), `_total=none`,
-  `_summary=count`.
+  its lowest (asc) / highest (desc); resources without a value last. **Changed (decided):**
+  the order of resources with equal sort keys is *unspecified* — a client that needs an
+  order asks for it with another sort key. In practice it is insertion order (`rid`).
+  Today it is by id; the differential tests compare tie groups as sets.
+- `_count` (default 100, max 1000), `_offset`, `_total=none`, `_summary=count`.
+- **`total` is always accurate** (decided): even when a search barely narrows, the count is
+  exact; the time it takes is an accepted cost, as in other databases.
 - `_text` / `_content` (FTS5 trigram, LIKE fallback for terms under 3 characters).
 - Subscription criteria evaluated against a single changed resource.
 
@@ -183,9 +187,11 @@ Plan := Leaf(param, values…)        -- one value table, OR over comma values
   reads `type_count`. `_total=none` skips it.
 - **Sorting** walks the sort parameter's value index in order (`v_date (pid, lo, …)`
   ascending, or descending), keeps rows whose `rid` passes the plan, and emits each rid on
-  its first occurrence — exactly "lowest value ascending / highest descending". Equal
-  keys are ordered by id; further sort keys break ties within such a group. Rids without a
-  value (`has_param`) follow, by id. Only `_offset + _count` rows are produced.
+  its first occurrence — exactly "lowest value ascending / highest descending". Further
+  sort keys order resources with an equal key; beyond the last key the order is
+  unspecified (rid order, i.e. insertion order, comes for free from the index). Rids
+  without a value (`has_param`) follow, in rid order. Only `_offset + _count` rows are
+  produced.
   When the plan's driving set is small, the opposite order is cheaper (fetch the few
   candidates' values and sort them); the executor picks by the probe count.
 - **Compartment** filtering for patient-scoped access becomes one more `And` child:
@@ -238,7 +244,7 @@ forward-only).
 | `Observation?_sort=-date&_count=20` | 249 s | < 50 ms |
 | `Observation?code=X&_sort=-date&_count=20` | 195 s | < 1 s |
 | `Patient?_has:Observation:subject:code=X&_count=20` | 160 s | < 2 s |
-| `Observation?category=A&status=B&_count=20` (matches all) | 21–29 s | < 5 s (the accurate total dominates; `_total=none` < 50 ms) |
+| `Observation?category=A&status=B&_count=20` (matches all) | 21–29 s | < 5 s (the accurate total dominates and is kept; with `_total=none` < 50 ms) |
 | `Observation?patient=X&code=Y` | 1 ms | ≤ 1 ms |
 | index size | 50.7 GB | ~5 GB |
 | first start after upgrade | — | serves immediately; rebuild in background |
@@ -261,13 +267,12 @@ forward-only).
 - **Planner choices without statistics.** We control join order explicitly (driving set
   from probes, `EXISTS` probes, `CROSS JOIN` where needed) instead of relying on ANALYZE.
   Milestone 0 checks each plan with `EXPLAIN QUERY PLAN`.
-- **Accurate totals on unselective queries** stay O(matches). Integer counting should
-  bring 9.6M to a few seconds; if not, the default could become `_total=estimate`
-  (FHIR allows it) — a behavior change to decide before 1.0. *Open.*
-- **Sort tie-break by id** within equal keys needs the ids of a key group; groups are
-  usually small, but a sort on a low-cardinality key (e.g. `_sort=status`) has huge
-  groups. Option: define ties as "by rid" (insertion order) instead — also a behavior
-  change. *Open.*
+- **Accurate totals on unselective queries** stay O(matches): integer counting inside
+  SQLite, expected a few seconds at 9.6M matches. *Decided:* totals stay accurate; that
+  time is an accepted cost (no `_total=estimate` default).
+- **Sort ties** — *decided:* unspecified (insertion order in practice). Ties no longer need
+  ids, so a sort on a low-cardinality key (`_sort=status`) streams like any other.
+  Listed as not covered in the stability policy.
 - **Reference forms** (versioned, absolute same-server URLs, foreign URLs, `urn:`,
   contained) must map exactly as today; the differential tests include each.
 - **Memory**: plans stream; no step materializes a type-sized set in Rust.
