@@ -1,6 +1,6 @@
 # Search index v2
 
-Status: **draft for review** · Target: 0.15 (before 1.0) · Author: Claude Code, with the maintainer
+Status: **draft, revision 2** (after the first external review) · Target: 0.15 (before 1.0) · Author: Claude Code, with the maintainer
 
 ## 1. Why
 
@@ -115,7 +115,10 @@ CREATE TABLE rkey   (rid INTEGER PRIMARY KEY, tid INTEGER NOT NULL, id TEXT NOT 
 - `rkey` gives every resource *and every reference target* an integer `rid`. A target that
   doesn't exist (yet) gets a key with `present = 0`, so a reference can always be stored
   as an integer and becomes resolvable when the target arrives. Keys are never reused.
-- The dictionaries are small and cached in memory by `SearchIndex`.
+- `rtype`, `param` and `csystem` are small and cached in memory. `rkey` is not (10M+
+  rows); it is read through its indexes.
+- `CREATE INDEX rkey_live ON rkey (tid, rid) WHERE present = 1` serves unfiltered lists
+  and `:missing=true` without touching deleted or not-yet-arrived keys.
 
 ### 4.2 Value tables
 
@@ -126,6 +129,8 @@ searching by value, one ordered by resource for updates and per-resource probes.
 CREATE TABLE v_token (pid INT, code TEXT, sid INT, rid INT,            -- sid 0 = no system
                       PRIMARY KEY (pid, code, sid, rid)) WITHOUT ROWID;
 CREATE INDEX v_token_r ON v_token (rid, pid, code, sid);
+-- `system|` (any code in a system) scans the pid's rows; an index (pid, sid) is added
+-- only if milestone 0 shows it is needed.
 
 CREATE TABLE v_string (pid INT, norm TEXT, rid INT, exact TEXT,       -- norm = lower-cased
                        PRIMARY KEY (pid, norm, rid, exact)) WITHOUT ROWID;
@@ -133,6 +138,7 @@ CREATE INDEX v_string_r ON v_string (rid, pid);
 
 CREATE TABLE v_date (pid INT, lo INT, hi INT, rid INT,                -- [lo, hi) µs
                      PRIMARY KEY (pid, lo, hi, rid)) WITHOUT ROWID;
+CREATE INDEX v_date_h ON v_date (pid, hi, lo);                        -- ge/gt: seek on hi
 CREATE INDEX v_date_r ON v_date (rid, pid);
 
 CREATE TABLE v_number (pid INT, val REAL, rid INT,
@@ -146,11 +152,25 @@ CREATE INDEX v_ref_t ON v_ref (target, pid, rid);                     -- _revinc
 
 CREATE TABLE v_ref_text (pid INT, value TEXT, rid INT,                -- urn:, #contained, foreign URLs
                          PRIMARY KEY (pid, value, rid)) WITHOUT ROWID;
+CREATE INDEX v_ref_text_r ON v_ref_text (rid, pid);
 
 CREATE TABLE has_param (pid INT, rid INT, PRIMARY KEY (pid, rid)) WITHOUT ROWID;  -- :missing, sort "missing last"
 CREATE TABLE type_count (tid INTEGER PRIMARY KEY, n INTEGER NOT NULL);           -- unfiltered totals
 ```
 
+- **Date ranges.** A resource range `[lo, hi)` matches `ge X` when `hi > X`, which the
+  primary key (ordered by `lo`) can't seek; `v_date_h` can. For `eq`/`ap`
+  (`lo < qhi AND hi > qlo`) the pid's longest span (`param.max_span`, kept up to date on
+  write) bounds the scan: `lo >= qlo - max_span AND lo < qhi`. Instants and dates have
+  short spans, so this stays a narrow range; a parameter holding long Periods gets a wider
+  one. (v1 has the same weakness: `code=…&date=ge…` took 6 s.)
+- **Compartment membership** is indexed for every compartment type, including types with
+  no search parameters (`Consent`, `Basic`, …): extraction writes the compartment's
+  reference fields under an internal pid `_compartment` into `v_ref`. Compartment
+  filtering never depends on which search parameters happen to exist.
+- `WITHOUT ROWID` secondary indexes carry the primary-key columns implicitly
+  (`v_string_r (rid, pid)` effectively stores `norm` and `exact` too); the size estimate
+  below is checked against real files in milestone 0.
 - A bare-id reference search (`patient=p0`) resolves `p0` against the parameter's
   target types (`Patient`, or `Patient|Group|Device` for `subject`) to their `rid`s; the
   duplicate "bare id" rows disappear.
@@ -176,12 +196,30 @@ Plan := Leaf(param, values…)        -- one value table, OR over comma values
       | And(Plan…)                   -- driven by the smallest, others probed per rid
 ```
 
-- **Driving set.** For `And`, each child gets a bounded cardinality probe
+- **Driving set.** For `And`, each *seekable* child gets a bounded cardinality probe
   (`SELECT count(*) FROM (… LIMIT 10001)`, integer index reads, well under a millisecond).
-  The smallest child drives; the others are checked per candidate through the `…_r`
+  The smallest drives; the others are checked per candidate through the `…_r`
   (by-resource) indexes as `EXISTS` sub-queries. This replaces both the HashSet
-  intersection and #25's temp table, and the decision no longer relies on a fixed ranking
-  or on SQLite statistics (which we don't keep: ANALYZE takes minutes at this scale).
+  intersection and #25's temp table, without SQLite statistics (which we don't keep:
+  ANALYZE takes minutes at this scale).
+  - *Seekable* = an equality or a range the index can seek: token, string prefix/exact,
+    reference, number, date via the right index (§4.2), `_id`. Nodes whose probe could
+    itself scan millions of rows are **never probed and never drive** unless nothing else
+    can: `:contains`, `:not`, `:missing`, `Chain`, `Has`, full text. They run as `EXISTS`
+    checks on the driving candidates.
+  - **Saturated probes** (several children at the 10,001 cap) are ordered by the static
+    rank from #25 (`_id` > reference > identifier > token > string > date/number), so a
+    `code` drives rather than `status`.
+  - `Chain` / `Has` that must drive (nothing else in the query) are estimated by their
+    inner plan's probe, without `DISTINCT`.
+- **Duplicates.** A resource can match one criterion several times (several names, codes
+  in two systems, a comma OR, many sources in `_has`). Paging and counting use distinct
+  rids: driving rows are de-duplicated in order (the value index yields each rid's rows
+  together only for equality criteria; ranges and ORs go through `DISTINCT`), and `total`
+  is `count(DISTINCT rid)`. Milestone 0 measures that cost.
+- **`Has` and `Chain` results** are restricted to existing resources of the searched type:
+  `target` joins `rkey` with `tid = <type> AND present = 1` (a `subject` may point at a
+  Group, or at a deleted or never-created Patient).
 - **Paging** streams the plan in order and stops after `_offset + _count` rows.
 - **Total** is `SELECT count(*)` over the same plan, on integers. An unfiltered search
   reads `type_count`. `_total=none` skips it.
@@ -193,7 +231,10 @@ Plan := Leaf(param, values…)        -- one value table, OR over comma values
   without a value (`has_param`) follow, in rid order. Only `_offset + _count` rows are
   produced.
   When the plan's driving set is small, the opposite order is cheaper (fetch the few
-  candidates' values and sort them); the executor picks by the probe count.
+  candidates' values and sort them); the executor picks by the probe count. Because the
+  sort key and the filter can be correlated (all matches near the end of the sort order),
+  the sort-driven walk is bounded: after scanning N rows (e.g. 100× the page) without
+  filling the page, it switches to the set-driven order.
 - **Compartment** filtering for patient-scoped access becomes one more `And` child:
   `rid IN (SELECT rid FROM v_ref WHERE pid IN (compartment params) AND target = patient)`
   — instead of loading candidates as JSON and filtering them.
@@ -201,6 +242,11 @@ Plan := Leaf(param, values…)        -- one value table, OR over comma values
   `_include` still reads references from the page's resources.
 - **Subscriptions** keep evaluating criteria on a one-resource in-memory index (same
   schema).
+- **Concurrency.** Today every search holds the single `Mutex<SearchIndex>`, so one
+  seconds-long accurate total would stall all other searches *and* writes. v2 gives the
+  index what the resource store has: a pool of read-only WAL connections for searches
+  (run in `spawn_blocking`), and one writer connection behind the lock. A slow count then
+  delays nobody else. (This part doesn't depend on the v2 schema and can land first.)
 
 ### 4.4 Writes
 
@@ -214,17 +260,45 @@ The index format changes (`INDEX_FORMAT = 2`), so existing installations need a 
 rebuild — at 10M resources this must not stop the server. The same mechanism serves later
 parameter changes.
 
-1. On start, if the index format is old, the server **serves from the old index** and
-   starts building `search_index.v2.sqlite` in the background, reading
-   `resources.sqlite` in pages (bounded memory) in batches.
-2. Writes during the build go to the old index as now, and their `(type, id)` is appended
-   to a `pending` table.
-3. When the build reaches the end, `pending` is replayed into the new index under the
-   index lock, the new index is switched in, and the old files are deleted.
-4. Progress is visible in `/health` and `/metrics`; a crash mid-build restarts the build
-   (it is derived data).
-5. Config `index.rebuild: background | blocking | manual` (default `background`):
-   `manual` builds only on `POST /$reindex`.
+**Generations.** Index files carry a generation number
+(`search_index.g2.sqlite`, `search_index.g2.fts.sqlite` — the FTS file is built and
+switched together, because its `rowid` is the new `rid`). A generation counts only once its
+`index_meta` has `ready = 1`. On start the server opens the newest ready generation and
+deletes any unfinished one (it restarts the build). A crash at any moment is therefore
+recoverable, and nothing is renamed or deleted while open — required on Windows, where an
+open SQLite file can't be removed.
+
+**Build.**
+1. `pending` change recording is switched on *before* the scan starts.
+2. The server keeps serving from the current generation. A background task reads
+   `resources.sqlite` with keyset paging (`(resource_type, id) > (?, ?) … LIMIT n`, never
+   `OFFSET`) and writes the new generation in batches, with a short pause between batches
+   so live traffic keeps the disk.
+3. Every write — create, update, patch, delete (single, conditional, in Bundles) and
+   `$import` — updates the current index as now and records `(type, id)` in `pending`.
+
+**Drain and switch.**
+4. While building, and afterwards, `pending` is drained *without* blocking anyone:
+   de-duplicated batches are replayed from the store (a resource that is gone is removed
+   from the new generation).
+5. When fewer than a few hundred entries remain, the switch takes the **write gate** — a
+   `RwLock` that every write handler holds (shared) across *both* its index and store
+   writes. With the gate held exclusively no write is between its two steps (the handlers
+   write the index first, then the store, so without the gate a resource could be
+   recorded, replayed before it reached the store, and then be missing from the new
+   index). The rest of `pending` is replayed, `ready = 1` is committed, readers and the
+   writer move to the new files, the old connections are closed, then the old files are
+   deleted. Only this last step blocks writes, for a moment.
+
+**Operations.** Progress in `/health` and `/metrics`. `POST /$reindex` while a build runs
+is a 409. Config `index.rebuild: background | blocking | manual` (default `background`;
+`manual` builds only on `POST /$reindex`). UPGRADING states the peak disk use: the old and
+new generations coexist during the build (at 10M resources about 12.6 GB resources +
+60 GB old index and FTS + ~15 GB new: plan for ~90 GB free).
+
+**Later parameter changes** don't need a new generation: `rid`s and the FTS file stay, and
+only the changed parameters' rows (`pid`s) are rebuilt in place, in the background, using
+the same pending/drain steps.
 
 Downgrade after the switch is by restoring the backup (as today: migrations are
 forward-only).
@@ -252,9 +326,14 @@ forward-only).
 ## 6. Milestones
 
 0. **Prototype and measure** (throw-away script): build the v2 tables from the 10M dataset
-   and run the target queries as hand-written SQL. Confirms the size estimate and the plan
-   shapes before any Rust is written. *Go / no-go point for this design.*
+   and run the target queries as hand-written SQL, checking each plan with
+   `EXPLAIN QUERY PLAN`. Measures: the target queries (§5), **file sizes**, **build time**
+   of the 10M generation, **single-write latency and `$import` throughput** on the 10M
+   index, `count(DISTINCT rid)` cost, date `ge`/`eq` plans. *Go / no-go point for this
+   design.*
 1. Differential test harness against the current executor.
+1b. Read-connection pool for the index and searches in `spawn_blocking` (§4.3
+    Concurrency) — independent of the schema, lands early.
 2. Background index build and switch (§4.5), still with the v1 format — useful on its own
    (startup never blocks on a reindex).
 3. v2 schema, writes, and the query compiler behind `INDEX_FORMAT = 2`; differential tests
@@ -273,8 +352,26 @@ forward-only).
 - **Sort ties** — *decided:* unspecified (insertion order in practice). Ties no longer need
   ids, so a sort on a low-cardinality key (`_sort=status`) streams like any other.
   Listed as not covered in the stability policy.
+- **`:exact` is case-insensitive today** (it compares lower-cased values); FHIR defines it
+  as exact. v2 stores the original string, so it can follow the spec — a behavior change
+  to decide (proposed: follow the spec, listed under Behavior changes; the differential
+  tests treat it as an intended difference).
+- **Disk and I/O during the build**: see §4.5 (peak space, throttling).
 - **Reference forms** (versioned, absolute same-server URLs, foreign URLs, `urn:`,
   contained) must map exactly as today; the differential tests include each.
-- **Memory**: plans stream; no step materializes a type-sized set in Rust.
+- **Memory**: plans stream; no step materializes a type-sized set in Rust; `rkey` is not
+  cached.
 - **Effort**: the executor (~900 lines) and index (~1,400 lines) are largely rewritten;
   the parsers, registry, extraction (`index_builder`) and handlers stay.
+
+## Revision history
+
+- r2 — after the first external review: probe rules (seekable nodes only, saturation
+  ranking), date `ge`/`eq` indexing, `count(DISTINCT rid)`, `Has`/`Chain` type and
+  existence checks, compartment pid for all compartment types, read-connection pool,
+  `v_ref_text_r`, `rkey` not cached + live partial index, generation files with `ready`,
+  write gate across index+store writes, lock-free iterative drain, deletes in `pending`,
+  keyset paging, FTS built with the generation, in-place rebuild for parameter changes,
+  `$reindex` 409, peak disk, `:exact` case, sort/filter correlation bound; milestone 0
+  measures sizes, build time and write speed too.
+- r1 — first draft.
