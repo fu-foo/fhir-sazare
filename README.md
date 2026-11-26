@@ -50,7 +50,7 @@ server such as [HAPI FHIR](https://hapifhir.io/).
 | Runtime | Single native binary (~15 MB), or Docker | Java application on the JVM, or Docker |
 | Database | Embedded SQLite, nothing to set up | External RDBMS (e.g. PostgreSQL); H2 for development |
 | FHIR versions | R4 (4.0.1) | DSTU2 – R5 |
-| Search | Common parameters, chain, `_has`, `_include`/`_revinclude`, custom SearchParameters (FHIRPath subset) | Full search, including full FHIRPath and more modifiers |
+| Search | Every R4 parameter of type string, token, date, reference and number for the built-in resource types; chain, `_has`, `_include`/`_revinclude`, custom SearchParameters (FHIRPath subset) | Full search, including full FHIRPath and more modifiers |
 | Validation | Declared profiles: cardinality, types, extensions, required bindings (built-in value sets, plus an IG's complete code systems from `terminology/`) | Full HL7 validator |
 | Terminology | No `$expand` / `$validate-code` / `$lookup` | Terminology services |
 | Conformance check | Inferno US Core v7/v8 FHIR API suites pass, run in CI | Widely used reference implementation |
@@ -60,8 +60,9 @@ server such as [HAPI FHIR](https://hapifhir.io/).
 Know these before you rely on sazare:
 
 - **FHIR R4 (4.0.1) only.** No R4B / R5.
-- **Search:** the common parameter types (string, token, date, reference, number) with
-  `:exact`, `:contains`, `:missing`, `:not`; chains up to 4 hops; one level of `_has`.
+- **Search:** every R4 parameter of type string, token, date, reference and number for
+  the built-in resource types, with `:exact`, `:contains`, `:missing`, `:not`; chains up
+  to 4 hops; one level of `_has`.
   Not supported: `quantity`/`uri`/`composite` parameters, `_filter`, `_list`, `_query`,
   nested `_has`, `:above`/`:below`/`:in`/`:text` modifiers. For resource types with a
   built-in parameter list, unknown parameters are a 400, never silently ignored.
@@ -72,9 +73,12 @@ Know these before you rely on sazare:
   validator (no FHIRPath invariants, no terminology service, no `$expand` /
   `$validate-code` / `$lookup`).
 - **Scale:** one process with SQLite; writes go through a single index lock, so it does
-  not scale horizontally or for highly concurrent writes. Benchmarked (in CI) on 60k
-  resources, where searches stay well under 100 ms; larger datasets are untested — measure
-  with `bench/run.sh <patients> <obs-per-patient>` before relying on it.
+  not scale horizontally or for highly concurrent writes. Benchmarked in CI on 60k
+  resources (every search well under 100 ms) and measured on 10M: pages and
+  patient-scoped searches stay in milliseconds, but an exact total over millions of
+  matches takes seconds (`_total=none` skips it), and a patient-scoped token searching a
+  whole type without `patient=` reads every match. Measure your own data with
+  `bench/run.sh <patients> <obs-per-patient>` before relying on it.
 - **Subscriptions:** R4 rest-hook and websocket, best-effort delivery (a few retries,
   no persistent queue).
 - **Auth:** API keys, Basic, JWT (HS256/RS256/JWKS) with SMART v1 and v2 scopes, SMART
