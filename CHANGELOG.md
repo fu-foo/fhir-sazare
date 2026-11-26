@@ -28,6 +28,12 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
   notification only says "search again"); the server pings each `/ws` connection every
   30 s and closes one that answered nothing for a minute.
 
+- **`$export` no longer holds the export in memory.** It read every resource of the
+  server at once and kept the output in memory for an hour — 300k resources took 400 MB
+  more, and a large server could run out of memory. A job now writes its files under
+  `<data_dir>/exports/` (deleted with the job, and on the next start), and the
+  synchronous response is streamed as it is read, a page of resources at a time.
+
 ### Added
 - **Quantity search parameters**: `[prefix]number|system|code`, `number||code` (the code
   or the unit, any system) or the number alone, with FHIR's implicit precision and the

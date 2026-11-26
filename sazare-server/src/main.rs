@@ -419,7 +419,7 @@ async fn serve(args: Vec<String>) {
         webhook: Arc::new(sazare_server::webhook::WebhookManager::new(
             config.webhook.clone(),
         )),
-        export_jobs: Arc::new(sazare_server::bulk_export::ExportJobs::new()),
+        export_jobs: Arc::new(sazare_server::bulk_export::ExportJobs::in_dir(config.storage.data_dir.join("exports"))),
         seen_jti: std::sync::Mutex::new(std::collections::HashMap::new()),
     });
 

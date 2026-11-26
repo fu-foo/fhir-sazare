@@ -1944,7 +1944,7 @@ async fn test_write_paths_keep_fhir_rules() {
     assert_eq!(h["total"], 3, "{h}");
 }
 
-/// Async exports hold their output in memory, so the number of held jobs is
+/// Async exports keep a copy of the data on disk, so the number of held jobs is
 /// capped; deleting a finished one frees a slot.
 #[tokio::test]
 async fn test_export_jobs_are_bounded() {

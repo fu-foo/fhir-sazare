@@ -9,8 +9,15 @@
 //!
 //! Without `Prefer: respond-async` the endpoint falls back to the legacy
 //! synchronous NDJSON response so existing callers keep working.
+//!
+//! Neither holds the export in memory: a job writes its files under its
+//! directory (`<data_dir>/exports/<job>/`, deleted with the job), the
+//! synchronous response is streamed as it is read — a page of resources at a
+//! time either way.
 
 use std::collections::HashMap;
+use std::io::Write;
+use std::path::{Path as FsPath, PathBuf};
 use std::sync::Arc;
 
 use axum::{
@@ -97,31 +104,48 @@ struct ExportJob {
     status: JobStatus,
     transaction_time: String,
     request_url: String,
-    /// (resource type, NDJSON) for each non-empty type.
-    files: Vec<(String, String)>,
+    /// (resource type, NDJSON file) for each non-empty type.
+    files: Vec<(String, PathBuf)>,
     /// When the job completed or failed (for expiry).
     finished_at: Option<std::time::Instant>,
 }
 
 /// How long a finished export's files stay downloadable.
 const JOB_RETENTION: std::time::Duration = std::time::Duration::from_secs(60 * 60);
-/// Jobs kept at once (running or finished but not yet expired/deleted).
+/// Jobs kept at once (running or finished but not yet expired/deleted): each
+/// holds a copy of (part of) the data on disk.
 const MAX_JOBS: usize = 8;
+/// Resources read from the store at a time.
+const PAGE: usize = 1000;
 
-/// In-memory registry of bulk-export jobs.
-#[derive(Default)]
+/// The bulk-export jobs, their files under `dir/<job id>/`.
 pub struct ExportJobs {
     jobs: Mutex<HashMap<String, ExportJob>>,
+    dir: PathBuf,
+    /// `dir` is a temporary directory of this value's own (deleted on drop).
+    owned: bool,
 }
 
 impl ExportJobs {
+    /// Jobs in a temporary directory of their own (tests, embedding).
     pub fn new() -> Self {
-        Self::default()
+        let dir = std::env::temp_dir().join(format!("sazare-exports-{}", uuid::Uuid::new_v4()));
+        Self { jobs: Default::default(), dir, owned: true }
+    }
+
+    /// Jobs under `dir` (`<data_dir>/exports`). Jobs don't outlive the
+    /// process, so files a previous run left there are deleted.
+    pub fn in_dir(dir: PathBuf) -> Self {
+        let _ = std::fs::remove_dir_all(&dir);
+        Self { jobs: Default::default(), dir, owned: false }
+    }
+
+    fn job_dir(&self, id: &str) -> PathBuf {
+        self.dir.join(id)
     }
 
     /// Register a job. Finished jobs past their retention are dropped first;
-    /// `false` when [`MAX_JOBS`] are still held (the export output lives in
-    /// memory, so the number of jobs is what bounds it).
+    /// `false` when [`MAX_JOBS`] are still held.
     async fn start(&self, id: String, transaction_time: String, request_url: String) -> bool {
         let mut jobs = self.live().await;
         if jobs.len() >= MAX_JOBS {
@@ -140,31 +164,69 @@ impl ExportJobs {
         true
     }
 
-    async fn complete(&self, id: &str, files: Vec<(String, String)>) {
-        if let Some(job) = self.jobs.lock().await.get_mut(id) {
-            job.files = files;
-            job.status = JobStatus::Complete;
-            job.finished_at = Some(std::time::Instant::now());
+    async fn complete(&self, id: &str, files: Vec<(String, PathBuf)>) {
+        match self.jobs.lock().await.get_mut(id) {
+            Some(job) => {
+                job.files = files;
+                job.status = JobStatus::Complete;
+                job.finished_at = Some(std::time::Instant::now());
+            }
+            // Deleted while it ran.
+            None => self.delete_files(id),
         }
     }
 
     async fn fail(&self, id: &str, err: String) {
+        self.delete_files(id);
         if let Some(job) = self.jobs.lock().await.get_mut(id) {
             job.status = JobStatus::Failed(err);
             job.finished_at = Some(std::time::Instant::now());
         }
     }
 
-    /// Lock the job table with finished jobs past their retention dropped, so
-    /// an expired job is gone (404, memory freed) whoever looks next.
+    /// Lock the job table with finished jobs past their retention dropped
+    /// (their files deleted), so an expired job is gone whoever looks next.
     async fn live(&self) -> tokio::sync::MutexGuard<'_, HashMap<String, ExportJob>> {
         let mut jobs = self.jobs.lock().await;
-        jobs.retain(|_, j| j.finished_at.is_none_or(|t| t.elapsed() < JOB_RETENTION));
+        let expired: Vec<String> = jobs
+            .iter()
+            .filter(|(_, j)| j.finished_at.is_some_and(|t| t.elapsed() >= JOB_RETENTION))
+            .map(|(id, _)| id.clone())
+            .collect();
+        for id in expired {
+            jobs.remove(&id);
+            self.delete_files(&id);
+        }
         jobs
     }
 
     async fn remove(&self, id: &str) -> bool {
-        self.jobs.lock().await.remove(id).is_some()
+        let removed = self.jobs.lock().await.remove(id).is_some();
+        if removed {
+            // A running job's files go when it finishes (`complete`).
+            self.delete_files(id);
+        }
+        removed
+    }
+
+    /// Delete a job's files (a download still reading one keeps it open
+    /// until done, where the system allows; else the next start removes it).
+    fn delete_files(&self, id: &str) {
+        let _ = std::fs::remove_dir_all(self.job_dir(id));
+    }
+}
+
+impl Default for ExportJobs {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Drop for ExportJobs {
+    fn drop(&mut self) {
+        if self.owned {
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
     }
 }
 
@@ -213,89 +275,110 @@ fn parse_since(since: &Option<String>) -> Result<Option<chrono::DateTime<chrono:
     }
 }
 
-/// Build per-type NDJSON for the requested scope, applying `_type` and `_since`.
-pub fn build_export_files(
+/// Read the resources of the requested scope (`_type`, `_since` applied) a
+/// page at a time, handing each one's JSON to `out(type, json)`, type by type.
+/// Stops at the first error `out` returns.
+fn write_export(
     state: &AppState,
     scope: &ExportScope,
     type_filter: &Option<Vec<String>>,
     since: &Option<String>,
-) -> Result<Vec<(String, String)>, String> {
+    out: &mut dyn FnMut(&str, &str) -> Result<(), String>,
+) -> Result<(), String> {
     let since_dt = parse_since(since)?;
-
-    let rows = state
-        .store
-        .list_all(None)
-        .map_err(|e| format!("Export failed: {e}"))?;
-
-    // Preserve first-seen type order for stable manifests.
-    let mut order: Vec<String> = Vec::new();
-    let mut by_type: HashMap<String, String> = HashMap::new();
-
-    for (rtype, _id, data) in rows {
+    let types = state.store.count_by_type().map_err(|e| format!("Export failed: {e}"))?;
+    for (rtype, _) in types {
         if let Some(types) = type_filter
             && !types.iter().any(|t| t == &rtype)
         {
             continue;
         }
-        // Scope filtering: restrict to the Patient compartment as needed.
-        match scope {
-            ExportScope::System => {}
-            ExportScope::AllPatients => {
-                if !state.compartment_def.is_in_compartment(&rtype) {
-                    continue;
-                }
-            }
-            ExportScope::Patients(ids) => {
-                if !state.compartment_def.is_in_compartment(&rtype) {
-                    continue;
-                }
-                let resource: Value = match serde_json::from_slice(&data) {
-                    Ok(v) => v,
-                    Err(_) => continue,
-                };
-                let belongs = ids.iter().any(|pid| {
-                    state
-                        .compartment_def
-                        .resource_belongs_to_patient(&rtype, &resource, pid)
-                });
-                if !belongs {
-                    continue;
-                }
-            }
-        }
-        let Ok(text) = std::str::from_utf8(&data) else {
+        if !matches!(scope, ExportScope::System) && !state.compartment_def.is_in_compartment(&rtype) {
             continue;
-        };
-        if let Some(since_dt) = since_dt {
-            // Drop resources not modified since the cutoff.
-            let last_updated = serde_json::from_slice::<Value>(&data)
-                .ok()
-                .and_then(|v| {
-                    v.get("meta")
-                        .and_then(|m| m.get("lastUpdated"))
-                        .and_then(|l| l.as_str())
-                        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
-                });
-            match last_updated {
-                Some(lu) if lu >= since_dt => {}
-                _ => continue,
+        }
+        let mut after = String::new();
+        loop {
+            let page = state.store.list_page(&rtype, &after, PAGE).map_err(|e| format!("Export failed: {e}"))?;
+            let Some((last, _)) = page.last() else { break };
+            after = last.clone();
+            for (_id, data) in &page {
+                if exported(state, scope, since_dt, &rtype, data) {
+                    let Ok(text) = std::str::from_utf8(data) else { continue };
+                    out(&rtype, text.trim_end())?;
+                }
             }
         }
-        if !by_type.contains_key(&rtype) {
-            order.push(rtype.clone());
-        }
-        let buf = by_type.entry(rtype).or_default();
-        buf.push_str(text.trim_end());
-        buf.push('\n');
     }
+    Ok(())
+}
 
-    Ok(order
+/// Whether a stored resource of an exported type goes into the export: in
+/// the requested patients' compartments, changed since `_since`.
+fn exported(
+    state: &AppState,
+    scope: &ExportScope,
+    since_dt: Option<chrono::DateTime<chrono::FixedOffset>>,
+    rtype: &str,
+    data: &[u8],
+) -> bool {
+    if matches!(scope, ExportScope::System | ExportScope::AllPatients) && since_dt.is_none() {
+        return true;
+    }
+    let Ok(resource) = serde_json::from_slice::<Value>(data) else { return false };
+    if let ExportScope::Patients(ids) = scope
+        && !ids.iter().any(|pid| state.compartment_def.resource_belongs_to_patient(rtype, &resource, pid))
+    {
+        return false;
+    }
+    if let Some(since_dt) = since_dt {
+        // Drop resources not modified since the cutoff.
+        let last_updated = resource
+            .pointer("/meta/lastUpdated")
+            .and_then(|v| v.as_str())
+            .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok());
+        if !last_updated.is_some_and(|lu| lu >= since_dt) {
+            return false;
+        }
+    }
+    true
+}
+
+/// Write a job's export into `dir`, one `<type>.ndjson` per non-empty type.
+fn build_export_files(
+    state: &AppState,
+    scope: &ExportScope,
+    type_filter: &Option<Vec<String>>,
+    since: &Option<String>,
+    dir: &FsPath,
+) -> Result<Vec<(String, PathBuf)>, String> {
+    std::fs::create_dir_all(dir).map_err(|e| format!("Export failed: {}: {e}", dir.display()))?;
+    let mut files: Vec<(String, PathBuf, std::io::BufWriter<std::fs::File>)> = Vec::new();
+    write_export(state, scope, type_filter, since, &mut |rtype, json| {
+        if files.last().is_none_or(|(t, _, _)| t != rtype) {
+            // Types come one after another: the previous file is complete.
+            let path = dir.join(format!("{rtype}.ndjson"));
+            let file = std::fs::File::create(&path).map_err(|e| format!("Export failed: {}: {e}", path.display()))?;
+            files.push((rtype.to_string(), path, std::io::BufWriter::new(file)));
+        }
+        let (_, path, w) = files.last_mut().expect("just pushed");
+        w.write_all(json.as_bytes())
+            .and_then(|_| w.write_all(b"\n"))
+            .map_err(|e| format!("Export failed: {}: {e}", path.display()))
+    })?;
+    files
         .into_iter()
-        .map(|t| {
-            let ndjson = by_type.remove(&t).unwrap_or_default();
-            (t, ndjson)
+        .map(|(t, path, mut w)| {
+            w.flush().map_err(|e| format!("Export failed: {}: {e}", path.display()))?;
+            Ok((t, path))
         })
-        .collect())
+        .collect()
+}
+
+/// A body that streams the chunks a blocking producer sends.
+fn streamed(rx: tokio::sync::mpsc::Receiver<Result<Vec<u8>, std::io::Error>>) -> axum::body::Body {
+    axum::body::Body::from_stream(futures_util::stream::unfold(rx, |mut rx| async move {
+        rx.recv().await.map(|chunk| (chunk, rx))
+    }))
 }
 
 fn parse_type_filter(params: &ExportParams) -> Option<Vec<String>> {
@@ -361,30 +444,32 @@ async fn run_export(
         .map(|s| s.to_lowercase().contains("respond-async"))
         .unwrap_or(false);
 
-    // Legacy synchronous path: concatenate everything into one NDJSON body.
+    // Legacy synchronous path: one NDJSON body, streamed as the store is read
+    // (off the async workers). A failure part way can only cut the body short.
     if !want_async {
-        // Off the async workers: this reads the whole store synchronously.
-        let st = state.clone();
+        let (tx, rx) = tokio::sync::mpsc::channel(4);
         let since = params._since.clone();
-        let built = tokio::task::spawn_blocking(move || build_export_files(&st, &scope, &type_filter, &since))
-            .await
-            .unwrap_or_else(|e| Err(format!("export task failed: {e}")));
-        return match built {
-            Ok(files) => {
-                let body: String = files.into_iter().map(|(_, n)| n).collect();
-                (
-                    StatusCode::OK,
-                    [(header::CONTENT_TYPE, "application/fhir+ndjson")],
-                    body,
-                )
-                    .into_response()
-            }
-            Err(e) => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(op_outcome("exception", e)),
-            )
-                .into_response(),
-        };
+        tokio::task::spawn_blocking(move || {
+            let mut chunk = Vec::with_capacity(1 << 16);
+            let sent = write_export(&state, &scope, &type_filter, &since, &mut |_, json| {
+                chunk.extend_from_slice(json.as_bytes());
+                chunk.push(b'\n');
+                if chunk.len() >= 1 << 16 {
+                    let full = std::mem::replace(&mut chunk, Vec::with_capacity(1 << 16));
+                    tx.blocking_send(Ok(full)).map_err(|_| "the client went away".to_string())?;
+                }
+                Ok(())
+            });
+            let last = match sent {
+                Ok(()) => Ok(chunk),
+                Err(e) => {
+                    tracing::warn!("synchronous $export stopped: {e}");
+                    Err(std::io::Error::other(e))
+                }
+            };
+            let _ = tx.blocking_send(last);
+        });
+        return (StatusCode::OK, [(header::CONTENT_TYPE, "application/fhir+ndjson")], streamed(rx)).into_response();
     }
 
     // Async path: register a job, build in the background, return 202 + Content-Location.
@@ -415,7 +500,8 @@ async fn run_export(
     // worker threads.
     tokio::spawn(async move {
         let state3 = state2.clone();
-        let built = tokio::task::spawn_blocking(move || build_export_files(&state3, &scope, &type_filter, &since))
+        let dir = state2.export_jobs.job_dir(&job_id2);
+        let built = tokio::task::spawn_blocking(move || build_export_files(&state3, &scope, &type_filter, &since, &dir))
             .await
             .unwrap_or_else(|e| Err(format!("export task failed: {e}")));
         match built {
@@ -603,22 +689,74 @@ pub async fn export_file(
     if let Err(resp) = authorize_bulk(&auth, "read") {
         return resp;
     }
-    let jobs = state.export_jobs.live().await;
-    let ndjson = jobs
-        .get(&job_id)
-        .and_then(|j| j.files.iter().find(|(t, _)| t == &rtype))
-        .map(|(_, n)| n.clone());
-    match ndjson {
-        Some(ndjson) => (
-            StatusCode::OK,
-            [(header::CONTENT_TYPE, "application/fhir+ndjson")],
-            ndjson,
-        )
-            .into_response(),
+    let path = {
+        let jobs = state.export_jobs.live().await;
+        jobs.get(&job_id).and_then(|j| j.files.iter().find(|(t, _)| t == &rtype)).map(|(_, p)| p.clone())
+    };
+    // Opened before the job could expire and its files go.
+    let file = match path {
+        Some(p) => tokio::fs::File::open(p).await.ok(),
+        None => None,
+    };
+    match file {
+        Some(file) => {
+            let body = axum::body::Body::from_stream(futures_util::stream::unfold(file, |mut file| async move {
+                use tokio::io::AsyncReadExt;
+                let mut buf = vec![0u8; 1 << 16];
+                match file.read(&mut buf).await {
+                    Ok(0) => None,
+                    Ok(n) => {
+                        buf.truncate(n);
+                        Some((Ok::<_, std::io::Error>(buf), file))
+                    }
+                    Err(e) => Some((Err(e), file)),
+                }
+            }));
+            (StatusCode::OK, [(header::CONTENT_TYPE, "application/fhir+ndjson")], body).into_response()
+        }
         None => (
             StatusCode::NOT_FOUND,
             Json(op_outcome("not-found", "Unknown export file".into())),
         )
             .into_response(),
+    }
+}
+
+#[cfg(test)]
+mod job_file_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn a_job_s_files_go_with_it() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().join("exports");
+        // Left by a previous run: deleted on start.
+        std::fs::create_dir_all(dir.join("old-job")).unwrap();
+        let jobs = ExportJobs::in_dir(dir.clone());
+        assert!(!dir.join("old-job").exists());
+
+        assert!(jobs.start("j1".into(), String::new(), String::new()).await);
+        std::fs::create_dir_all(jobs.job_dir("j1")).unwrap();
+        let file = jobs.job_dir("j1").join("Patient.ndjson");
+        std::fs::write(&file, "{}\n").unwrap();
+        jobs.complete("j1", vec![("Patient".into(), file)]).await;
+        assert!(jobs.remove("j1").await);
+        assert!(!jobs.job_dir("j1").exists(), "DELETE removes the files");
+
+        // A job deleted while it ran: its files go when it finishes.
+        assert!(jobs.start("j2".into(), String::new(), String::new()).await);
+        assert!(jobs.remove("j2").await);
+        std::fs::create_dir_all(jobs.job_dir("j2")).unwrap();
+        jobs.complete("j2", vec![]).await;
+        assert!(!jobs.job_dir("j2").exists());
+    }
+
+    #[test]
+    fn a_temporary_job_directory_is_removed_on_drop() {
+        let jobs = ExportJobs::new();
+        std::fs::create_dir_all(jobs.job_dir("j")).unwrap();
+        let dir = jobs.dir.clone();
+        drop(jobs);
+        assert!(!dir.exists());
     }
 }
