@@ -412,7 +412,11 @@ the executor would generate them.
    a sort (`code&date` page: 523 ms).
 4. **Single-valued parameters count without `DISTINCT`**: `param.multi` (kept on write)
    says whether any resource has more than one value for the pid; when not, `count(*)`
-   replaces `count(DISTINCT rid)` (the temp B-tree made the 5.2M count 12.8 s).
+   replaces `count(DISTINCT rid)` (the temp B-tree made the 5.2M count 12.8 s). Only
+   for criteria that can't match one row twice: a single equality or range, or an OR of
+   disjoint equalities (`code=A,B`). Overlapping ORs (`name=a,ab`, `date=ge2020,ge2021`)
+   expanded as `UNION ALL` hit a row once per branch and keep the `DISTINCT` (or are
+   written as one `WHERE … OR …`). (Second review.)
 
 ## Revision history
 
