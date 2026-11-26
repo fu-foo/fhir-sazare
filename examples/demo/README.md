@@ -38,12 +38,12 @@ SAZARE_URL=https://your-server SAZARE_USER=admin SAZARE_PASS=secret \
 **At startup, into a fresh store** (great for Docker — populates only if empty):
 
 ```bash
-SAZARE_SEED_ON_EMPTY=examples/demo/cohort.json sazare-server
+SAZARE_SEED_ON_EMPTY=examples/demo/cohort.json sazare-server start
 # docker:
 docker run -e SAZARE_SEED_ON_EMPTY=/data/cohort.json -v "$PWD/examples/demo:/data" ...
 ```
 
-There's also the tiny built-in set (`sazare-server --demo` or `POST /$demo`, two
+There's also the tiny built-in set (`sazare-server start --demo` or `POST /$demo`, two
 patients, embedded) for a zero-file taste.
 
 ## Now FHIR does something

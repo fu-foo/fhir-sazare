@@ -6,6 +6,16 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
 
 ## Unreleased
 
+### Changed
+- **Commands instead of a bare server** (breaking): `sazare-server start` runs the server
+  in the background and returns once it is up; `stop` shuts it down cleanly; `status`
+  shows its URL and pid; `run` keeps it in the foreground (Docker, systemd, launchd,
+  `brew services`); `backup <dir>` replaces `--backup <dir>`. `sazare-server` alone prints
+  the help. A server in the foreground could be killed by an accidental Ctrl+C or a
+  closed terminal; a background one can't.
+- **One server per data directory**: a lock file keeps a second server off the same
+  databases (it used to be possible, and unsafe).
+
 ### Behavior changes
 - String `:exact` is case-sensitive, as FHIR defines it: `family:exact=Sato` no longer
   matches `SATO` or `sato`. (It compared lower-cased values.) Plain and `:contains`

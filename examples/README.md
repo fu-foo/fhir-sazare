@@ -7,7 +7,7 @@ Sample scripts to test sazare FHIR Server features.
 Start the server first:
 
 ```bash
-cargo run
+cargo run -- start
 ```
 
 ## Scripts
@@ -32,7 +32,7 @@ hypertensive smoker, prenatal, well-child vaccines, oncology work-up) that make
 
 ```bash
 bash demo/load_demo.sh                                # into a running server
-SAZARE_SEED_ON_EMPTY=demo/cohort.json sazare-server   # at startup, if empty
+SAZARE_SEED_ON_EMPTY=demo/cohort.json sazare-server start   # at startup, if empty
 ```
 
 For a realistic population, [`demo/synthea/`](demo/synthea/) generates and loads

@@ -28,7 +28,7 @@ storage:
 log:
   level: "warn"
 YAML
-"$BIN" --config "$WORK/config.yaml" > "$WORK/server.log" 2>&1 &
+"$BIN" run --config "$WORK/config.yaml" > "$WORK/server.log" 2>&1 &
 SERVER_PID=$!
 for _ in $(seq 100); do curl -sf "$BASE/health" > /dev/null && break; sleep 0.1; done
 curl -sf "$BASE/health" > /dev/null || { cat "$WORK/server.log"; exit 1; }

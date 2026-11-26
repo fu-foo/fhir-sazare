@@ -1343,6 +1343,7 @@ dependencies = [
  "http-body-util",
  "json-patch",
  "jsonwebtoken",
+ "libc",
  "reqwest",
  "rustls-pemfile",
  "sazare-core",

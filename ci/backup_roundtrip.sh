@@ -29,7 +29,7 @@ YAML
 }
 
 start() {
-  "$BIN" --config "$WORK/$1.yaml" > "$WORK/$1.log" 2>&1 &
+  "$BIN" run --config "$WORK/$1.yaml" > "$WORK/$1.log" 2>&1 &
   PID=$!
   for _ in $(seq 150); do curl -sf "$BASE/health" > /dev/null && return; sleep 0.2; done
   cat "$WORK/$1.log"; exit 1
@@ -59,7 +59,7 @@ snapshot > "$WORK/before.txt"
 curl -s "$BASE/Patient/$pid/_history" | python3 -c 'import json,sys; print("history", json.load(sys.stdin)["total"])' >> "$WORK/before.txt"
 
 # Online backup while the server is serving.
-"$BIN" --config "$WORK/original.yaml" --backup "$WORK/backup"
+"$BIN" backup "$WORK/backup" --config "$WORK/original.yaml"
 stop
 
 mkdir -p "$WORK/restored"

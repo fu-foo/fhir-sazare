@@ -36,6 +36,6 @@ VOLUME ["/data"]
 
 WORKDIR /etc/sazare
 
-# Runs the server as the unprivileged `sazare` user (uid 10001); arguments are
-# passed to sazare-server, e.g. `docker run ... --demo`.
+# Runs `sazare-server run` (foreground) as the unprivileged `sazare` user (uid
+# 10001); arguments are passed on, e.g. `docker run ... --demo`.
 ENTRYPOINT ["docker-entrypoint.sh"]

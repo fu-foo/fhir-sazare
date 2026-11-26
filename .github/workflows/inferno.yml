@@ -46,7 +46,7 @@ jobs:
           storage:
             data_dir: "$RUNNER_TEMP/sazare/data"
           YAML
-          nohup target/release/sazare-server --config "$RUNNER_TEMP/sazare/config.yaml" \
+          nohup target/release/sazare-server run --config "$RUNNER_TEMP/sazare/config.yaml" \
             > "$RUNNER_TEMP/sazare/server.log" 2>&1 &
           for _ in $(seq 100); do curl -sf http://localhost:18080/health && break; sleep 0.2; done
           SAZARE_URL=http://localhost:18080 bash ${{ matrix.seed }} | tail -5

@@ -46,7 +46,7 @@ sazare は**作業ディレクトリ**の `profiles/` と `searchparameters/` �
 
 ```bash
 cd /srv/sazare
-sazare-server
+sazare-server start
 ```
 
 起動ログに次の行が出れば読み込めています（3行目は `--terminology` のとき）。

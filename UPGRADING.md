@@ -4,7 +4,7 @@
 
 1. **Back up** while the server runs:
    ```bash
-   sazare-server --config config.yaml --backup backups/$(date +%Y%m%d-%H%M%S)
+   sazare-server backup backups/$(date +%Y%m%d-%H%M%S) --config config.yaml
    ```
 2. **Replace the binary** — download the release, `brew upgrade sazare`, or pull the new
    Docker image — and restart.
@@ -40,6 +40,14 @@ into `data_dir`, delete the two `search_index*` files, start the older binary).
   with the log.
 
 ## Version notes
+
+### To 0.15.0
+
+- **The command line has commands now.** `sazare-server` alone prints help instead of
+  starting the server. Use `sazare-server start` (background) / `stop` / `status`, or
+  `sazare-server run` in the foreground. `--backup <dir>` became `sazare-server backup <dir>`.
+- Scripts, systemd units and launchd plists that started `sazare-server [--config …]`:
+  add `run` (`sazare-server run --config …`). The Docker image needs no change.
 
 ### To 0.14.0
 

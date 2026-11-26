@@ -13,27 +13,99 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use sazare_server::{apps, build_router, config::ServerConfig, handlers::reindex::perform_reindex, AppState};
 
-#[tokio::main]
-async fn main() {
-    // Initialize logging
+mod instance;
+
+const USAGE: &str = "\
+sazare-server — a lightweight FHIR R4 server
+
+Usage: sazare-server <command> [options]
+
+Commands:
+  start     Start the server in the background and return once it is up
+  stop      Stop the background server (waits for in-flight writes)
+  status    Show whether the server is running, its URL and pid
+  run       Run in the foreground (for Docker, systemd, launchd, brew services)
+  backup    Write a consistent copy of the databases: backup <dir>
+  version   Print the version
+  help      Show this help
+
+Options (start, run):
+  --config <file>   Configuration file (default: ./config.yaml when present)
+  --demo            Load the sample dataset
+  --open            Open the dashboard in a browser
+
+One server runs per data directory. stop, status and backup take --config too,
+to find it.
+";
+
+fn main() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let (command, rest) = match args.split_first() {
+        Some((c, rest)) => (c.as_str(), rest.to_vec()),
+        None => {
+            eprint!("{USAGE}");
+            std::process::exit(2);
+        }
+    };
+    let code = match command {
+        "run" => {
+            init_tracing();
+            let runtime = tokio::runtime::Runtime::new().expect("tokio runtime");
+            runtime.block_on(serve(rest));
+            0
+        }
+        "start" => {
+            let config = load_config(&rest);
+            let open = rest.iter().any(|a| a == "--open");
+            let forwarded: Vec<String> = rest.into_iter().filter(|a| a != "--open").collect();
+            instance::start(&config, &forwarded, open)
+        }
+        "stop" => instance::stop(&load_config(&rest)),
+        "status" => instance::status(&load_config(&rest)),
+        "backup" => {
+            let dir = rest.iter().enumerate().find(|(i, a)| {
+                !a.starts_with("--") && (*i == 0 || rest[i - 1] != "--config")
+            });
+            let Some((_, dir)) = dir else {
+                eprintln!("Usage: sazare-server backup <dir> [--config <file>]");
+                std::process::exit(2);
+            };
+            run_backup(&load_config(&rest), std::path::Path::new(dir))
+        }
+        "version" | "--version" | "-V" => {
+            println!("sazare-server {}", env!("CARGO_PKG_VERSION"));
+            0
+        }
+        "help" | "--help" | "-h" => {
+            print!("{USAGE}");
+            0
+        }
+        other => {
+            eprintln!("Unknown command `{other}`.\n");
+            if other.starts_with("--") {
+                eprintln!("Options go after a command, e.g. `sazare-server start {other}`.\n");
+            }
+            eprint!("{USAGE}");
+            2
+        }
+    };
+    std::process::exit(code);
+}
+
+fn init_tracing() {
+    use std::io::IsTerminal;
     tracing_subscriber::registry()
-        .with(tracing_subscriber::fmt::layer())
+        // Colors only on a terminal (not in logs/sazare.log of a background server).
+        .with(tracing_subscriber::fmt::layer().with_ansi(std::io::stdout().is_terminal()))
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
         )
         .init();
+}
 
-    tracing::info!("Starting fhir-sazare server...");
-
-    // Minimal flags: `--demo` pre-loads the sample dataset, `--open` opens the
-    // dashboard in a browser once the server is listening.
-    let args: Vec<String> = std::env::args().collect();
-    let want_demo = args.iter().any(|a| a == "--demo");
-    let want_open = args.iter().any(|a| a == "--open");
-
-    // `--config <path>` / `--config=<path>` selects the config file; otherwise
-    // `./config.yaml` is used when present.
+/// `--config <path>` / `--config=<path>`, or `./config.yaml` when present.
+fn load_config(args: &[String]) -> ServerConfig {
     let explicit_config = args.iter().enumerate().find_map(|(i, a)| {
         a.strip_prefix("--config=")
             .map(str::to_string)
@@ -43,9 +115,7 @@ async fn main() {
         eprintln!("--config requires a path");
         std::process::exit(2);
     }
-
-    // Load configuration
-    let config = match explicit_config.as_deref() {
+    match explicit_config.as_deref() {
         // An explicitly requested file must load — silently running on
         // defaults (port, data_dir, auth off) would be a surprise.
         Some(path) => ServerConfig::load(Some(path)).unwrap_or_else(|e| {
@@ -58,20 +128,37 @@ async fn main() {
                 .then_some("config.yaml"),
         )
         .unwrap_or_else(|e| {
-            tracing::warn!("Failed to load config, using defaults: {}", e);
+            eprintln!("Failed to load config, using defaults: {e}");
             ServerConfig::default()
         }),
-    };
-
-    // `--backup <dir>`: snapshot the databases and exit (works while another
-    // instance is serving the same data_dir).
-    if let Some(i) = args.iter().position(|a| a == "--backup") {
-        let Some(dir) = args.get(i + 1) else {
-            eprintln!("--backup requires a target directory");
-            std::process::exit(2);
-        };
-        std::process::exit(run_backup(&config, std::path::Path::new(dir)));
     }
+}
+
+/// `run`: the server in the foreground.
+async fn serve(args: Vec<String>) {
+
+    let want_demo = args.iter().any(|a| a == "--demo");
+    let want_open = args.iter().any(|a| a == "--open");
+    let config = load_config(&args);
+
+    // One server per data directory: a second one on the same databases would
+    // break the single-writer assumptions. Taken before anything is opened.
+    let paths = instance::Paths::new(&config);
+    let _instance_lock = match instance::try_lock(&paths.lock) {
+        Ok(Some(lock)) => lock,
+        Ok(None) => {
+            eprintln!(
+                "Another sazare server is already running on {} (see `sazare-server status`).",
+                config.storage.data_dir.display()
+            );
+            std::process::exit(1);
+        }
+        Err(e) => {
+            eprintln!("Cannot lock {}: {e}", paths.lock.display());
+            std::process::exit(1);
+        }
+    };
+    tracing::info!("Starting fhir-sazare server...");
 
     // Create data directory
     if let Err(e) = std::fs::create_dir_all(&config.storage.data_dir) {
@@ -308,16 +395,48 @@ async fn main() {
         }
     };
 
-    // `--open`: launch the dashboard in the user's browser. Use a loopback host
-    // (0.0.0.0 isn't a connectable address) and the right scheme.
-    if want_open {
+    // The URL clients on this machine use: a loopback host (0.0.0.0 isn't a
+    // connectable address) and the right scheme.
+    let local_url = {
         let scheme = if config.server.tls.is_some() { "https" } else { "http" };
         let host = if config.server.host == "0.0.0.0" || config.server.host.is_empty() {
             "127.0.0.1".to_string()
         } else {
             config.server.host.clone()
         };
-        open_browser(&format!("{scheme}://{host}:{}", config.server.port));
+        format!("{scheme}://{host}:{}", config.server.port)
+    };
+
+    // Control port for `sazare-server stop`, and the run info `start`, `stop`
+    // and `status` read. Published only now that the port is bound.
+    let stop_requested = Arc::new(tokio::sync::Notify::new());
+    let token = instance::new_token();
+    let control = match instance::serve_control(token.clone(), stop_requested.clone()).await {
+        Ok(addr) => addr,
+        Err(e) => {
+            tracing::error!("Failed to open the control port: {e}");
+            std::process::exit(1);
+        }
+    };
+    let _run_info = instance::publish_run_info(
+        &paths,
+        &instance::RunInfo {
+            pid: std::process::id(),
+            url: local_url.clone(),
+            control: control.to_string(),
+            token,
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            started: chrono::Utc::now().to_rfc3339(),
+        },
+    )
+    .unwrap_or_else(|e| {
+        tracing::error!("Cannot write {}: {e}", paths.run.display());
+        std::process::exit(1);
+    });
+
+    // `--open`: launch the dashboard in the user's browser.
+    if want_open {
+        open_browser(&local_url);
     }
 
     // Start server (HTTPS or HTTP)
@@ -341,7 +460,7 @@ async fn main() {
             tls_listener,
             app.into_make_service_with_connect_info::<sazare_server::tls::TlsConnectInfo>(),
         )
-        .with_graceful_shutdown(shutdown_signal())
+        .with_graceful_shutdown(shutdown_signal(stop_requested.clone()))
         .await
         .unwrap_or_else(|e| {
             tracing::error!("Server error: {}", e);
@@ -353,7 +472,7 @@ async fn main() {
             listener,
             app.into_make_service_with_connect_info::<SocketAddr>(),
         )
-        .with_graceful_shutdown(shutdown_signal())
+        .with_graceful_shutdown(shutdown_signal(stop_requested.clone()))
         .await
         .unwrap_or_else(|e| {
             tracing::error!("Server error: {}", e);
@@ -365,7 +484,7 @@ async fn main() {
 
 /// Best-effort: open `url` in the platform's default browser. Failures are
 /// non-fatal (the user can always open the URL printed in the log).
-fn open_browser(url: &str) {
+pub(crate) fn open_browser(url: &str) {
     #[cfg(target_os = "macos")]
     let cmd = ("open", vec![url]);
     #[cfg(target_os = "windows")]
@@ -380,7 +499,7 @@ fn open_browser(url: &str) {
 }
 
 /// Graceful shutdown signal handler
-async fn shutdown_signal() {
+async fn shutdown_signal(stop_requested: Arc<tokio::sync::Notify>) {
     let ctrl_c = async {
         tokio::signal::ctrl_c()
             .await
@@ -401,6 +520,7 @@ async fn shutdown_signal() {
     tokio::select! {
         _ = ctrl_c => tracing::info!("Received Ctrl+C, shutting down..."),
         _ = terminate => tracing::info!("Received SIGTERM, shutting down..."),
+        _ = stop_requested.notified() => tracing::info!("Shutting down..."),
     }
 }
 

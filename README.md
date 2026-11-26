@@ -95,7 +95,7 @@ quarantined:
 
 ```bash
 brew install fu-foo/tap/sazare
-sazare-server --demo --open
+sazare-server start --demo --open
 ```
 
 **On Windows, [Scoop](https://scoop.sh) is the smoothest path** — it likewise
@@ -105,7 +105,7 @@ with the Mark-of-the-Web:
 ```powershell
 scoop bucket add fu-foo https://github.com/fu-foo/scoop-bucket
 scoop install sazare
-sazare-server --demo --open
+sazare-server start --demo --open
 ```
 
 **Otherwise, download the binary for your OS** from the
@@ -116,23 +116,26 @@ run it with sample data:
 ```bash
 # macOS / Linux (Apple Silicon shown — pick the asset matching your OS/arch)
 tar xzf sazare-server-macos-arm64.tar.gz
-./sazare-server --demo --open
+./sazare-server start --demo --open
 ```
 
 ```powershell
 # Windows: unzip, then
-.\sazare-server.exe --demo --open
+.\sazare-server.exe start --demo --open
 ```
 
+`start` runs the server in the background and returns once it is up;
 `--demo` pre-loads a few sample patients with vitals, a condition, an encounter,
 and a prescription; `--open` launches the built-in dashboard in your browser.
-That's the whole setup.
+That's the whole setup. `sazare-server stop` stops it (cleanly — in-flight writes
+finish), `sazare-server status` shows where it runs. See
+[Running the server](#running-the-server).
 
 > **macOS first run** (direct download only): the binary is unsigned, so
 > Gatekeeper blocks it with an "unidentified developer" dialog. Clear the
 > quarantine flag and run:
 > ```bash
-> xattr -d com.apple.quarantine ./sazare-server && ./sazare-server --demo --open
+> xattr -d com.apple.quarantine ./sazare-server && ./sazare-server start --demo --open
 > ```
 > Or allow it via **System Settings → Privacy & Security → "Open Anyway"** (on
 > macOS 15 Sequoia the old right-click → Open shortcut no longer works).
@@ -150,7 +153,7 @@ That's the whole setup.
 >   the counterpart to macOS's `xattr` command:
 >   ```powershell
 >   Unblock-File .\sazare-server.exe
->   .\sazare-server.exe --demo --open
+>   .\sazare-server.exe start --demo --open
 >   ```
 >   (GUI equivalent: right-click the `.exe` → **Properties** → tick **Unblock**
 >   at the bottom → **OK**.)
@@ -197,7 +200,7 @@ visibly *do something*. Load it either way:
 bash examples/demo/load_demo.sh
 
 # or at startup, only if the store is empty (great for Docker)
-SAZARE_SEED_ON_EMPTY=examples/demo/cohort.json sazare-server
+SAZARE_SEED_ON_EMPTY=examples/demo/cohort.json sazare-server start
 ```
 
 Then try the queries that an empty server can't show you:
@@ -224,10 +227,32 @@ Prefer to build it yourself? You'll need **Rust 1.85+** (2024 edition):
 git clone https://github.com/fu-foo/fhir-sazare.git
 cd fhir-sazare
 cargo build --release
-./target/release/sazare-server --demo --open
+./target/release/sazare-server start --demo --open
 ```
 
 ---
+
+## Running the server
+
+```bash
+sazare-server start [--config config.yaml] [--demo] [--open]   # in the background; returns once it is up
+sazare-server status                                          # running? URL, pid, log
+sazare-server stop                                            # clean shutdown (in-flight writes finish)
+sazare-server run [--config config.yaml]                      # in the foreground
+sazare-server backup <dir> [--config config.yaml]             # consistent copy of the databases
+```
+
+- **One server per data directory.** A second `start` reports the running one; a second
+  `run` refuses to start. (`sazare.lock` in the data directory; the OS releases it however
+  the process ends.)
+- A background server logs to `<data_dir>/logs/sazare.log` (one previous file is kept
+  after 50 MB). `stop` asks it to shut down through a loopback control port with a
+  per-start token (`<data_dir>/sazare.run.json`, readable only by you); nothing extra is
+  exposed on the server's own port.
+- **Service managers** (Docker, systemd, launchd, `brew services`) use `run`, which stays
+  in the foreground and stops on SIGTERM. The Docker image already does.
+- Pass the same `--config` to `status` / `stop` / `backup` that you passed to `start`: it
+  tells them which data directory to look at.
 
 ## Configuration
 
@@ -661,13 +686,13 @@ scrape_configs:
 
 ### Backup and restore
 
-`--backup <dir>` writes a consistent copy of all three databases into `<dir>`
+`sazare-server backup <dir>` writes a consistent copy of all three databases into `<dir>`
 and exits. It is safe to run while the server is serving the same `data_dir`
 (it uses SQLite `VACUUM INTO`, so the copy includes not-yet-checkpointed WAL
 data and never tears). Existing files in `<dir>` are never overwritten.
 
 ```bash
-sazare-server --config config.yaml --backup backups/$(date +%Y%m%d-%H%M%S)
+sazare-server backup backups/$(date +%Y%m%d-%H%M%S) --config config.yaml
 ```
 
 To restore, stop the server and copy `resources.sqlite` and `audit.sqlite`
@@ -685,10 +710,10 @@ taken mid-write.
 cargo test
 
 # Run with debug logging
-RUST_LOG=debug cargo run
+RUST_LOG=debug cargo run -- run
 
 # Run with custom config
-cargo run -- --config path/to/config.yaml
+cargo run -- run --config path/to/config.yaml
 ```
 
 ### Benchmark
@@ -785,7 +810,7 @@ sazare は **FHIR の学習、試作・PoC、ローカル開発、小規模な�
 
 ```bash
 brew install fu-foo/tap/sazare
-sazare-server --demo --open
+sazare-server start --demo --open
 ```
 
 **Windows は [Scoop](https://scoop.sh) が一番ラク** — 同様に後述の SmartScreen 警告を回避できます（Scoop のダウンロードには Mark-of-the-Web が付かないため）:
@@ -793,7 +818,7 @@ sazare-server --demo --open
 ```powershell
 scoop bucket add fu-foo https://github.com/fu-foo/scoop-bucket
 scoop install sazare
-sazare-server --demo --open
+sazare-server start --demo --open
 ```
 
 **それ以外は、お使いの OS のバイナリ**を
@@ -803,19 +828,19 @@ sazare-server --demo --open
 ```bash
 # macOS / Linux（Apple Silicon の例。OS/アーキテクチャに合うアセットを選んでください）
 tar xzf sazare-server-macos-arm64.tar.gz
-./sazare-server --demo --open
+./sazare-server start --demo --open
 ```
 
 ```powershell
 # Windows: 展開してから
-.\sazare-server.exe --demo --open
+.\sazare-server.exe start --demo --open
 ```
 
-`--demo` はサンプル患者（バイタル・条件・受診・処方）を事前投入し、`--open` は内蔵ダッシュボードをブラウザで開きます。これで準備完了。サーバーは `http://localhost:8080` で待ち受けます（デフォルトは認証なし）。
+`start` はサーバーを裏で起動し、立ち上がったところで戻ります。`--demo` はサンプル患者（バイタル・条件・受診・処方）を事前投入し、`--open` は内蔵ダッシュボードをブラウザで開きます。これで準備完了。止めるときは `sazare-server stop`（書き込み中の処理を待ってから正常に停止）、状態は `sazare-server status` で確認できます。サーバーは `http://localhost:8080` で待ち受けます（デフォルトは認証なし）。
 
 > **macOS の初回起動**（直接ダウンロードした場合のみ）: バイナリは未署名なので、Gatekeeper が「開発元を確認できません」と表示してブロックします。隔離フラグを外して実行してください:
 > ```bash
-> xattr -d com.apple.quarantine ./sazare-server && ./sazare-server --demo --open
+> xattr -d com.apple.quarantine ./sazare-server && ./sazare-server start --demo --open
 > ```
 > または **システム設定 → プライバシーとセキュリティ → 「このまま開く」** で許可します（macOS 15 Sequoia では、従来の「右クリック → 開く」は使えなくなりました）。`brew` で入れればこの手順は不要です。
 
@@ -825,7 +850,7 @@ tar xzf sazare-server-macos-arm64.tar.gz
 > - **一度で恒久的に解除（PowerShell）**: ファイルのブロックを解除すれば次回から出ません（macOS の `xattr` に相当）:
 >   ```powershell
 >   Unblock-File .\sazare-server.exe
->   .\sazare-server.exe --demo --open
+>   .\sazare-server.exe start --demo --open
 >   ```
 >   （GUI なら `.exe` を右クリック → **プロパティ** → 下部の **ブロックの解除** にチェック → **OK**）
 >
@@ -842,7 +867,7 @@ tar xzf sazare-server-macos-arm64.tar.gz
 bash examples/demo/load_demo.sh
 
 # または起動時に（ストアが空のときだけ。Docker に最適）
-SAZARE_SEED_ON_EMPTY=examples/demo/cohort.json sazare-server
+SAZARE_SEED_ON_EMPTY=examples/demo/cohort.json sazare-server start
 ```
 
 投入後、空サーバーでは見えなかったクエリを試せます:
@@ -865,8 +890,20 @@ Rust ツールチェーンがあれば、自分でビルドすることもでき
 git clone https://github.com/fu-foo/fhir-sazare.git
 cd fhir-sazare
 cargo build --release
-./target/release/sazare-server
+./target/release/sazare-server start
 ```
+
+### 起動と停止
+
+```bash
+sazare-server start [--config config.yaml] [--demo] [--open]   # 裏で起動（立ち上がったら戻る）
+sazare-server status                                          # 動いているか・URL・PID・ログ
+sazare-server stop                                            # 正常に停止（書き込み中の処理を待つ）
+sazare-server run [--config config.yaml]                      # 前面で動かす（Docker・systemd・brew services 用）
+sazare-server backup <dir> [--config config.yaml]             # DB の一貫したコピー
+```
+
+データディレクトリごとに1つだけ起動できます（2つ目の `start` は起動中のものを表示、2つ目の `run` は起動を拒否）。裏で動かしたときのログは `<data_dir>/logs/sazare.log` です。`status`・`stop`・`backup` には、`start` と同じ `--config` を渡してください。
 
 ### 設定
 
@@ -889,10 +926,10 @@ Docker での使い方、検索パラメータ一覧は [`examples/jp-core/READM
 
 ### バックアップと復元
 
-`--backup <dir>` で3つの DB の一貫したコピーを `<dir>` に書き出して終了します。サーバー稼働中でも安全に実行できます（SQLite の `VACUUM INTO` を使用）。既存ファイルは上書きしません。
+`sazare-server backup <dir>` で3つの DB の一貫したコピーを `<dir>` に書き出して終了します。サーバー稼働中でも安全に実行できます（SQLite の `VACUUM INTO` を使用）。既存ファイルは上書きしません。
 
 ```bash
-sazare-server --config config.yaml --backup backups/$(date +%Y%m%d-%H%M%S)
+sazare-server backup backups/$(date +%Y%m%d-%H%M%S) --config config.yaml
 ```
 
 復元はサーバーを止めて `resources.sqlite` と `audit.sqlite` を `data_dir` に戻します。`search_index.sqlite` と `search_index.fts.sqlite` は戻さず（古いものは削除）、起動時にリソースから自動再構築させてください。書き込み中に取ったバックアップでも、索引とリソースの整合が保証されます。

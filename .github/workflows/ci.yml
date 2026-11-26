@@ -105,3 +105,31 @@ jobs:
       - name: Server log
         if: always()
         run: docker logs sazare || true
+
+  # start / stop on Windows: the instance lock (exclusive open) and the detached
+  # child (DETACHED_PROCESS) are Windows-specific code paths.
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release --bin sazare-server
+      - name: start, status, second server refused, stop
+        shell: pwsh
+        run: |
+          $b = "target\release\sazare-server.exe"
+          New-Item -ItemType Directory -Force w | Out-Null
+          "server:`n  port: 18080`nstorage:`n  data_dir: `"w/data`"" | Set-Content w\c.yaml
+          & $b start --config w\c.yaml; if ($LASTEXITCODE -ne 0) { throw "start failed" }
+          if ((Invoke-WebRequest -UseBasicParsing http://127.0.0.1:18080/health).StatusCode -ne 200) { throw "health" }
+          & $b status --config w\c.yaml; if ($LASTEXITCODE -ne 0) { throw "status should be 0" }
+          & $b run --config w\c.yaml; if ($LASTEXITCODE -ne 1) { throw "a second server must be refused" }
+          & $b stop --config w\c.yaml; if ($LASTEXITCODE -ne 0) { throw "stop failed" }
+          & $b status --config w\c.yaml; if ($LASTEXITCODE -ne 3) { throw "status should be 3 after stop" }
+          & $b start --config w\c.yaml; if ($LASTEXITCODE -ne 0) { throw "restart failed" }
+          & $b stop --config w\c.yaml; if ($LASTEXITCODE -ne 0) { throw "second stop failed" }
+      - name: Server log
+        if: always()
+        shell: pwsh
+        run: Get-Content w\data\logs\sazare.log -ErrorAction SilentlyContinue
