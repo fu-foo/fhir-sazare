@@ -102,6 +102,11 @@ impl IndexBuilder {
             ExtractionMode::FhirPath(expr) => {
                 Self::extract_fhirpath(resource, expr, def, param_type_str, indices);
             }
+            ExtractionMode::Deceased => {
+                let deceased = resource.get("deceasedBoolean").and_then(Value::as_bool) == Some(true)
+                    || resource.get("deceasedDateTime").is_some();
+                indices.push((def.name.clone(), param_type_str.to_string(), deceased.to_string(), None));
+            }
         }
     }
 

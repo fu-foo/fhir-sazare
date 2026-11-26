@@ -1986,3 +1986,68 @@ async fn test_string_exact_is_case_sensitive_end_to_end() {
     assert_eq!(total("family:contains=ALLIS").await, 1, ":contains stays case-insensitive");
     assert_eq!(total("name:exact=Ada").await, 1);
 }
+
+/// The R4 parameters the hand-written lists lacked (#34), end to end:
+/// extraction through the FHIRPath definitions, search, and `_include` of a
+/// reference parameter that isn't a plain element (`Appointment:patient`).
+#[tokio::test]
+async fn test_r4_parameters_from_the_definitions() {
+    let (base, _dir) = start_test_server().await;
+    let c = reqwest::Client::new();
+    let p1 = create(&c, &base, "Patient", &json!({"resourceType": "Patient", "active": true,
+        "name": [{"family": "Rivera"}],
+        "address": [{"use": "home", "line": ["1 Main St"], "city": "Springfield", "state": "IL", "postalCode": "62701", "country": "US"}],
+        "telecom": [{"system": "phone", "value": "555-0100"}, {"system": "email", "value": "rivera@example.org"}],
+        "communication": [{"language": {"coding": [{"system": "urn:ietf:bcp:47", "code": "es"}]}}],
+        "deceasedBoolean": false})).await;
+    let p2 = create(&c, &base, "Patient", &json!({"resourceType": "Patient", "active": false,
+        "name": [{"family": "Okafor"}], "deceasedDateTime": "2020-01-01",
+        "address": [{"city": "Shelbyville"}]})).await;
+    create(&c, &base, "Practitioner", &json!({"resourceType": "Practitioner",
+        "telecom": [{"system": "phone", "value": "555-0199"}], "address": [{"city": "Springfield"}]})).await;
+    let appt = create(&c, &base, "Appointment", &json!({"resourceType": "Appointment", "status": "booked",
+        "participant": [{"actor": {"reference": format!("Patient/{p1}")}, "status": "accepted"}]})).await;
+
+    let ids = |q: &str| {
+        let c = c.clone();
+        let url = format!("{base}/{q}");
+        async move {
+            let b: Value = c.get(url).send().await.unwrap().json().await.unwrap();
+            assert_eq!(b["resourceType"], "Bundle", "{b}");
+            let mut v: Vec<String> = b["entry"].as_array().cloned().unwrap_or_default().iter()
+                .map(|e| format!("{}/{}", e["resource"]["resourceType"].as_str().unwrap(), e["resource"]["id"].as_str().unwrap()))
+                .collect();
+            v.sort();
+            v
+        }
+    };
+    let pat = |id: &str| format!("Patient/{id}");
+    assert_eq!(ids("Patient?address=springfield").await, [pat(&p1)]);
+    assert_eq!(ids("Patient?address=1%20main").await, [pat(&p1)], "any part of the address (prefix)");
+    assert_eq!(ids("Patient?address=us").await, [pat(&p1)], "the country too");
+    assert_eq!(ids("Patient?address-city=Shelbyville").await, [pat(&p2)]);
+    assert_eq!(ids("Patient?address-postalcode=62701").await, [pat(&p1)]);
+    assert_eq!(ids("Patient?address-use=home").await, [pat(&p1)]);
+    assert_eq!(ids("Patient?phone=555-0100").await, [pat(&p1)]);
+    assert_eq!(ids("Patient?email=rivera@example.org").await, [pat(&p1)]);
+    assert_eq!(ids("Patient?telecom=555-0100").await, [pat(&p1)]);
+    assert!(ids("Patient?phone=rivera@example.org").await.is_empty(), "an email is not a phone");
+    assert_eq!(ids("Patient?active=true").await, [pat(&p1)]);
+    assert_eq!(ids("Patient?deceased=true").await, [pat(&p2)]);
+    assert_eq!(ids("Patient?deceased=false").await, [pat(&p1)]);
+    assert_eq!(ids("Patient?language=es").await, [pat(&p1)]);
+    assert_eq!(ids("Practitioner?phone=555-0199").await.len(), 1);
+    assert_eq!(ids("Practitioner?address-city=Springfield").await.len(), 1);
+    // A FHIRPath reference parameter: search and _include.
+    assert_eq!(ids(&format!("Appointment?patient={p1}")).await, [format!("Appointment/{appt}")]);
+    let mut with = vec![format!("Appointment/{appt}"), pat(&p1)];
+    with.sort();
+    assert_eq!(ids(&format!("Appointment?_id={appt}&_include=Appointment:patient")).await, with);
+    // Advertised in the CapabilityStatement.
+    let meta: Value = c.get(format!("{base}/metadata")).send().await.unwrap().json().await.unwrap();
+    let patient = meta["rest"][0]["resource"].as_array().unwrap().iter().find(|r| r["type"] == "Patient").unwrap().clone();
+    let names: Vec<&str> = patient["searchParam"].as_array().unwrap().iter().filter_map(|p| p["name"].as_str()).collect();
+    for n in ["address", "address-city", "phone", "email", "telecom", "active", "deceased", "language", "phonetic"] {
+        assert!(names.contains(&n), "metadata lacks Patient.{n}");
+    }
+}

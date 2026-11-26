@@ -431,6 +431,11 @@ profile is validated against that one only.
 
 ### Basic Search
 
+Every R4 search parameter of type token, string, date, reference and number is
+supported for the built-in resource types (they are listed in `GET /metadata`), plus
+`_id`, `_lastUpdated`, `_tag`, `_profile`, `_security`, `_text` and `_content`.
+Quantity, composite and uri parameters are not yet.
+
 ```bash
 # Search by parameter
 curl "http://localhost:8080/Patient?name=Doe"
@@ -442,7 +447,8 @@ curl "http://localhost:8080/Patient?_count=10&_offset=0"
 curl "http://localhost:8080/Observation?patient=123&_sort=-date"
 curl "http://localhost:8080/Patient?_sort=family,birthdate"
 
-# Leave Bundle.total out
+# Leave Bundle.total out — and skip counting: the fast way to page through
+# searches that match millions of resources
 curl "http://localhost:8080/Observation?patient=123&_total=none"
 
 # Summary and elements
@@ -811,10 +817,10 @@ the broadest searches (50k matches, `_has` over 5k sources) about 30ms.
 ## Roadmap
 
 **Toward 1.0** (tracked in [#11](https://github.com/fu-foo/fhir-sazare/issues/11))
-- Search index v2: integer keys and set operations inside SQLite — page-sized work at
-  10M resources, a much smaller index ([design](design/search-index-v2.md))
-- Index rebuilds in the background: no startup wait after an upgrade
-- Built-in search parameters derived from the R4 definitions — complete coverage
+- Done: search index v2 — integer keys and set operations inside SQLite, page-sized work
+  at 10M resources, a tenth of the index size ([design](design/search-index-v2.md))
+- Done: index rebuilds in the background — no startup wait after an upgrade
+- Done: built-in search parameters derived from the R4 definitions
   ([#34](https://github.com/fu-foo/fhir-sazare/issues/34))
 - Stability policy: what 1.0 promises
 - End-to-end and security review before the release

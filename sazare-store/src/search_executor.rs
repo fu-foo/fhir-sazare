@@ -147,14 +147,25 @@ impl<'a> SearchExecutor<'a> {
             let search_param = parts[1];
             let target_filter = parts.get(2).copied();
 
-            // Resolve the JSON element the parameter reads (registry first, then
-            // the parameter name itself / its choice + camelCase fallbacks).
-            let element = registry
-                .reference_element(source_type, search_param)
-                .unwrap_or_else(|| search_param.to_string());
+            // A known parameter: its references exactly as the index extracts
+            // them (any extraction, FHIRPath included). Otherwise the element
+            // named like the parameter (choice + camelCase fallbacks).
+            let known = registry
+                .get_definitions(source_type)
+                .iter()
+                .any(|d| d.param_type == SearchParamType::Reference && (d.name == search_param || d.aliases.iter().any(|a| a == search_param)));
 
             for resource in resources {
-                for reference in extract_references(resource, &element) {
+                let references: Vec<String> = if known {
+                    crate::IndexBuilder::extract_indices_with_registry(registry, source_type, resource)
+                        .into_iter()
+                        .filter(|(n, t, _, _)| n == search_param && t == "reference")
+                        .map(|(_, _, v, _)| v)
+                        .collect()
+                } else {
+                    extract_references(resource, search_param)
+                };
+                for reference in references {
                     if let Some((ref_type, ref_id)) = parse_reference(&reference) {
                         if let Some(t) = target_filter
                             && t != ref_type

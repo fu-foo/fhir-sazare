@@ -52,6 +52,10 @@ pub enum ExtractionMode {
     /// `path[0]` is the extension container ("extension"), `path[1]` the
     /// extension URL; yields the extension's `valueDateTime`.
     ExtensionDate,
+    /// `Patient.deceased.exists() and Patient.deceased != false`: a token
+    /// `true` or `false` for every Patient (`deceasedBoolean: true` or any
+    /// `deceasedDateTime` is deceased).
+    Deceased,
     /// A FHIRPath expression evaluated against the resource. Used by custom
     /// search parameters loaded at runtime from a `SearchParameter` resource;
     /// `path` is unused. See [`crate::fhirpath`].
@@ -71,6 +75,41 @@ pub struct SearchParamDef {
     pub extraction: ExtractionMode,
     /// Alias names that should also be indexed (e.g. "patient" for "subject")
     pub aliases: Vec<String>,
+}
+
+/// The FHIR R4 search parameters (`search-parameters/r4.tsv`, generated from
+/// the R4 `search-parameters.json`) as (base type, definition). Expressions
+/// the FHIRPath subset can't evaluate are left out, except the ones with a
+/// dedicated extraction.
+fn r4_definitions() -> Vec<(String, SearchParamDef)> {
+    const R4: &str = include_str!("../search-parameters/r4.tsv");
+    let mut out = Vec::new();
+    for line in R4.lines().filter(|l| !l.starts_with('#') && !l.is_empty()) {
+        let mut cols = line.splitn(4, '\t');
+        let (Some(base), Some(code), Some(ty), Some(expr)) = (cols.next(), cols.next(), cols.next(), cols.next()) else {
+            continue;
+        };
+        let param_type = match ty {
+            "token" => SearchParamType::Token,
+            "string" => SearchParamType::String,
+            "date" => SearchParamType::Date,
+            "reference" => SearchParamType::Reference,
+            "number" => SearchParamType::Number,
+            _ => continue,
+        };
+        let extraction = match (base, code) {
+            ("Patient", "deceased") => ExtractionMode::Deceased,
+            _ => match crate::fhirpath::parse(expr) {
+                Ok(e) => ExtractionMode::FhirPath(e),
+                Err(_) => continue,
+            },
+        };
+        out.push((
+            base.to_string(),
+            SearchParamDef { name: code.to_string(), param_type, path: Vec::new(), extraction, aliases: Vec::new() },
+        ));
+    }
+    out
 }
 
 /// Registry of search parameter definitions per resource type
@@ -125,6 +164,17 @@ impl SearchParamRegistry {
                     extraction: mode.clone(),
                     aliases: vec![],
                 });
+            }
+        }
+
+        // Every other R4 parameter of these types (of a type sazare indexes),
+        // from the R4 definitions, evaluated as FHIRPath. The hand-written
+        // definitions above take precedence.
+        for (base, def) in r4_definitions() {
+            if let Some(defs) = definitions.get_mut(base.as_str())
+                && !defs.iter().any(|d| d.name == def.name || d.aliases.contains(&def.name))
+            {
+                defs.push(def);
             }
         }
 
@@ -219,21 +269,6 @@ impl SearchParamRegistry {
             self.definitions.entry(base).or_default().push(def.clone());
         }
         Ok(())
-    }
-
-    /// The top-level JSON element a reference search parameter reads, used to
-    /// resolve `_include`/`_revinclude` where the parameter name differs from the
-    /// element (e.g. `Observation:patient` → `subject`, `general-practitioner` →
-    /// `generalPractitioner`). Matches by name or alias; returns the first path
-    /// segment.
-    pub fn reference_element(&self, resource_type: &str, param_name: &str) -> Option<String> {
-        let defs = self.get_definitions(resource_type);
-        for def in defs {
-            if def.name == param_name || def.aliases.iter().any(|a| a == param_name) {
-                return def.path.first().cloned();
-            }
-        }
-        None
     }
 
     /// Look up the SearchParamType for a given resource type and parameter name.
@@ -1585,6 +1620,33 @@ fn common_fhir_params() -> Vec<SearchParamDef> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_r4_parameter_of_a_registered_type_is_defined() {
+        // Of the types sazare indexes (token, string, date, reference,
+        // number): the R4 definitions fill what the hand-written lists miss.
+        let r = SearchParamRegistry::new();
+        let mut missing = Vec::new();
+        let mut checked = 0;
+        for (base, def) in r4_definitions() {
+            if !r.has_resource_type(&base) {
+                continue;
+            }
+            checked += 1;
+            let defs = r.get_definitions(&base);
+            if !defs.iter().any(|d| d.name == def.name || d.aliases.contains(&def.name)) {
+                missing.push(format!("{base}.{}", def.name));
+            }
+        }
+        assert!(checked > 400, "R4 definitions not loaded ({checked})");
+        assert!(missing.is_empty(), "missing: {missing:?}");
+        // Every R4 row of a supported type compiled (none silently dropped).
+        let rows = include_str!("../search-parameters/r4.tsv")
+            .lines()
+            .filter(|l| !l.starts_with('#') && ["token", "string", "date", "reference", "number"].contains(&l.split('\t').nth(2).unwrap_or("")))
+            .count();
+        assert_eq!(r4_definitions().len(), rows, "an R4 expression failed to compile");
+    }
 
     #[test]
     fn test_registry_has_all_resource_types() {

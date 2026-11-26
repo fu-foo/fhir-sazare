@@ -28,6 +28,15 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
 - `_total=none` now skips counting the matches (the next link still appears when there is
   a next page): the cheap way to page through searches matching millions of resources.
 
+### Added
+- **Every R4 search parameter of the supported resource types** (of type token, string,
+  date, reference and number): the R4 definitions are bundled and fill what the built-in
+  lists lacked — 211 parameters, among them Patient `address*`, `telecom`, `phone`,
+  `email`, `active`, `deceased`, `language` (#34). They are advertised in
+  `GET /metadata`; existing data is indexed for them by the background rebuild.
+- `_include` works for every reference parameter, including those defined by an
+  expression (e.g. `Appointment:patient`).
+
 ### Behavior changes
 - Unsorted search results come back in index order (insertion order for an unfiltered
   search) instead of by id. The order of an unsorted search is unspecified; use `_sort`.
