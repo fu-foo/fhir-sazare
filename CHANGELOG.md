@@ -6,6 +6,11 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
 
 ## Unreleased
 
+### Fixed
+- The `latest` Docker image follows releases only. Every push to `main` used to rebuild
+  it, so `latest` (used by `docker-compose.yml`) could be an unreleased build; the newest
+  `main` is now the `edge` tag.
+
 ### Added
 - **Quantity search parameters**: `[prefix]number|system|code`, `number||code` (the code
   or the unit, any system) or the number alone, with FHIR's implicit precision and the

@@ -128,6 +128,16 @@ tar xzf sazare-server-macos-arm64.tar.gz
 .\sazare-server.exe start --demo --open
 ```
 
+**Docker** (`linux/amd64`, `linux/arm64`): `docker compose up` with the bundled
+[`docker-compose.yml`](docker-compose.yml), or
+
+```bash
+docker run -p 8080:8080 -v sazare-data:/data ghcr.io/fu-foo/fhir-sazare:0.16
+```
+
+Tags: `latest` is the newest release, `0.16` the newest 0.16.x, `0.16.0` exactly that
+release, and `edge` the newest `main` (unreleased).
+
 `start` runs the server in the background and returns once it is up;
 `--demo` pre-loads a few sample patients with vitals, a condition, an encounter,
 and a prescription; `--open` launches the built-in dashboard in your browser.
