@@ -6,6 +6,8 @@ pub mod sqlite_index;
 pub mod sqlite_audit;
 pub mod search_executor;
 pub mod index_builder;
+#[cfg(test)]
+mod differential_tests;
 
 pub use backup::backup_database;
 pub use error::{Result, StoreError};

@@ -18,6 +18,13 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
   blocking` restores the old wait; `manual` rebuilds only on `POST /$reindex`.
 - `POST /$reindex` starts a background rebuild and answers 202 (409 while one runs).
 
+### Tests
+- Differential search tests: generated datasets (case and accent variants, repeated and
+  missing values, open periods, references) × generated queries (tokens in all four forms,
+  string modifiers, date prefixes, `:missing`, `:not`, OR lists, chains, `_has`, `_sort`,
+  paging) are checked against a reference model of the FHIR search rules — the net under
+  the search index v2 rewrite. Verified to catch planted errors in each area.
+
 ### Performance
 - Searches (including `_summary=count`, `_include` / `_revinclude` and `$everything`) run on
   a pool of read-only index connections, off the async worker threads, waiting for a free
