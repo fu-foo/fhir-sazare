@@ -24,6 +24,7 @@ async fn start_test_server() -> (String, TempDir) {
     let state = Arc::new(AppState {
         store,
         index: Mutex::new(index),
+        index_readers: sazare_store::IndexReaders::open(temp_dir.path().join("search_index.sqlite"), 2).unwrap(),
         audit: Arc::new(Mutex::new(audit)),
         config: ServerConfig::default(),
         profile_registry: ProfileRegistry::new(),
@@ -96,6 +97,7 @@ async fn test_webhook_task_completed_fires() {
     let state = Arc::new(AppState {
         store: SqliteStore::open(temp_dir.path().join("r.sqlite")).unwrap(),
         index: Mutex::new(SearchIndex::open(temp_dir.path().join("i.sqlite")).unwrap()),
+        index_readers: sazare_store::IndexReaders::open(temp_dir.path().join("i.sqlite"), 2).unwrap(),
         audit: Arc::new(Mutex::new(AuditLog::open(temp_dir.path().join("a.sqlite")).unwrap())),
         config,
         profile_registry: ProfileRegistry::new(),
@@ -425,6 +427,7 @@ async fn test_smart_backend_services_token_flow() {
     let state = Arc::new(AppState {
         store: SqliteStore::open(temp_dir.path().join("r.sqlite")).unwrap(),
         index: Mutex::new(SearchIndex::open(temp_dir.path().join("i.sqlite")).unwrap()),
+        index_readers: sazare_store::IndexReaders::open(temp_dir.path().join("i.sqlite"), 2).unwrap(),
         audit: Arc::new(Mutex::new(AuditLog::open(temp_dir.path().join("a.sqlite")).unwrap())),
         config,
         profile_registry: ProfileRegistry::new(),

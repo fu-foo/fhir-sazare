@@ -387,9 +387,18 @@ async fn serve(args: Vec<String>) {
 
     let app_names = apps::discover_app_names(&config);
 
+    // Read-only index connections for searches (after any startup rebuild, so
+    // they open the finished index).
+    let readers = std::thread::available_parallelism().map(|n| n.get().clamp(2, 8)).unwrap_or(4);
+    let index_readers = sazare_store::IndexReaders::open(config.search_index_db_path(), readers)
+        .unwrap_or_else(|e| {
+            tracing::warn!("Search index readers unavailable ({e}); searches share the writer connection");
+            sazare_store::IndexReaders::none()
+        });
     let state = Arc::new(AppState {
         store,
         index: Mutex::new(index),
+        index_readers,
         audit: Arc::new(Mutex::new(audit_log)),
         config: config.clone(),
         profile_registry,

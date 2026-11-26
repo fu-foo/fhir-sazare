@@ -10,7 +10,7 @@ pub mod index_builder;
 pub use backup::backup_database;
 pub use error::{Result, StoreError};
 pub use sqlite_store::SqliteStore;
-pub use sqlite_index::{IndexUpdate, ResourceText, SearchIndex};
+pub use sqlite_index::{IndexReaders, IndexUpdate, ResourceText, SearchIndex};
 pub use sqlite_audit::{AuditLog, Operation};
 pub use search_executor::SearchExecutor;
 pub use index_builder::{resource_text, IndexBuilder, INDEX_FORMAT};

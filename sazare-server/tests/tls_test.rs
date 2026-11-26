@@ -18,6 +18,7 @@ async fn start_https() -> (String, TempDir) {
     let state = Arc::new(AppState {
         store: SqliteStore::open(dir.path().join("r.sqlite")).unwrap(),
         index: Mutex::new(SearchIndex::open(dir.path().join("i.sqlite")).unwrap()),
+        index_readers: sazare_store::IndexReaders::open(dir.path().join("i.sqlite"), 2).unwrap(),
         audit: Arc::new(Mutex::new(AuditLog::open(dir.path().join("a.sqlite")).unwrap())),
         config: ServerConfig::default(),
         profile_registry: ProfileRegistry::new(),

@@ -73,39 +73,39 @@ pub async fn patient_everything(
 
     // Every compartment type the caller's scopes let them read, found
     // through the fields that link it to the Patient.
-    let index = state.index.lock().await;
-    let patient_ref = format!("Patient/{}", patient_id);
-    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
-    let mut found: Vec<Value> = Vec::new();
-
-    for comp_type in state.compartment_def.resource_types() {
-        if comp_type == "Patient" {
-            continue;
-        }
-        if auth_user.as_ref().is_some_and(|u| u.grant(comp_type, 'r').is_none()) {
-            continue;
-        }
-        let Some(ref_fields) = state.compartment_def.get_reference_fields(comp_type) else {
-            continue;
-        };
-        for field in ref_fields {
-            let ids = index
-                .search_reference(comp_type, field, &patient_ref)
-                .unwrap_or_default();
-            for id in ids {
-                // Each resource once (e.g. Task may match on both "for" and "owner").
-                if !seen.insert(format!("{comp_type}/{id}")) {
-                    continue;
-                }
-                if let Ok(Some(data)) = state.store.get(comp_type, &id)
-                    && let Ok(resource) = serde_json::from_slice::<Value>(&data)
-                {
-                    found.push(resource);
+    let (au, pid) = (auth_user.clone(), patient_id.clone());
+    let found: Vec<Value> = crate::with_index_reader(&state, move |state, index| {
+        let patient_ref = format!("Patient/{}", pid);
+        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut found: Vec<Value> = Vec::new();
+        for comp_type in state.compartment_def.resource_types() {
+            if comp_type == "Patient" {
+                continue;
+            }
+            if au.as_ref().is_some_and(|u| u.grant(comp_type, 'r').is_none()) {
+                continue;
+            }
+            let Some(ref_fields) = state.compartment_def.get_reference_fields(comp_type) else {
+                continue;
+            };
+            for field in ref_fields {
+                let ids = index.search_reference(comp_type, field, &patient_ref).unwrap_or_default();
+                for id in ids {
+                    // Each resource once (e.g. Task may match on both "for" and "owner").
+                    if !seen.insert(format!("{comp_type}/{id}")) {
+                        continue;
+                    }
+                    if let Ok(Some(data)) = state.store.get(comp_type, &id)
+                        && let Ok(resource) = serde_json::from_slice::<Value>(&data)
+                    {
+                        found.push(resource);
+                    }
                 }
             }
         }
-    }
-    drop(index);
+        found
+    })
+    .await;
 
     // Same rules as `_include`: scopes and the patient compartment.
     for resource in filter_mixed_by_compartment(auth_user.as_ref(), &state.compartment_def, found) {

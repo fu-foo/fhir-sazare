@@ -218,17 +218,15 @@ async fn do_search(
 
     // If _summary=count, return only the count
     if query.summary == Some(sazare_core::SummaryMode::Count) {
-        let index = state.index.lock().await;
-        let executor = SearchExecutor::new(&state.store, &index);
-        let ids = executor.search(&resource_type, &query).map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!(OperationOutcome::storage_error(e))),
-            )
-        })?;
-
-        // A compartment-restricted user counts only what they may see.
-        let ids = crate::visible_matches(&state, &executor, auth_user.as_ref(), &resource_type, ids).map_err(|e| {
+        let (q, rt, au) = (query.clone(), resource_type.clone(), auth_user.clone());
+        let ids = crate::with_index_reader(&state, move |st, index| {
+            let executor = SearchExecutor::new(&st.store, index);
+            let ids = executor.search(&rt, &q)?;
+            // A compartment-restricted user counts only what they may see.
+            crate::visible_matches(st, &executor, au.as_ref(), &rt, ids)
+        })
+        .await
+        .map_err(|e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!(OperationOutcome::storage_error(e))),
@@ -246,60 +244,16 @@ async fn do_search(
     // advertised it, but every match used to be returned), capped at MAX_COUNT.
     query.count = Some(query.count.unwrap_or(DEFAULT_COUNT).min(MAX_COUNT));
 
-    let index = state.index.lock().await;
-    let executor = SearchExecutor::new(&state.store, &index);
-
-    let storage_err = |e: String| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!(OperationOutcome::storage_error(e))),
-        )
-    };
-    // A compartment-restricted user's matches are narrowed to the compartment
-    // *before* paging, so `total`, the page and the `next` link describe what
-    // they may see (filtering a page afterwards loses later matches).
-    let (ids, total) = if auth_user.as_ref().is_some_and(|u| u.compartment_restricted(&resource_type, 's')) {
-        let mut all = query.clone();
-        all.count = None;
-        all.offset = None;
-        let (ids, _) = executor.search_with_total(&resource_type, &all).map_err(storage_err)?;
-        let mut ids = crate::visible_matches(&state, &executor, auth_user.as_ref(), &resource_type, ids)
-            .map_err(storage_err)?;
-        let total = ids.len();
-        ids.drain(..query.offset.unwrap_or(0).min(ids.len()));
-        ids.truncate(query.count.unwrap_or(DEFAULT_COUNT));
-        (ids, total)
-    } else {
-        executor.search_with_total(&resource_type, &query).map_err(storage_err)?
-    };
-
-    let resources = executor.load_resources(&resource_type, &ids).map_err(storage_err)?;
-
-    // Compartment filtering (already applied above; kept as a safety net).
-    let mut resources = filter_by_compartment(auth_user.as_ref(), &state.compartment_def, &resource_type, resources);
-
-    // Included resources are held to the same compartment rule as matches —
-    // a resource outside the compartment can't be reached through a
-    // reference (or reverse reference) from one inside it.
-    // Process _include
-    let included = if !query.include.is_empty() {
-        executor
-            .process_includes(&resources, &query.include, &state.search_param_registry)
-            .unwrap_or_default()
-    } else {
-        Vec::new()
-    };
-
-    // Process _revinclude
-    let revincluded = if !query.revinclude.is_empty() {
-        executor
-            .process_revincludes(&resources, &resource_type, &query.revinclude)
-            .unwrap_or_default()
-    } else {
-        Vec::new()
-    };
-    let included = filter_mixed_by_compartment(auth_user.as_ref(), &state.compartment_def, included);
-    let revincluded = filter_mixed_by_compartment(auth_user.as_ref(), &state.compartment_def, revincluded);
+    let (q, rt, au) = (query.clone(), resource_type.clone(), auth_user.clone());
+    let (mut resources, total, included, revincluded) =
+        crate::with_index_reader(&state, move |st, index| run_search(st, index, &rt, &q, au.as_ref()))
+            .await
+            .map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!(OperationOutcome::storage_error(e))),
+                )
+            })?;
 
     // Apply _summary / _elements filtering
     for resource in &mut resources {
@@ -422,4 +376,59 @@ async fn do_search(
 
 fn bad_request(msg: String) -> (StatusCode, Json<Value>) {
     (StatusCode::BAD_REQUEST, Json(json!(OperationOutcome::error(IssueType::Invalid, msg))))
+}
+
+/// The index-side part of a search: the page of matches, the total, and the
+/// included / revincluded resources — each already held to the caller's
+/// compartment and scopes. Synchronous: runs on a reader in `spawn_blocking`.
+#[allow(clippy::type_complexity)]
+fn run_search(
+    state: &AppState,
+    index: &sazare_store::SearchIndex,
+    resource_type: &str,
+    query: &sazare_core::SearchQuery,
+    auth_user: Option<&AuthUser>,
+) -> Result<(Vec<Value>, usize, Vec<Value>, Vec<Value>), String> {
+    let executor = SearchExecutor::new(&state.store, index);
+    // A compartment-restricted user's matches are narrowed to the compartment
+    // *before* paging, so `total`, the page and the `next` link describe what
+    // they may see (filtering a page afterwards loses later matches).
+    let (ids, total) = if auth_user.is_some_and(|u| u.compartment_restricted(resource_type, 's')) {
+        let mut all = query.clone();
+        all.count = None;
+        all.offset = None;
+        let (ids, _) = executor.search_with_total(resource_type, &all)?;
+        let mut ids = crate::visible_matches(state, &executor, auth_user, resource_type, ids)?;
+        let total = ids.len();
+        ids.drain(..query.offset.unwrap_or(0).min(ids.len()));
+        ids.truncate(query.count.unwrap_or(DEFAULT_COUNT));
+        (ids, total)
+    } else {
+        executor.search_with_total(resource_type, query)?
+    };
+
+    let resources = executor.load_resources(resource_type, &ids)?;
+    // Compartment filtering (already applied above; kept as a safety net).
+    let resources = filter_by_compartment(auth_user, &state.compartment_def, resource_type, resources);
+
+    // Included resources are held to the same compartment rule as matches —
+    // a resource outside the compartment can't be reached through a
+    // reference (or reverse reference) from one inside it.
+    let included = if !query.include.is_empty() {
+        executor
+            .process_includes(&resources, &query.include, &state.search_param_registry)
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    let revincluded = if !query.revinclude.is_empty() {
+        executor
+            .process_revincludes(&resources, resource_type, &query.revinclude)
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    let included = filter_mixed_by_compartment(auth_user, &state.compartment_def, included);
+    let revincluded = filter_mixed_by_compartment(auth_user, &state.compartment_def, revincluded);
+    Ok((resources, total, included, revincluded))
 }

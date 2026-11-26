@@ -278,6 +278,20 @@ impl SearchIndex {
         Ok(Self { conn, text, scope: std::cell::RefCell::new(None) })
     }
 
+    /// Open an existing index read-only, for searches running beside the
+    /// writer (WAL: readers see the last committed state and never block it).
+    /// Temp tables (the search scope) still work on such a connection.
+    pub fn open_read_only(path: impl AsRef<Path>) -> Result<Self> {
+        use rusqlite::OpenFlags;
+        let path = path.as_ref();
+        let flags = OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX | OpenFlags::SQLITE_OPEN_URI;
+        let conn = Connection::open_with_flags(path, flags)?;
+        conn.busy_timeout(std::time::Duration::from_secs(5))?;
+        let text = Connection::open_with_flags(path.with_extension("fts.sqlite"), flags)?;
+        text.busy_timeout(std::time::Duration::from_secs(5))?;
+        Ok(Self { conn, text, scope: std::cell::RefCell::new(None) })
+    }
+
     /// Add an index entry
     pub fn add_index(
         &self,
@@ -986,6 +1000,58 @@ fn number_with_precision(value: &str) -> Option<(f64, f64)> {
     Some((v, 0.5 * 10f64.powi(exp - decimals)))
 }
 
+/// A pool of read-only [`SearchIndex`] connections for searches, so a slow
+/// search (an exact total over millions of matches) doesn't hold the writer
+/// — or other searches — up. Empty for an in-memory index (callers then use
+/// the writer).
+pub struct IndexReaders {
+    pool: Vec<std::sync::Mutex<SearchIndex>>,
+    next: std::sync::atomic::AtomicUsize,
+}
+
+impl IndexReaders {
+    /// `n` read-only connections to the index at `path` (which must exist:
+    /// open the writer first).
+    pub fn open(path: impl AsRef<Path>, n: usize) -> Result<Self> {
+        let path = path.as_ref();
+        let mut pool = Vec::new();
+        if path.as_os_str() != ":memory:" {
+            for _ in 0..n {
+                pool.push(std::sync::Mutex::new(SearchIndex::open_read_only(path)?));
+            }
+        }
+        Ok(Self { pool, next: std::sync::atomic::AtomicUsize::new(0) })
+    }
+
+    /// No readers: every search uses the writer.
+    pub fn none() -> Self {
+        Self { pool: Vec::new(), next: std::sync::atomic::AtomicUsize::new(0) }
+    }
+
+    /// A reader to use now: the first free one, else (all busy) wait for the
+    /// next in turn. `None` when the pool is empty.
+    pub fn get(&self) -> Option<std::sync::MutexGuard<'_, SearchIndex>> {
+        if self.pool.is_empty() {
+            return None;
+        }
+        for r in &self.pool {
+            if let Ok(g) = r.try_lock() {
+                return Some(g);
+            }
+        }
+        let i = self.next.fetch_add(1, std::sync::atomic::Ordering::Relaxed) % self.pool.len();
+        Some(self.pool[i].lock().unwrap_or_else(|e| e.into_inner()))
+    }
+
+    pub fn len(&self) -> usize {
+        self.pool.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.pool.is_empty()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1389,3 +1455,4 @@ mod tests {
         }
     }
 }
+

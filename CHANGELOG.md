@@ -4,6 +4,14 @@ All notable changes to sazare. Versions follow [Semantic Versioning](https://sem
 until 1.0, a minor version (0.x.0) may change behavior — those changes are listed under
 **Behavior changes**. See [UPGRADING.md](UPGRADING.md) for how to upgrade.
 
+## Unreleased
+
+### Performance
+- Searches (including `_summary=count`, `_include` / `_revinclude` and `$everything`) run on
+  a pool of read-only index connections, off the async worker threads. A long search —
+  an exact total over millions of matches — no longer holds up other searches or the
+  writer, and a long write (an `$import` batch) no longer holds up searches.
+
 ## 0.15.1 — 2026-11-26
 
 ### Fixed

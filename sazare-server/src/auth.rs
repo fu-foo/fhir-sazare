@@ -946,6 +946,7 @@ mod tests {
             index: tokio::sync::Mutex::new(
                 sazare_store::SearchIndex::open(&idx_path).unwrap(),
             ),
+            index_readers: sazare_store::IndexReaders::open(&idx_path, 1).unwrap(),
             audit: Arc::new(tokio::sync::Mutex::new(
                 sazare_store::AuditLog::open(&audit_path).unwrap(),
             )),

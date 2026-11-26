@@ -44,6 +44,8 @@ use tower_http::{
 pub struct AppState {
     pub store: SqliteStore,
     pub index: Mutex<SearchIndex>,
+    /// Read-only connections for searches (empty: searches use `index`).
+    pub index_readers: sazare_store::IndexReaders,
     pub audit: Arc<Mutex<AuditLog>>,
     pub config: config::ServerConfig,
     pub profile_registry: ProfileRegistry,
@@ -84,6 +86,27 @@ pub(crate) fn http_client() -> &'static reqwest::Client {
             .build()
             .unwrap_or_default()
     })
+}
+
+/// Run a search-side closure on a read-only index connection, off the async
+/// workers: SQLite calls block, and a long one (an exact total over millions
+/// of matches) must not hold up other requests — nor, with a reader, the
+/// writer. Without readers (in-memory index) the writer connection is used.
+pub async fn with_index_reader<T, F>(state: &Arc<AppState>, f: F) -> T
+where
+    T: Send + 'static,
+    F: FnOnce(&AppState, &SearchIndex) -> T + Send + 'static,
+{
+    let st = state.clone();
+    tokio::task::spawn_blocking(move || match st.index_readers.get() {
+        Some(reader) => f(&st, &reader),
+        None => {
+            let writer = st.index.blocking_lock();
+            f(&st, &writer)
+        }
+    })
+    .await
+    .expect("search task panicked")
 }
 
 /// The subset of `ids` (matches of a conditional interaction) the caller may
