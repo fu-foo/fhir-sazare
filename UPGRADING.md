@@ -41,6 +41,11 @@ into `data_dir`, delete the two `search_index*` files, start the older binary).
 
 ## Version notes
 
+### To 0.14.0
+
+- Nothing to do. Startup no longer counts the index or refreshes SQLite statistics, so
+  large databases (millions of resources) start in under a second instead of minutes.
+
 ### To 0.13.0 (security release)
 
 - Docker: the server now runs as user `sazare` (uid 10001). Existing volumes are
