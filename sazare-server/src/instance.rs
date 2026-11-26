@@ -219,6 +219,9 @@ pub fn start(config: &ServerConfig, forwarded: &[String], open: bool) -> i32 {
     let mut cmd = std::process::Command::new(exe);
     cmd.arg("run")
         .args(forwarded)
+        // The server writes its log there itself, turning it over as it grows
+        // (stdout / stderr stay on the file for anything printed directly).
+        .env(LOG_FILE_ENV, &paths.log)
         .stdin(std::process::Stdio::null())
         .stdout(log.try_clone().map(std::process::Stdio::from).unwrap_or_else(|_| std::process::Stdio::null()))
         .stderr(std::process::Stdio::from(log));
@@ -393,10 +396,65 @@ fn open_log(path: &Path) -> std::io::Result<std::fs::File> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    if std::fs::metadata(path).is_ok_and(|m| m.len() > 50 * 1024 * 1024) {
+    if std::fs::metadata(path).is_ok_and(|m| m.len() > LOG_MAX) {
         let _ = std::fs::rename(path, path.with_extension("log.1"));
     }
     std::fs::OpenOptions::new().create(true).append(true).open(path)
+}
+
+/// Set by `start` for the server it runs: the log file to write.
+pub const LOG_FILE_ENV: &str = "SAZARE_LOG_FILE";
+/// A log file this large is turned over (`.log.1`, the one before replaced).
+const LOG_MAX: u64 = 50 * 1024 * 1024;
+
+/// The log of a background server: appended to, and turned over when it
+/// reaches [`LOG_MAX`] — so a server that runs for months keeps at most two
+/// files' worth, not one that grows without end.
+pub struct RotatingLog {
+    path: std::path::PathBuf,
+    max: u64,
+    file: std::sync::Mutex<(std::fs::File, u64)>,
+}
+
+impl RotatingLog {
+    pub fn open(path: &Path) -> std::io::Result<Self> {
+        Self::with_max(path, LOG_MAX)
+    }
+
+    fn with_max(path: &Path, max: u64) -> std::io::Result<Self> {
+        let file = open_log(path)?;
+        let len = file.metadata().map(|m| m.len()).unwrap_or(0);
+        Ok(Self { path: path.to_path_buf(), max, file: std::sync::Mutex::new((file, len)) })
+    }
+
+    fn turn_over(&self, file: &mut (std::fs::File, u64)) -> std::io::Result<()> {
+        let _ = std::fs::rename(&self.path, self.path.with_extension("log.1"));
+        *file = (std::fs::OpenOptions::new().create(true).append(true).open(&self.path)?, 0);
+        Ok(())
+    }
+}
+
+impl std::io::Write for &RotatingLog {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let mut file = self.file.lock().unwrap_or_else(|e| e.into_inner());
+        if file.1 > 0 && file.1 + buf.len() as u64 > self.max {
+            self.turn_over(&mut file)?;
+        }
+        file.0.write_all(buf)?;
+        file.1 += buf.len() as u64;
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.file.lock().unwrap_or_else(|e| e.into_inner()).0.flush()
+    }
+}
+
+impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for RotatingLog {
+    type Writer = &'a RotatingLog;
+    fn make_writer(&'a self) -> Self::Writer {
+        self
+    }
 }
 
 fn print_tail(path: &Path, lines: usize) {
@@ -488,5 +546,28 @@ mod tests {
         assert!(send("wrong").await.starts_with("HTTP/1.1 403"));
         assert!(send("tok123").await.starts_with("HTTP/1.1 202"));
         tokio::time::timeout(Duration::from_secs(2), stop.notified()).await.expect("stop notified");
+    }
+}
+
+#[cfg(test)]
+mod rotating_log_tests {
+    use super::*;
+    use std::io::Write;
+
+    #[test]
+    fn the_log_is_turned_over_as_it_grows() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("logs/sazare.log");
+        let log = RotatingLog::with_max(&path, 100).unwrap();
+        let line = [b'x'; 39];
+        for _ in 0..10 {
+            (&log).write_all(&line).unwrap();
+        }
+        let now = std::fs::metadata(&path).unwrap().len();
+        let before = std::fs::metadata(path.with_extension("log.1")).unwrap().len();
+        assert!(now <= 100 && before <= 100, "{now} {before}");
+        assert_eq!((now + before) % 39, 0, "whole writes in each file");
+        // Only two files, ever.
+        assert_eq!(std::fs::read_dir(path.parent().unwrap()).unwrap().count(), 2);
     }
 }

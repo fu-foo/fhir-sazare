@@ -87,10 +87,20 @@ jobs:
         with:
           path: artifacts
 
+      # One file listing every archive's SHA-256, for `sha256sum -c`.
+      - name: Checksums
+        run: |
+          mkdir dist
+          find artifacts -type f \( -name '*.tar.gz' -o -name '*.zip' \) -exec cp {} dist/ \;
+          cd dist
+          sha256sum *.tar.gz *.zip > SHA256SUMS
+          cat SHA256SUMS
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
           files: |
-            artifacts/**/*.tar.gz
-            artifacts/**/*.zip
+            dist/*.tar.gz
+            dist/*.zip
+            dist/SHA256SUMS

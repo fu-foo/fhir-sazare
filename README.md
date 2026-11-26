@@ -123,6 +123,9 @@ tar xzf sazare-server-macos-arm64.tar.gz
 ./sazare-server start --demo --open
 ```
 
+Each release also has `SHA256SUMS` (check a download with `sha256sum -c SHA256SUMS
+--ignore-missing`).
+
 ```powershell
 # Windows: unzip, then
 .\sazare-server.exe start --demo --open
@@ -856,6 +859,12 @@ support is R6, once it is published and in use. Search parameters and the index 
 designed so that a version is mostly data (which definitions are loaded), not code.
 
 ---
+
+## Security
+
+Report vulnerabilities privately — see [SECURITY.md](SECURITY.md), which also lists what
+a deployment must take care of (authentication is off by default; TLS; the data
+directory).
 
 ## Supporting
 

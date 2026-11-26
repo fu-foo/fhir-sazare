@@ -108,14 +108,22 @@ fn main() {
 
 fn init_tracing() {
     use std::io::IsTerminal;
-    tracing_subscriber::registry()
-        // Colors only on a terminal (not in logs/sazare.log of a background server).
-        .with(tracing_subscriber::fmt::layer().with_ansi(std::io::stdout().is_terminal()))
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-        )
-        .init();
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+    // A background server (`start`) writes its log file itself, turning it over.
+    let log_file = std::env::var_os(instance::LOG_FILE_ENV)
+        .and_then(|p| instance::RotatingLog::open(std::path::Path::new(&p)).ok());
+    match log_file {
+        Some(log) => tracing_subscriber::registry()
+            .with(tracing_subscriber::fmt::layer().with_ansi(false).with_writer(log))
+            .with(filter)
+            .init(),
+        // Colors only on a terminal.
+        None => tracing_subscriber::registry()
+            .with(tracing_subscriber::fmt::layer().with_ansi(std::io::stdout().is_terminal()))
+            .with(filter)
+            .init(),
+    }
 }
 
 /// `auth hash-password [user]` / `auth new-api-key [name]`: print the lines to

@@ -45,7 +45,13 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
 - A database written by a newer sazare is refused at startup (migrations are
   forward-only) instead of being opened.
 
+- A background server (`sazare-server start`) turns its log over at 50 MB while it runs
+  (`logs/sazare.log.1` holds the one before). It used to do so only when started, so a
+  server that ran for months grew one file without end.
+
 ### Added
+- `SECURITY.md`: how to report a vulnerability, and what a deployment must take care of.
+- Releases include `SHA256SUMS` for the downloads.
 - **Quantity search parameters**: `[prefix]number|system|code`, `number||code` (the code
   or the unit, any system) or the number alone, with FHIR's implicit precision and the
   comparison prefixes, `:missing` and `_sort`. Quantities, Ages, Durations and Money are
