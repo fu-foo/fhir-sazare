@@ -47,7 +47,14 @@ CREATE INDEX IF NOT EXISTS v_ref_text_r ON v_ref_text (rid, pid);
 const VALUE_TABLES: [&str; 6] = ["v_token", "v_string", "v_date", "v_number", "v_ref", "v_ref_text"];
 
 /// A probe count at or above this means "large": not worth counting further.
+#[cfg(not(test))]
 const PROBE_CAP: i64 = 10_001;
+/// Small in tests, so the differential tests reach the large-set paths.
+#[cfg(test)]
+const PROBE_CAP: i64 = 6;
+
+/// Cap when sizing large sets to choose between probing and intersecting.
+const SIZE_CAP: i64 = 4_000_001;
 
 /// A sorted search over at most this many matches gathers their keys and
 /// sorts; above it, the sort key's index is walked in order.
@@ -100,6 +107,35 @@ struct Criterion {
     probe: Sql,
     seekable: bool,
     rank: u8,
+    /// `set` is an equality seek (token code, reference, `:exact`): a
+    /// contiguous index range, cheap to merge. Ranges (dates, prefixes) aren't.
+    equality: bool,
+    /// `set` yields each rid at most once (so a query it drives needs no
+    /// `DISTINCT`): a single condition on a parameter no resource has two
+    /// values for, a `UNION`, or a set taken from the key table.
+    unique: bool,
+}
+
+/// A compiled query: rids (possibly repeated unless `distinct` is false).
+struct Compiled {
+    sql: Sql,
+    /// The rows can repeat a rid; select `DISTINCT`.
+    distinct: bool,
+    /// The query has no criteria (every resource of the type).
+    unfiltered: bool,
+    /// Distinct matches for counting, when several criteria are each large:
+    /// their sets intersected (a merge, not a probe per row), the rest probed.
+    count_sql: Option<Sql>,
+}
+
+impl Compiled {
+    fn select(&self) -> Sql {
+        if self.distinct {
+            Sql::new(format!("SELECT DISTINCT rid FROM ({})", self.sql.text), self.sql.args.clone())
+        } else {
+            self.sql.clone()
+        }
+    }
 }
 
 pub struct IndexV2 {
@@ -321,10 +357,10 @@ impl IndexV2 {
 
     /// Ids matching `query` (no paging), in no particular order.
     pub fn search(&self, resource_type: &str, query: &SearchQuery) -> std::result::Result<Vec<String>, String> {
-        let Some(sql) = self.compile(resource_type, query).map_err(|e| e.to_string())? else {
+        let Some(c) = self.compile(resource_type, query).map_err(|e| e.to_string())? else {
             return Ok(Vec::new());
         };
-        self.ids_of(&sql, None)
+        self.ids_of(&c.select(), None)
     }
 
     /// The page `query` asks for (`_sort`, `_offset`, `_count`) and the total.
@@ -333,37 +369,38 @@ impl IndexV2 {
         resource_type: &str,
         query: &SearchQuery,
     ) -> std::result::Result<(Vec<String>, usize), String> {
-        let Some(sql) = self.compile(resource_type, query).map_err(|e| e.to_string())? else {
+        let Some(c) = self.compile(resource_type, query).map_err(|e| e.to_string())? else {
             return Ok((Vec::new(), 0));
         };
         let tid = self.tid(resource_type, false).map_err(|e| e.to_string())?.unwrap_or(-1);
-        let filtered = !(query.parameters.is_empty() && query.chain_parameters.is_empty() && query.has_parameters.is_empty());
-        // Sorted over a large set: walk the first key's index in order and stop
-        // at the page, instead of gathering every candidate's key.
-        if !query.sort.is_empty() {
-            let large = !filtered || self.probe_count(&sql).map_err(|e| e.to_string())? > GATHER_MAX;
-            if large {
-                let want = query.offset.unwrap_or(0) + query.count.unwrap_or(usize::MAX / 2);
-                let ordered = self
-                    .walk_sorted(tid, &query.sort, filtered.then_some(&sql), want)
-                    .map_err(|e| e.to_string())?;
-                let total = self.count(tid, filtered.then_some(&sql)).map_err(|e| e.to_string())?;
-                let page: Vec<i64> = ordered.into_iter().skip(query.offset.unwrap_or(0)).collect();
-                let ids = self.ids_for(&page).map_err(|e| e.to_string())?;
-                return Ok((ids, total));
+        let err = |e: crate::StoreError| e.to_string();
+        let sql = c.select();
+        let filter = (!c.unfiltered).then_some(&sql);
+        let total = self.count(tid, c.count_sql.as_ref().or(filter)).map_err(err)?;
+        let offset = query.offset.unwrap_or(0);
+        let page: Vec<i64> = if query.sort.is_empty() {
+            // Unsorted: the page straight off the query, in index order (the
+            // order of an unsorted search is unspecified).
+            let paged = Sql::new(
+                format!("{} LIMIT ? OFFSET ?", sql.text),
+                [sql.args.clone(), vec![Arg::Int(query.count.map_or(-1, |n| n as i64)), Arg::Int(offset as i64)]].concat(),
+            );
+            self.rids(&paged).map_err(err)?
+        } else if c.unfiltered || total as i64 > GATHER_MAX {
+            // Sorted over a large set: walk the first key's index in order and
+            // stop at the page, instead of gathering every candidate's key.
+            let want = offset.saturating_add(query.count.unwrap_or(usize::MAX / 2));
+            self.walk_sorted(tid, &query.sort, filter, want).map_err(err)?.into_iter().skip(offset).collect()
+        } else {
+            let mut rids = self.rids(&sql).map_err(err)?;
+            self.sort_rids(tid, &query.sort, &mut rids).map_err(err)?;
+            let mut page: Vec<i64> = rids.into_iter().skip(offset).collect();
+            if let Some(n) = query.count {
+                page.truncate(n);
             }
-        }
-        let mut rids = self.rids(&sql).map_err(|e| e.to_string())?;
-        let total = rids.len();
-        if !query.sort.is_empty() {
-            self.sort_rids(tid, &query.sort, &mut rids).map_err(|e| e.to_string())?;
-        }
-        let offset = query.offset.unwrap_or(0).min(rids.len());
-        let mut page: Vec<i64> = rids.drain(offset..).collect();
-        if let Some(c) = query.count {
-            page.truncate(c);
-        }
-        let ids = self.ids_for(&page).map_err(|e| e.to_string())?;
+            page
+        };
+        let ids = self.ids_for(&page).map_err(err)?;
         Ok((ids, total))
     }
 
@@ -549,7 +586,7 @@ impl IndexV2 {
 
     /// The query as one SQL statement selecting distinct rids, or `None` when
     /// it can't match anything (an unknown type).
-    fn compile(&self, resource_type: &str, query: &SearchQuery) -> Result<Option<Sql>> {
+    fn compile(&self, resource_type: &str, query: &SearchQuery) -> Result<Option<Compiled>> {
         let Some(tid) = self.tid(resource_type, false)? else { return Ok(None) };
         let mut crits: Vec<Criterion> = Vec::new();
         for p in &query.parameters {
@@ -563,16 +600,20 @@ impl IndexV2 {
         }
         let all_of_type = Sql::new("SELECT rid FROM rkey INDEXED BY rkey_live WHERE tid = ? AND present = 1", vec![Arg::Int(tid)]);
         if crits.is_empty() {
-            return Ok(Some(all_of_type));
+            return Ok(Some(Compiled { sql: all_of_type, distinct: false, unfiltered: true, count_sql: None }));
         }
         // Drive from the smallest seekable criterion (bounded probe counts;
         // ties and saturated counts by rank); the others are checked per row.
         let mut best: Option<(usize, i64, u8)> = None;
+        let mut large: Vec<usize> = Vec::new();
         for (i, c) in crits.iter().enumerate() {
             if !c.seekable {
                 continue;
             }
             let n = self.probe_count(&c.set)?;
+            if n >= PROBE_CAP && c.equality {
+                large.push(i);
+            }
             let better = match best {
                 None => true,
                 Some((_, bn, br)) => n < bn || (n == bn && c.rank < br),
@@ -581,11 +622,15 @@ impl IndexV2 {
                 best = Some((i, n, c.rank));
             }
         }
-        let (driver, rest): (Sql, Vec<&Criterion>) = match best {
-            Some((i, _, _)) => (crits[i].set.clone(), crits.iter().enumerate().filter(|(j, _)| *j != i).map(|(_, c)| c).collect()),
-            None => (all_of_type, crits.iter().collect()),
+        let (driver, unique, rest): (Sql, bool, Vec<&Criterion>) = match best {
+            Some((i, _, _)) => (
+                crits[i].set.clone(),
+                crits[i].unique,
+                crits.iter().enumerate().filter(|(j, _)| *j != i).map(|(_, c)| c).collect(),
+            ),
+            None => (all_of_type, true, crits.iter().collect()),
         };
-        let mut text = format!("SELECT DISTINCT d.rid FROM ({}) d", driver.text);
+        let mut text = format!("SELECT d.rid AS rid FROM ({}) d", driver.text);
         let mut args = driver.args;
         for (k, c) in rest.iter().enumerate() {
             text.push_str(if k == 0 { " WHERE " } else { " AND " });
@@ -593,7 +638,41 @@ impl IndexV2 {
             text.push_str(&p.text);
             args.extend(p.args);
         }
-        Ok(Some(Sql::new(text, args)))
+        // Counting a query whose every seekable criterion is large: merging
+        // the large equality sets (~0.4 µs a row) beats probing each of the
+        // driver's rows against the others (~2.5 µs a probe) when the sets
+        // are of similar size. Size them (capped) to decide.
+        let driver_large = best.is_some_and(|(_, n, _)| n >= PROBE_CAP);
+        if driver_large && large.len() >= 2 {
+            let mut sized: Vec<(usize, i64)> = Vec::new();
+            for &i in &large {
+                let sql = format!("SELECT count(*) FROM ({} LIMIT {SIZE_CAP})", crits[i].set.text);
+                let n: i64 = self.conn.query_row(&sql, params_from_iter(crits[i].set.args.iter()), |r| r.get(0))?;
+                sized.push((i, n));
+            }
+            let min = sized.iter().map(|s| s.1).min().unwrap_or(0);
+            let sum: i64 = sized.iter().map(|s| s.1).sum();
+            if sum > 5 * min * (sized.len() as i64 - 1) {
+                large.clear();
+            }
+        } else {
+            large.clear();
+        }
+        let count_sql = (large.len() >= 2).then(|| {
+            let mut text = format!(
+                "SELECT d.rid AS rid FROM ({}) d",
+                large.iter().map(|&i| format!("SELECT rid FROM ({})", crits[i].set.text)).collect::<Vec<_>>().join(" INTERSECT ")
+            );
+            let mut args: Vec<Arg> = large.iter().flat_map(|&i| crits[i].set.args.clone()).collect();
+            for (k, (_, c)) in crits.iter().enumerate().filter(|(i, _)| !large.contains(i)).enumerate() {
+                text.push_str(if k == 0 { " WHERE " } else { " AND " });
+                let p = c.probe.with_rid("d.rid");
+                text.push_str(&p.text);
+                args.extend(p.args);
+            }
+            Sql::new(text, args)
+        });
+        Ok(Some(Compiled { sql: Sql::new(text, args), distinct: !unique, unfiltered: false, count_sql }))
     }
 
     fn probe_count(&self, set: &Sql) -> Result<i64> {
@@ -605,7 +684,7 @@ impl IndexV2 {
     fn parameter(&self, tid: i64, p: &SearchParameter) -> Result<Criterion> {
         let pid = self.pid(tid, &p.name, None)?;
         let all = Sql::new("SELECT rid FROM rkey INDEXED BY rkey_live WHERE tid = ? AND present = 1", vec![Arg::Int(tid)]);
-        let none = Criterion { set: Sql::new("SELECT 0 WHERE 0", vec![]), probe: Sql::new("0", vec![]), seekable: true, rank: 0 };
+        let none = Criterion { set: Sql::new("SELECT 0 AS rid WHERE 0", vec![]), probe: Sql::new("0", vec![]), seekable: true, rank: 0, unique: true, equality: false };
         match p.modifier.as_deref() {
             Some("missing") => {
                 let want_missing = p.value.trim() == "true";
@@ -618,7 +697,7 @@ impl IndexV2 {
                 };
                 let probe = if want_missing { Sql::new(format!("NOT {}", has.text), has.args) } else { has };
                 let set = Sql::new(format!("{} AND {}", all.text, probe.with_rid("rkey.rid").text), [all.args, probe.args.clone()].concat());
-                return Ok(Criterion { set, probe, seekable: false, rank: 6 });
+                return Ok(Criterion { set, probe, seekable: false, rank: 6, unique: true, equality: false });
             }
             Some("not") => {
                 let mut inner = p.clone();
@@ -626,7 +705,7 @@ impl IndexV2 {
                 let c = self.parameter(tid, &inner)?;
                 let probe = Sql::new(format!("NOT ({})", c.probe.text), c.probe.args);
                 let set = Sql::new(format!("{} AND {}", all.text, probe.with_rid("rkey.rid").text), [all.args, probe.args.clone()].concat());
-                return Ok(Criterion { set, probe, seekable: false, rank: 6 });
+                return Ok(Criterion { set, probe, seekable: false, rank: 6, unique: true, equality: false });
             }
             _ => {}
         }
@@ -667,7 +746,12 @@ impl IndexV2 {
             (_, SearchParamType::String) => 3,
             _ => 4,
         };
-        Ok(Criterion { set, probe, seekable, rank })
+        // One value on a parameter nobody has twice, or several values
+        // (a UNION, which is distinct): no repeated rids.
+        let multi: i64 = self.conn.query_row("SELECT multi FROM param WHERE pid = ?1", params![pid], |r| r.get(0))?;
+        let unique = sets.len() > 1 || multi == 0;
+        let equality = matches!(kind.as_str(), "token" | "reference") || p.modifier.as_deref() == Some("exact");
+        Ok(Criterion { set, probe, seekable, rank, unique, equality })
     }
 
     /// The condition on a value table for one value, its arguments, the index
@@ -802,6 +886,11 @@ impl IndexV2 {
             );
         }
         let pid = self.pid(tid, &c.links[0].reference_param, None)?.map(|p| p.0).unwrap_or(-1);
+        let multi: i64 = self
+            .conn
+            .query_row("SELECT multi FROM param WHERE pid = ?1", params![pid], |r| r.get(0))
+            .optional()?
+            .unwrap_or(0);
         let set = Sql::new(
             format!("SELECT rid FROM v_ref NOT INDEXED WHERE pid = ? AND target IN ({})", targets.text),
             [vec![Arg::Int(pid)], targets.args.clone()].concat(),
@@ -810,7 +899,9 @@ impl IndexV2 {
             format!("EXISTS (SELECT 1 FROM v_ref INDEXED BY v_ref_r WHERE rid = ?X? AND pid = ? AND target IN ({}))", targets.text),
             [vec![Arg::Int(pid)], targets.args].concat(),
         );
-        Ok(Criterion { set, probe, seekable: false, rank: 5 })
+        // Seekable: a chain whose targets are few (a name, an identifier)
+        // is the best driver; the bounded probe count says so.
+        Ok(Criterion { set, probe, seekable: true, rank: 5, unique: multi == 0, equality: false })
     }
 
     /// `_has`: rids of the searched type that a matching source resource
@@ -838,7 +929,7 @@ impl IndexV2 {
             [vec![Arg::Int(tid)], targets.args.clone()].concat(),
         );
         let probe = Sql::new(format!("?X? IN ({})", targets.text), targets.args);
-        Ok(Criterion { set, probe, seekable: false, rank: 5 })
+        Ok(Criterion { set, probe, seekable: false, rank: 5, unique: true, equality: false })
     }
 }
 
