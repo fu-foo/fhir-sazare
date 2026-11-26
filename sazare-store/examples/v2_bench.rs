@@ -28,7 +28,7 @@ fn main() {
                 }).collect();
                 v2.replace_many(&updates).unwrap();
                 n += page.len() as u64;
-                if n % 500_000 == 0 {
+                if n.is_multiple_of(500_000) {
                     eprintln!("{n} resources, {:.0}/s", n as f64 / t.elapsed().as_secs_f64());
                 }
             }
