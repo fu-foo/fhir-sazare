@@ -15,7 +15,32 @@ use sazare_core::{SearchParamRegistry, SearchParamType, SearchParameter, SearchQ
 use serde_json::{json, Value};
 
 use crate::sqlite_index::fhir_date_range;
+use crate::index_v2::IndexV2;
 use crate::{resource_text, IndexBuilder, IndexUpdate, SearchExecutor, SearchIndex, SqliteStore};
+
+/// A search implementation under test: the v1 executor or index v2.
+trait Backend {
+    fn search(&self, rt: &str, q: &SearchQuery) -> Vec<String>;
+    fn search_with_total(&self, rt: &str, q: &SearchQuery) -> (Vec<String>, usize);
+}
+
+impl Backend for SearchExecutor<'_> {
+    fn search(&self, rt: &str, q: &SearchQuery) -> Vec<String> {
+        SearchExecutor::search(self, rt, q).unwrap()
+    }
+    fn search_with_total(&self, rt: &str, q: &SearchQuery) -> (Vec<String>, usize) {
+        SearchExecutor::search_with_total(self, rt, q).unwrap()
+    }
+}
+
+impl Backend for IndexV2 {
+    fn search(&self, rt: &str, q: &SearchQuery) -> Vec<String> {
+        IndexV2::search(self, rt, q).unwrap()
+    }
+    fn search_with_total(&self, rt: &str, q: &SearchQuery) -> (Vec<String>, usize) {
+        IndexV2::search_with_total(self, rt, q).unwrap()
+    }
+}
 
 /// A small deterministic PRNG (xorshift64*), so the tests need no dependency
 /// and a seed reproduces a failure exactly.
@@ -275,7 +300,8 @@ fn query(rng: &mut Rng, resource_type: &str, patients: usize) -> String {
 
 /// Build a store and index for `resources`; return them with each resource's
 /// extracted entries.
-fn load(resources: &[Value], registry: &SearchParamRegistry) -> (SqliteStore, SearchIndex, HashMap<(String, String), Entries>) {
+#[allow(clippy::type_complexity)]
+fn load(resources: &[Value], registry: &SearchParamRegistry) -> (SqliteStore, SearchIndex, IndexV2, HashMap<(String, String), Entries>) {
     let store = SqliteStore::open(":memory:").unwrap();
     let index = SearchIndex::open(":memory:").unwrap();
     let mut entries = HashMap::new();
@@ -289,15 +315,27 @@ fn load(resources: &[Value], registry: &SearchParamRegistry) -> (SqliteStore, Se
         entries.insert((rt, id), e);
     }
     index.replace_many(&updates).unwrap();
-    (store, index, entries)
+    let v2 = IndexV2::open(":memory:").unwrap();
+    v2.replace_many(&updates).unwrap();
+    (store, index, v2, entries)
 }
 
-fn run(seed: u64, patients: usize, observations: usize, queries: usize) {
+#[derive(Clone, Copy)]
+enum Which {
+    V1,
+    V2,
+}
+
+fn run(which: Which, seed: u64, patients: usize, observations: usize, queries: usize) {
     let mut rng = Rng(seed.max(1));
     let registry = SearchParamRegistry::new();
     let resources = dataset(&mut rng, patients, observations);
-    let (store, index, entries) = load(&resources, &registry);
-    let exec = SearchExecutor::new(&store, &index);
+    let (store, index, v2, entries) = load(&resources, &registry);
+    let v1 = SearchExecutor::new(&store, &index);
+    let exec: &dyn Backend = match which {
+        Which::V1 => &v1,
+        Which::V2 => &v2,
+    };
     let mut failures = vec![];
     let mut non_empty = 0;
     for _ in 0..queries {
@@ -307,7 +345,7 @@ fn run(seed: u64, patients: usize, observations: usize, queries: usize) {
             Ok(p) => p,
             Err(e) => panic!("seed {seed}: generated query {rt}?{q} doesn't parse: {e}"),
         };
-        let got: BTreeSet<String> = exec.search(rt, &parsed).unwrap().into_iter().collect();
+        let got: BTreeSet<String> = exec.search(rt, &parsed).into_iter().collect();
         let want: BTreeSet<String> = entries
             .keys()
             .filter(|(t, id)| t == rt && query_matches(&entries, rt, id, &parsed))
@@ -335,7 +373,14 @@ fn run(seed: u64, patients: usize, observations: usize, queries: usize) {
 #[test]
 fn search_matches_the_reference_model() {
     for seed in 1..=8u64 {
-        run(seed * 7919, 60, 240, 400);
+        run(Which::V1, seed * 7919, 60, 240, 400);
+    }
+}
+
+#[test]
+fn index_v2_matches_the_reference_model() {
+    for seed in 1..=8u64 {
+        run(Which::V2, seed * 7919, 60, 240, 400);
     }
 }
 
@@ -354,12 +399,16 @@ fn sort_key(entries: &Entries, param: &str, descending: bool) -> Option<String> 
     if descending { keys.max() } else { keys.min() }
 }
 
-fn run_sorted(seed: u64, patients: usize, observations: usize, queries: usize) {
+fn run_sorted(which: Which, seed: u64, patients: usize, observations: usize, queries: usize) {
     let mut rng = Rng(seed.max(1));
     let registry = SearchParamRegistry::new();
     let resources = dataset(&mut rng, patients, observations);
-    let (store, index, entries) = load(&resources, &registry);
-    let exec = SearchExecutor::new(&store, &index);
+    let (store, index, v2, entries) = load(&resources, &registry);
+    let v1 = SearchExecutor::new(&store, &index);
+    let exec: &dyn Backend = match which {
+        Which::V1 => &v1,
+        Which::V2 => &v2,
+    };
     for _ in 0..queries {
         let rt = if rng.chance(40) { "Patient" } else { "Observation" };
         let key = if rt == "Patient" { *rng.pick(&["family", "birthdate"]) } else { "date" };
@@ -367,7 +416,7 @@ fn run_sorted(seed: u64, patients: usize, observations: usize, queries: usize) {
         let filter = if rng.chance(50) { format!("{}&", query(&mut rng, rt, patients)) } else { String::new() };
         let q = format!("{filter}_sort={}{key}", if desc { "-" } else { "" });
         let mut parsed = SearchQuery::parse_with_registry(&q, Some(rt), &registry).unwrap();
-        let (all, total) = exec.search_with_total(rt, &parsed).unwrap();
+        let (all, total) = exec.search_with_total(rt, &parsed);
         // Total and membership: the reference model.
         let want: BTreeSet<String> = entries
             .keys()
@@ -393,7 +442,7 @@ fn run_sorted(seed: u64, patients: usize, observations: usize, queries: usize) {
         for offset in (0..all.len() + size).step_by(size) {
             parsed.count = Some(size);
             parsed.offset = Some(offset);
-            let (page, page_total) = exec.search_with_total(rt, &parsed).unwrap();
+            let (page, page_total) = exec.search_with_total(rt, &parsed);
             assert_eq!(page_total, total, "seed {seed}: total on a page of {rt}?{q}");
             paged.extend(page);
         }
@@ -404,6 +453,13 @@ fn run_sorted(seed: u64, patients: usize, observations: usize, queries: usize) {
 #[test]
 fn sorted_searches_follow_the_keys_and_pages_add_up() {
     for seed in 1..=6u64 {
-        run_sorted(seed * 104_729, 50, 200, 60);
+        run_sorted(Which::V1, seed * 104_729, 50, 200, 60);
+    }
+}
+
+#[test]
+fn index_v2_sorts_and_pages_like_the_model() {
+    for seed in 1..=6u64 {
+        run_sorted(Which::V2, seed * 104_729, 50, 200, 60);
     }
 }
