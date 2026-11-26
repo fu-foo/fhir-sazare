@@ -431,6 +431,20 @@ fn load(resources: &[Value], registry: &SearchParamRegistry) -> (SqliteStore, V1
     }
     index.replace_many(&updates).unwrap();
     let v2 = IndexV2::open(":memory:").unwrap();
+    // Some resources had another version before (another resource's values),
+    // some of them deleted since: what the index holds now must be only the
+    // current values.
+    let earlier: Vec<IndexUpdate> = (0..updates.len())
+        .step_by(3)
+        .map(|i| {
+            let other = &updates[(i * 7 + 3) % updates.len()];
+            IndexUpdate { entries: other.entries.clone(), text: other.text.clone(), ..updates[i].clone() }
+        })
+        .collect();
+    v2.replace_many(&earlier).unwrap();
+    for u in earlier.iter().step_by(4) {
+        v2.remove(&u.resource_type, &u.resource_id).unwrap();
+    }
     v2.replace_many(&updates).unwrap();
     (store, index, v2, entries)
 }

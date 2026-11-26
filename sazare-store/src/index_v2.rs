@@ -224,6 +224,8 @@ impl IndexV2 {
     }
 
     fn with(conn: Connection) -> Result<Self> {
+        // Room for every write statement (rusqlite keeps 16 by default).
+        conn.set_prepared_statement_cache_capacity(64);
         let mut index = Self { conn, tids: Default::default(), pids: Default::default(), sids: Default::default(), format: 0 };
         index.format = index.get_meta(FORMAT_KEY)?.and_then(|v| v.parse().ok()).unwrap_or(3);
         Ok(index)
@@ -317,24 +319,24 @@ impl IndexV2 {
         Ok(s)
     }
 
-    /// The rid of `type/id`, creating the key; `present` marks a stored resource.
-    fn rid(&self, tid: i64, id: &str, present: bool) -> Result<i64> {
-        self.conn.execute(
-            "INSERT OR IGNORE INTO rkey (tid, id, present) VALUES (?1, ?2, 0)",
-            params![tid, id],
-        )?;
-        let (rid, was): (i64, i64) =
-            self.conn.query_row("SELECT rid, present FROM rkey WHERE tid = ?1 AND id = ?2", params![tid, id], |r| {
-                Ok((r.get(0)?, r.get(1)?))
-            })?;
+    /// The rid of `type/id`, creating the key; `present` marks a stored
+    /// resource. Also whether it was stored before: one that wasn't has no
+    /// rows (`remove` clears them before unmarking).
+    fn rid(&self, tid: i64, id: &str, present: bool) -> Result<(i64, bool)> {
+        self.conn
+            .prepare_cached("INSERT OR IGNORE INTO rkey (tid, id, present) VALUES (?1, ?2, 0)")?
+            .execute(params![tid, id])?;
+        let (rid, was): (i64, i64) = self
+            .conn
+            .prepare_cached("SELECT rid, present FROM rkey WHERE tid = ?1 AND id = ?2")?
+            .query_row(params![tid, id], |r| Ok((r.get(0)?, r.get(1)?)))?;
         if present && was == 0 {
-            self.conn.execute("UPDATE rkey SET present = 1 WHERE rid = ?1", params![rid])?;
-            self.conn.execute(
-                "INSERT INTO type_count (tid, n) VALUES (?1, 1) ON CONFLICT (tid) DO UPDATE SET n = n + 1",
-                params![tid],
-            )?;
+            self.conn.prepare_cached("UPDATE rkey SET present = 1 WHERE rid = ?1")?.execute(params![rid])?;
+            self.conn
+                .prepare_cached("INSERT INTO type_count (tid, n) VALUES (?1, 1) ON CONFLICT (tid) DO UPDATE SET n = n + 1")?
+                .execute(params![tid])?;
         }
-        Ok(rid)
+        Ok((rid, was != 0))
     }
 
     // ---- writes -------------------------------------------------------------
@@ -360,7 +362,7 @@ impl IndexV2 {
     fn add_value_inner(&self, resource_type: &str, id: &str, name: &str, kind: &str, value: &str, system: Option<&str>) -> Result<()> {
         let tx = self.conn.unchecked_transaction()?;
         let tid = self.tid(resource_type, true)?.expect("created");
-        let rid = self.rid(tid, id, true)?;
+        let (rid, _) = self.rid(tid, id, true)?;
         let (pid, _) = self.pid(tid, name, Some(kind))?.expect("created");
         let has = self.has_value(pid, kind).with_rid(&rid.to_string());
         let had: bool = self.conn.query_row(&format!("SELECT {}", has.text), params_from_iter(has.args.iter()), |r| r.get(0))?;
@@ -385,8 +387,11 @@ impl IndexV2 {
         let tx = self.conn.unchecked_transaction()?;
         for u in items {
             let tid = self.tid(&u.resource_type, true)?.expect("created");
-            let rid = self.rid(tid, &u.resource_id, true)?;
-            self.clear_rows(rid)?;
+            let (rid, stored) = self.rid(tid, &u.resource_id, true)?;
+            // A new resource has no rows to clear (all of them, in a rebuild).
+            if stored {
+                self.clear_rows(rid)?;
+            }
             // Extraction adds a bare-id copy after each reference ("Patient/1"
             // → "1"). For a local reference the key table answers bare-id
             // searches; for an absolute URL the copy is kept as text.
@@ -409,10 +414,7 @@ impl IndexV2 {
                     self.conn.execute("UPDATE param SET multi = 1 WHERE pid = ?1 AND multi = 0", params![pid])?;
                 }
             }
-            self.conn.execute(
-                "INSERT INTO fts.resource_text (rowid, narrative, content) VALUES (?1, ?2, ?3)",
-                params![rid, u.text.narrative, u.text.content],
-            )?;
+            self.conn.prepare_cached("INSERT INTO fts.resource_text (rowid, narrative, content) VALUES (?1, ?2, ?3)")?.execute(params![rid, u.text.narrative, u.text.content])?;
         }
         tx.commit()?;
         Ok(())
@@ -423,10 +425,7 @@ impl IndexV2 {
     fn write_value(&self, pid: i64, kind: &str, value: &str, system: Option<&str>, rid: i64) -> Result<bool> {
         match kind {
             "string" => {
-                self.conn.execute(
-                    "INSERT OR IGNORE INTO v_string (pid, norm, rid, exact) VALUES (?1, ?2, ?3, ?4)",
-                    params![pid, value.to_lowercase(), rid, value],
-                )?;
+                self.conn.prepare_cached("INSERT OR IGNORE INTO v_string (pid, norm, rid, exact) VALUES (?1, ?2, ?3, ?4)")?.execute(params![pid, value.to_lowercase(), rid, value])?;
             }
             "date" => {
                 let (lo, hi) = match value.split_once('/') {
@@ -440,23 +439,14 @@ impl IndexV2 {
                     },
                 };
                 let (Some(lo), Some(hi)) = (lo, hi) else { return Ok(false) };
-                self.conn.execute(
-                    "INSERT OR IGNORE INTO v_date (pid, lo, hi, rid) VALUES (?1, ?2, ?3, ?4)",
-                    params![pid, lo, hi, rid],
-                )?;
+                self.conn.prepare_cached("INSERT OR IGNORE INTO v_date (pid, lo, hi, rid) VALUES (?1, ?2, ?3, ?4)")?.execute(params![pid, lo, hi, rid])?;
                 if hi != i64::MAX {
-                    self.conn.execute(
-                        "UPDATE param SET max_span = ?2 WHERE pid = ?1 AND max_span < ?2",
-                        params![pid, hi - lo],
-                    )?;
+                    self.conn.prepare_cached("UPDATE param SET max_span = ?2 WHERE pid = ?1 AND max_span < ?2")?.execute(params![pid, hi - lo])?;
                 }
             }
             "number" => {
                 let Some(v) = value.parse::<f64>().ok().filter(|v| v.is_finite()) else { return Ok(false) };
-                self.conn.execute(
-                    "INSERT OR IGNORE INTO v_number (pid, val, rid) VALUES (?1, ?2, ?3)",
-                    params![pid, v, rid],
-                )?;
+                self.conn.prepare_cached("INSERT OR IGNORE INTO v_number (pid, val, rid) VALUES (?1, ?2, ?3)")?.execute(params![pid, v, rid])?;
             }
             "quantity" => {
                 // number, code, unit (IndexBuilder::quantity_row).
@@ -466,34 +456,22 @@ impl IndexV2 {
                 };
                 let (code, unit) = (parts.next().unwrap_or(""), parts.next().unwrap_or(""));
                 let sid = self.sid(system, true)?.expect("created");
-                self.conn.execute(
-                    "INSERT OR IGNORE INTO v_quantity (pid, val, rid, sid, code, unit) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                    params![pid, v, rid, sid, code, unit],
-                )?;
+                self.conn.prepare_cached("INSERT OR IGNORE INTO v_quantity (pid, val, rid, sid, code, unit) VALUES (?1, ?2, ?3, ?4, ?5, ?6)")?.execute(params![pid, v, rid, sid, code, unit])?;
             }
             "reference" => match local_reference(value) {
                 Some((ttype, tid_text)) => {
                     let ttid = self.tid(ttype, true)?.expect("created");
-                    let target = self.rid(ttid, tid_text, false)?;
-                    self.conn.execute(
-                        "INSERT OR IGNORE INTO v_ref (pid, target, rid) VALUES (?1, ?2, ?3)",
-                        params![pid, target, rid],
-                    )?;
+                    let (target, _) = self.rid(ttid, tid_text, false)?;
+                    self.conn.prepare_cached("INSERT OR IGNORE INTO v_ref (pid, target, rid) VALUES (?1, ?2, ?3)")?.execute(params![pid, target, rid])?;
                 }
                 // Absolute URLs, urn:, #contained, and bare ids of absolute URLs.
                 None => {
-                    self.conn.execute(
-                        "INSERT OR IGNORE INTO v_ref_text (pid, value, rid) VALUES (?1, ?2, ?3)",
-                        params![pid, value, rid],
-                    )?;
+                    self.conn.prepare_cached("INSERT OR IGNORE INTO v_ref_text (pid, value, rid) VALUES (?1, ?2, ?3)")?.execute(params![pid, value, rid])?;
                 }
             },
             _ => {
                 let sid = self.sid(system, true)?.expect("created");
-                self.conn.execute(
-                    "INSERT OR IGNORE INTO v_token (pid, code, sid, rid) VALUES (?1, ?2, ?3, ?4)",
-                    params![pid, value, sid, rid],
-                )?;
+                self.conn.prepare_cached("INSERT OR IGNORE INTO v_token (pid, code, sid, rid) VALUES (?1, ?2, ?3, ?4)")?.execute(params![pid, value, sid, rid])?;
             }
         }
         Ok(true)
@@ -501,9 +479,9 @@ impl IndexV2 {
 
     fn clear_rows(&self, rid: i64) -> Result<()> {
         for t in VALUE_TABLES {
-            self.conn.execute(&format!("DELETE FROM {t} WHERE rid = ?1"), params![rid])?;
+            self.conn.prepare_cached(&format!("DELETE FROM {t} WHERE rid = ?1"))?.execute(params![rid])?;
         }
-        self.conn.execute("DELETE FROM fts.resource_text WHERE rowid = ?1", params![rid])?;
+        self.conn.prepare_cached("DELETE FROM fts.resource_text WHERE rowid = ?1")?.execute(params![rid])?;
         Ok(())
     }
 
