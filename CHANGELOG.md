@@ -16,8 +16,9 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
   `main` is now the `edge` tag.
 
 - FHIR answers are `application/fhir+json`. `/metadata` and every error (400, 401, 403,
-  404, …) were `application/json`, which strict clients refuse. `/health`, `/token`,
-  `/.well-known/smart-configuration` and the dashboard keep `application/json`.
+  404, …) were `application/json`, which strict clients refuse. What isn't FHIR keeps
+  `application/json`: the Bulk Data export manifest, `/health`, `/token`,
+  `/.well-known/smart-configuration`, the dashboard and static apps.
 - The CapabilityStatement lists Appointment (it was stored and searchable, but not
   listed).
 - A request handler that panics answers 500 with an OperationOutcome (and is counted in

@@ -423,9 +423,21 @@ fn panic_response(panic: Box<dyn std::any::Any + Send + 'static>) -> axum::respo
 
 /// FHIR responses are `application/fhir+json`, errors and `/metadata`
 /// included: handlers answer with axum's `Json` (`application/json`), and
-/// strict clients refuse that. Endpoints that aren't FHIR keep theirs.
+/// strict clients refuse that. Endpoints that aren't FHIR keep theirs: the
+/// Bulk Data export manifest (`application/json` by the IG; no
+/// `resourceType`), OAuth / SMART, the dashboard, and static files.
 async fn fhir_content_type(req: axum::extract::Request, next: axum::middleware::Next) -> axum::response::Response {
-    const NOT_FHIR: [&str; 7] = ["/health", "/$status", "/$browse/", "/$apps", "/.well-known/", "/token", "/ui/"];
+    const NOT_FHIR: [&str; 9] = [
+        "/health",
+        "/$status",
+        "/$browse/",
+        "/$apps",
+        "/$export-status/",
+        "/.well-known/",
+        "/token",
+        "/ui/",
+        "/apps/",
+    ];
     let path = req.uri().path();
     let fhir = !NOT_FHIR.iter().any(|p| path == p.trim_end_matches('/') || path.starts_with(p));
     let mut res = next.run(req).await;

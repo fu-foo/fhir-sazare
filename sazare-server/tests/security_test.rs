@@ -476,6 +476,7 @@ async fn static_apps_are_served_under_apps_only() {
     std::fs::create_dir(apps.path().join("demo-app")).unwrap();
     std::fs::write(apps.path().join("demo-app/index.html"), "<h1>app</h1>").unwrap();
     std::fs::write(apps.path().join("demo-app/app.js"), "1").unwrap();
+    std::fs::write(apps.path().join("demo-app/manifest.json"), "{}").unwrap();
     let mut config = secured_config();
     config.apps.dir = Some(apps.path().to_path_buf());
     let (base, _d) = start(config).await;
@@ -488,6 +489,9 @@ async fn static_apps_are_served_under_apps_only() {
     assert_eq!(r.text().await.unwrap(), "<h1>app</h1>");
     let r = get("/apps/demo-app/app.js").await.unwrap();
     assert_eq!(r.headers()["content-type"], "application/javascript; charset=utf-8");
+    // An app's JSON is its own, not FHIR.
+    let r = get("/apps/demo-app/manifest.json").await.unwrap();
+    assert_eq!(r.headers()["content-type"], "application/json; charset=utf-8");
     // SPA fallback.
     assert_eq!(get("/apps/demo-app/some/route").await.unwrap().text().await.unwrap(), "<h1>app</h1>");
     assert_eq!(get("/apps/demo-app").await.unwrap().status(), 308);

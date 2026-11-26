@@ -181,6 +181,8 @@ async fn test_bulk_data_async_export() {
     let manifest = loop {
         let resp = client.get(&status_url).send().await.unwrap();
         if resp.status() == 200 {
+            // Not a FHIR resource: plain JSON, as the Bulk Data IG specifies.
+            assert_eq!(resp.headers()["content-type"], "application/json");
             break resp.json::<Value>().await.unwrap();
         }
         assert_eq!(resp.status(), 202, "in-progress status should be 202");
