@@ -192,6 +192,50 @@ pub fn visible_matches(
     Ok(ids.iter().filter(|id| keep.contains(id.as_str())).cloned().collect())
 }
 
+/// A search by a compartment-restricted user: the page `query` asks for and
+/// the total, of the matches they may see. On a v2 index the patient's
+/// compartment is one more criterion (`_compartment`, indexed with the same
+/// test the access check applies), so the index pages it; a v1 index (only
+/// while its replacement is built) reads every match to filter it.
+pub fn compartment_search(
+    state: &AppState,
+    executor: &SearchExecutor<'_>,
+    index: &SearchIndex,
+    auth_user: Option<&auth::AuthUser>,
+    resource_type: &str,
+    query: &sazare_core::SearchQuery,
+) -> Result<(Vec<String>, usize), String> {
+    let Some(patient_id) = auth_user.and_then(|u| u.patient_id.clone()) else {
+        return Ok((Vec::new(), 0));
+    };
+    if !state.compartment_def.is_in_compartment(resource_type) {
+        // Not a compartment type: the access check lets every match through.
+        return executor.search_with_total(resource_type, query);
+    }
+    if !index.is_v1() {
+        let mut q = query.clone();
+        q.parameters.push(sazare_core::SearchParameter {
+            name: sazare_store::COMPARTMENT_PARAM.to_string(),
+            value: format!("Patient/{patient_id}"),
+            modifier: None,
+            prefix: None,
+            param_type: sazare_core::SearchParamType::Reference,
+        });
+        return executor.search_with_total(resource_type, &q);
+    }
+    let mut all = query.clone();
+    all.count = None;
+    all.offset = None;
+    let (ids, _) = executor.search_with_total(resource_type, &all)?;
+    let mut ids = visible_matches(state, executor, auth_user, resource_type, ids)?;
+    let total = ids.len();
+    ids.drain(..query.offset.unwrap_or(0).min(ids.len()));
+    if let Some(n) = query.count {
+        ids.truncate(n);
+    }
+    Ok((ids, total))
+}
+
 /// Conditional create check
 pub async fn conditional_create_check(
     state: &Arc<AppState>,

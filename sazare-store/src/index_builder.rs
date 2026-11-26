@@ -6,8 +6,12 @@ pub struct IndexBuilder;
 
 /// Bump when the way resources are turned into index rows changes (not just
 /// the parameter set), so existing indexes are rebuilt on upgrade.
-/// 3: index v2 (integer keys, a table per value kind).
-pub const INDEX_FORMAT: u32 = 3;
+/// 3: index v2 (integer keys, a table per value kind). 4: `_compartment`.
+pub const INDEX_FORMAT: u32 = 4;
+
+/// The index parameter holding a resource's patient compartments
+/// (`Patient/<id>`); not a search parameter clients can use.
+pub const COMPARTMENT_PARAM: &str = "_compartment";
 
 impl IndexBuilder {
     /// Extract all searchable indices from a resource using a registry.
@@ -21,6 +25,17 @@ impl IndexBuilder {
         let defs = registry.get_definitions(resource_type);
         for def in defs {
             Self::extract_by_definition(resource, def, &mut indices);
+        }
+        // The patient compartments the resource is in, for patient-scoped
+        // searches (`CompartmentDef::patients_of`, the same test the access
+        // check applies). Ids with a `/` (`Patient/1/_history/2`) are no
+        // patient's id.
+        static COMPARTMENT: std::sync::LazyLock<sazare_core::CompartmentDef> =
+            std::sync::LazyLock::new(sazare_core::CompartmentDef::patient_compartment);
+        for id in COMPARTMENT.patients_of(resource_type, resource) {
+            if !id.is_empty() && !id.contains('/') {
+                indices.push((COMPARTMENT_PARAM.to_string(), "reference".to_string(), format!("Patient/{id}"), None));
+            }
         }
         indices
     }

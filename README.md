@@ -76,8 +76,7 @@ Know these before you rely on sazare:
   not scale horizontally or for highly concurrent writes. Benchmarked in CI on 60k
   resources (every search well under 100 ms) and measured on 10M: pages and
   patient-scoped searches stay in milliseconds, but an exact total over millions of
-  matches takes seconds (`_total=none` skips it), and a patient-scoped token searching a
-  whole type without `patient=` reads every match. Measure your own data with
+  matches takes seconds (`_total=none` skips it). Measure your own data with
   `bench/run.sh <patients> <obs-per-patient>` before relying on it.
 - **Subscriptions:** R4 rest-hook and websocket, best-effort delivery (a few retries,
   no persistent queue).

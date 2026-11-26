@@ -512,3 +512,63 @@ async fn no_apps_unless_configured() {
     let list: Value = reqwest::get(format!("{base}/$apps")).await.unwrap().json().await.unwrap();
     assert_eq!(list["apps"], json!([]));
 }
+
+/// A patient-scoped search narrows to the compartment in the index
+/// (`_compartment`): the result must be exactly what the compartment test on
+/// the resource lets through — references in arrays and in other fields
+/// count; a versioned or absolute reference, or another patient's, doesn't.
+#[tokio::test]
+async fn patient_scoped_searches_return_exactly_the_compartment() {
+    let (c, t, _d) = two_patients().await;
+    let put = |path: &'static str, body: Value| {
+        let c = &c;
+        async move { assert_eq!(c.put(path, ADMIN_KEY, body).await, 201, "{path}") }
+    };
+    let obs = |id: &str, subject: &str| json!({"resourceType": "Observation", "id": id, "status": "final",
+        "code": {"text": "x"}, "subject": {"reference": subject}});
+    put("/Observation/o-hist", obs("o-hist", "Patient/p1/_history/1")).await;
+    put("/Observation/o-abs", obs("o-abs", "http://other.example/fhir/Patient/p1")).await;
+    let prov = |id: &str, targets: &[&str]| json!({"resourceType": "Provenance", "id": id, "recorded": "2024-01-01T00:00:00Z",
+        "target": targets.iter().map(|t| json!({"reference": t})).collect::<Vec<_>>(),
+        "agent": [{"who": {"display": "x"}}]});
+    put("/Provenance/prov-both", prov("prov-both", &["Patient/p2", "Patient/p1"])).await;
+    put("/Provenance/prov-p2", prov("prov-p2", &["Patient/p2"])).await;
+    let task = |id: &str, f: &str, owner: Option<&str>| {
+        let mut t = json!({"resourceType": "Task", "id": id, "status": "requested", "intent": "order", "for": {"reference": f}});
+        if let Some(o) = owner { t["owner"] = json!({"reference": o}); }
+        t
+    };
+    put("/Task/task-owner", task("task-owner", "Patient/p2", Some("Patient/p1"))).await;
+    put("/Task/task-for", task("task-for", "Patient/p2", None)).await;
+    put("/Coverage/cov-sub", json!({"resourceType": "Coverage", "id": "cov-sub", "status": "active",
+        "beneficiary": {"reference": "Patient/p2"}, "subscriber": {"reference": "Patient/p1"},
+        "payor": [{"display": "x"}]})).await;
+    put("/Practitioner/prac", json!({"resourceType": "Practitioner", "id": "prac"})).await;
+
+    let ids = |q: &'static str| {
+        let (c, t) = (&c, &t);
+        async move {
+            let (s, b) = c.get(q, t).await;
+            assert_eq!(s, 200, "{q}: {b}");
+            let mut v: Vec<String> = b["entry"].as_array().cloned().unwrap_or_default().iter()
+                .map(|e| e["resource"]["id"].as_str().unwrap().to_string()).collect();
+            v.sort();
+            (v, b["total"].as_u64())
+        }
+    };
+    assert_eq!(ids("/Observation").await, (vec!["o-p1".to_string()], Some(1)));
+    assert_eq!(ids("/Patient").await, (vec!["p1".to_string()], Some(1)));
+    assert_eq!(ids("/Provenance").await, (vec!["prov-both".to_string()], Some(1)));
+    assert_eq!(ids("/Task").await, (vec!["task-owner".to_string()], Some(1)));
+    assert_eq!(ids("/Coverage").await, (vec!["cov-sub".to_string()], Some(1)));
+    assert_eq!(ids("/Practitioner").await, (vec!["prac".to_string()], Some(1)), "not a compartment type");
+    // With other criteria, paging and counting.
+    assert_eq!(ids("/Observation?status=final&_count=1").await, (vec!["o-p1".to_string()], Some(1)));
+    assert_eq!(ids("/Observation?_count=1&_offset=1").await, (vec![], Some(1)));
+    let (_, b) = c.get("/Observation?_summary=count", &t).await;
+    assert_eq!(b["total"], 1);
+    // Another patient's token sees the other side.
+    let t2 = jwt("patient/*.read", Some("p2"));
+    let (_, b) = c.get("/Task", &t2).await;
+    assert_eq!(b["total"], 2, "for: p2 on both tasks");
+}

@@ -219,11 +219,16 @@ async fn do_search(
     // If _summary=count, return only the count
     if query.summary == Some(sazare_core::SummaryMode::Count) {
         let (q, rt, au) = (query.clone(), resource_type.clone(), auth_user.clone());
-        let ids = crate::with_index_reader(&state, move |st, index| {
+        let total = crate::with_index_reader(&state, move |st, index| {
             let executor = SearchExecutor::new(&st.store, index);
-            let ids = executor.search(&rt, &q)?;
             // A compartment-restricted user counts only what they may see.
-            crate::visible_matches(st, &executor, au.as_ref(), &rt, ids)
+            if au.as_ref().is_some_and(|u| u.compartment_restricted(&rt, 's')) {
+                let mut q = q;
+                q.count = Some(0);
+                q.offset = None;
+                return crate::compartment_search(st, &executor, index, au.as_ref(), &rt, &q).map(|(_, total)| total);
+            }
+            executor.search(&rt, &q).map(|ids| ids.len())
         })
         .await
         .map_err(|e| {
@@ -236,7 +241,7 @@ async fn do_search(
         return Ok(super::fhir_json(StatusCode::OK, json!({
             "resourceType": "Bundle",
             "type": "searchset",
-            "total": ids.len()
+            "total": total
         })));
     }
 
@@ -394,15 +399,7 @@ fn run_search(
     // *before* paging, so `total`, the page and the `next` link describe what
     // they may see (filtering a page afterwards loses later matches).
     let (ids, total) = if auth_user.is_some_and(|u| u.compartment_restricted(resource_type, 's')) {
-        let mut all = query.clone();
-        all.count = None;
-        all.offset = None;
-        let (ids, _) = executor.search_with_total(resource_type, &all)?;
-        let mut ids = crate::visible_matches(state, &executor, auth_user, resource_type, ids)?;
-        let total = ids.len();
-        ids.drain(..query.offset.unwrap_or(0).min(ids.len()));
-        ids.truncate(query.count.unwrap_or(DEFAULT_COUNT));
-        (ids, total)
+        crate::compartment_search(state, &executor, index, auth_user, resource_type, query)?
     } else {
         executor.search_with_total(resource_type, query)?
     };

@@ -4,6 +4,18 @@ All notable changes to sazare. Versions follow [Semantic Versioning](https://sem
 until 1.0, a minor version (0.x.0) may change behavior — those changes are listed under
 **Behavior changes**. See [UPGRADING.md](UPGRADING.md) for how to upgrade.
 
+## Unreleased
+
+### Performance
+- **Patient-scoped searches narrow in the index.** A token limited to one patient's
+  compartment used to read every match of a search and test each resource for the
+  compartment before paging — every Observation of the server for a bare
+  `GET /Observation`. Each resource's patient compartments are now indexed (computed by
+  the same test the access check applies), and the compartment is one more criterion of
+  the search: pages and totals come straight from the index. The page is still checked
+  against the compartment. The first start rebuilds the search index once, in the
+  background.
+
 ## 0.16.0 — 2026-11-26
 
 ### Changed

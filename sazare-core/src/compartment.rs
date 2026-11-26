@@ -143,34 +143,36 @@ impl CompartmentDef {
         resource: &Value,
         patient_id: &str,
     ) -> bool {
-        let fields = match self.membership.get(resource_type) {
-            Some(f) => f,
-            None => return false,
+        self.patients_of(resource_type, resource).iter().any(|p| p == patient_id)
+    }
+
+    /// The ids of the patients whose compartment `resource` is in: a Patient
+    /// its own id; another member type every `Patient/<id>` its compartment
+    /// fields reference (a field may hold one Reference or an array, e.g.
+    /// Provenance.target). The search index stores these (as `_compartment`),
+    /// so a patient-scoped search narrows in the index exactly as this test
+    /// filters — one definition for both.
+    pub fn patients_of(&self, resource_type: &str, resource: &Value) -> Vec<String> {
+        let Some(fields) = self.membership.get(resource_type) else {
+            return Vec::new();
         };
-
-        // Patient: check id match
         if resource_type == "Patient" {
-            return resource
-                .get("id")
-                .and_then(|v| v.as_str())
-                .is_some_and(|id| id == patient_id);
+            return resource.get("id").and_then(|v| v.as_str()).map(|id| vec![id.to_string()]).unwrap_or_default();
         }
-
-        // Other resources: check reference fields. A field may hold a single
-        // Reference object or an array of them (e.g. Provenance.target).
-        let expected_ref = format!("Patient/{}", patient_id);
-        let matches_ref = |v: &Value| -> bool {
-            v.get("reference").and_then(|r| r.as_str()) == Some(expected_ref.as_str())
+        let mut out = Vec::new();
+        let mut take = |v: &Value| {
+            if let Some(id) = v.get("reference").and_then(|r| r.as_str()).and_then(|r| r.strip_prefix("Patient/")) {
+                out.push(id.to_string());
+            }
         };
         for field in fields {
             match resource.get(field.as_str()) {
-                Some(Value::Array(arr)) if arr.iter().any(matches_ref) => return true,
-                Some(obj) if matches_ref(obj) => return true,
-                _ => {}
+                Some(Value::Array(arr)) => arr.iter().for_each(&mut take),
+                Some(obj) => take(obj),
+                None => {}
             }
         }
-
-        false
+        out
     }
 }
 
