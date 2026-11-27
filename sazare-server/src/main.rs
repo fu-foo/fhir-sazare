@@ -28,7 +28,7 @@ Commands:
   logs      Print the background server's log (-f to follow, -n <lines>)
   backup    Write a consistent copy of the databases: backup <dir>
   auth      Credentials for config.yaml:
-              auth hash-password [user]   prompt for a password, print password_hash
+              auth hash-password [user]   prompt for a password (12+ characters), print password_hash
               auth new-api-key [name]     generate a key, print it and its key_sha256
   version   Print the version
   help      Show this help
@@ -183,22 +183,41 @@ fn auth_command(args: &[String]) -> i32 {
     match args.first().map(String::as_str) {
         Some("hash-password") => {
             let user = args.get(1).cloned().unwrap_or_else(|| "admin".into());
+            // The rule is said before the password is typed, and a short or
+            // mistyped one is asked again (3 tries) — not after both entries,
+            // ending the command.
+            const MIN: usize = 12;
             let password = if std::io::IsTerminal::is_terminal(&std::io::stdin()) {
-                let a = rpassword::prompt_password(format!("Password for {user}: ")).unwrap_or_default();
-                let b = rpassword::prompt_password("Again: ").unwrap_or_default();
-                if a != b {
-                    eprintln!("The passwords differ.");
-                    return 1;
+                let mut chosen = None;
+                for _ in 0..3 {
+                    let a = rpassword::prompt_password(format!("Password for {user} (at least {MIN} characters): "))
+                        .unwrap_or_default();
+                    let n = a.chars().count();
+                    if n < MIN {
+                        eprintln!("That is {n} characters; use at least {MIN}.");
+                        continue;
+                    }
+                    let b = rpassword::prompt_password("Again: ").unwrap_or_default();
+                    if a != b {
+                        eprintln!("The two entries differ; once more.");
+                        continue;
+                    }
+                    chosen = Some(a);
+                    break;
                 }
-                a
+                let Some(p) = chosen else {
+                    eprintln!("No password set.");
+                    return 1;
+                };
+                p
             } else {
                 // Piped: the first line of stdin.
                 let mut line = String::new();
                 let _ = std::io::stdin().read_line(&mut line);
                 line.trim_end_matches(['\r', '\n']).to_string()
             };
-            if password.len() < 12 {
-                eprintln!("Use at least 12 characters.");
+            if password.chars().count() < MIN {
+                eprintln!("Use at least {MIN} characters.");
                 return 1;
             }
             let hash = match credentials::hash_password(&password) {

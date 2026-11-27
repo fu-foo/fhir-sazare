@@ -2610,3 +2610,20 @@ async fn test_input_edges() {
     let r = c.get(format!("{base}/Patient?_has:Observation:subject:code={many}")).send().await.unwrap();
     assert_eq!(r.status(), 400);
 }
+
+/// Unsupported search features are `not-supported`, like an unknown
+/// parameter; a malformed value is `invalid`.
+#[tokio::test]
+async fn test_unsupported_search_issue_codes() {
+    let (base, _dir) = start_test_server().await;
+    let c = reqwest::Client::new();
+    let code = |q: &str| {
+        let c = c.clone();
+        let url = format!("{base}/{q}");
+        async move { c.get(url).send().await.unwrap().json::<Value>().await.unwrap()["issue"][0]["code"].clone() }
+    };
+    for q in ["Patient?_filter=x", "Patient?bogus=1", "Patient?gender:text=x"] {
+        assert_eq!(code(q).await, "not-supported", "{q}");
+    }
+    assert_eq!(code("Patient?birthdate=notadate").await, "invalid");
+}

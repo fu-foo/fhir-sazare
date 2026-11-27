@@ -106,10 +106,11 @@ pub(crate) async fn do_search(
     base_url: String,
 ) -> Result<Response, (StatusCode, Json<Value>)> {
     let mut query = SearchQuery::parse_with_registry(&raw_query, Some(&resource_type), &state.search_param_registry).map_err(|e| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(json!(OperationOutcome::error(IssueType::Invalid, e))),
-        )
+        // Something this server doesn't do (`_filter`, `:text`, …) is
+        // `not-supported`, as an unknown parameter is; a malformed value
+        // `invalid`.
+        let code = if e.contains("not supported") { IssueType::NotSupported } else { IssueType::Invalid };
+        (StatusCode::BAD_REQUEST, Json(json!(OperationOutcome::error(code, e))))
     })?;
 
     // A reference to this server by its absolute URL is the local reference:
