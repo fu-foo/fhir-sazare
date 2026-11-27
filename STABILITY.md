@@ -55,7 +55,7 @@ A change to any of the following requires a **major** version.
 
 - The commands `run`, `start`, `stop`, `status`, `logs`, `backup <dir>`,
   `auth hash-password`, `auth new-api-key`, `version`, and the options `--config`,
-  `--demo`, `--open`.
+  `--port`, `--demo`, `--open`. An argument a command doesn't take is an error.
 - Exit statuses: 0 on success; `backup` returns 0 only when a complete backup was
   written; `status` returns non-zero when no server is running.
 - One server per data directory; `stop`, `status`, `logs` and `backup` find it through

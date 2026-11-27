@@ -4,6 +4,18 @@ All notable changes to sazare. Versions follow [Semantic Versioning](https://sem
 until 1.0, a minor version (0.x.0) may change behavior — those changes are listed under
 **Behavior changes**. See [UPGRADING.md](UPGRADING.md) for how to upgrade.
 
+## Unreleased
+
+### Added
+- `--port <n>` for `start` and `run` (over `server.port` and `$SAZARE_PORT`).
+
+### Fixed
+- A taken port (8080 often is: another server, an editor's port forwarding) made `start`
+  print the server's log; it now says plainly that the port is in use and how to choose
+  another (`--port`, `SAZARE_PORT`, `server.port`). `run` logs the same.
+- An argument a command doesn't take is an error with the option probably meant: `start
+  demo` started without the demo data, silently (`` `demo` … Did you mean `--demo`? ``).
+
 ## 0.18.2 — 2026-11-27
 
 ### Security

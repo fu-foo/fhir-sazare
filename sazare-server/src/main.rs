@@ -35,6 +35,7 @@ Commands:
 
 Options (start, run):
   --config <file>   Configuration file (default: ./config.yaml when present)
+  --port <n>        Port to listen on (default 8080; also $SAZARE_PORT, server.port)
   --demo            Load the sample dataset
   --open            Open the dashboard in a browser
 
@@ -56,6 +57,11 @@ fn main() {
             std::process::exit(2);
         }
     };
+    if let Err(e) = check_args(command, &rest) {
+        eprintln!("{e}\n");
+        eprint!("{USAGE}");
+        std::process::exit(2);
+    }
     let code = match command {
         "run" => {
             init_tracing();
@@ -228,6 +234,73 @@ fn auth_command(args: &[String]) -> i32 {
     }
 }
 
+/// The options `command` takes, and whether each takes a value.
+fn command_options(command: &str) -> &'static [(&'static str, bool)] {
+    match command {
+        "start" | "run" => &[("--config", true), ("--port", true), ("--demo", false), ("--open", false)],
+        "stop" | "status" => &[("--config", true)],
+        "logs" => &[("--config", true), ("-f", false), ("-n", true)],
+        "backup" => &[("--config", true)],
+        _ => &[],
+    }
+}
+
+/// Every argument is an option of the command (or `backup`'s directory):
+/// `start demo` used to start without the demo data, silently.
+fn check_args(command: &str, args: &[String]) -> Result<(), String> {
+    let options = command_options(command);
+    if options.is_empty() {
+        return Ok(()); // auth, help, version: their own arguments
+    }
+    let mut positional = 0;
+    let mut i = 0;
+    while i < args.len() {
+        let arg = &args[i];
+        let name = arg.split_once('=').map_or(arg.as_str(), |(n, _)| n);
+        match options.iter().find(|(o, _)| *o == name) {
+            Some((_, takes_value)) => {
+                if *takes_value && !arg.contains('=') {
+                    if args.get(i + 1).is_none_or(|v| v.starts_with('-')) {
+                        return Err(format!("`{name}` needs a value"));
+                    }
+                    i += 1;
+                }
+            }
+            None if command == "backup" && !arg.starts_with('-') && positional == 0 => positional += 1,
+            None => {
+                // `demo` for `--demo`, `--demmo` for `--demo`: the nearest name.
+                let bare = name.trim_start_matches('-');
+                let hint = options
+                    .iter()
+                    .map(|(o, _)| (edit_distance(o.trim_start_matches('-'), bare), *o))
+                    .filter(|(d, _)| *d <= 2)
+                    .min()
+                    .map(|(_, o)| format!(" Did you mean `{o}`?"))
+                    .unwrap_or_default();
+                return Err(format!("`{arg}` is not an option of `{command}`.{hint}"));
+            }
+        }
+        i += 1;
+    }
+    Ok(())
+}
+
+/// Levenshtein distance (short option names only).
+fn edit_distance(a: &str, b: &str) -> usize {
+    let b: Vec<char> = b.chars().collect();
+    let mut row: Vec<usize> = (0..=b.len()).collect();
+    for (i, ca) in a.chars().enumerate() {
+        let mut prev = row[0];
+        row[0] = i + 1;
+        for j in 0..b.len() {
+            let cur = row[j + 1];
+            row[j + 1] = (prev + usize::from(ca != b[j])).min(row[j] + 1).min(cur + 1);
+            prev = cur;
+        }
+    }
+    row[b.len()]
+}
+
 /// The configuration to run with (see `ServerConfig::load`): `--config <path>`
 /// / `--config=<path>`, `SAZARE_CONFIG`, `./config.yaml`, the user's file.
 fn load_config(args: &[String]) -> ServerConfig {
@@ -242,10 +315,33 @@ fn load_config(args: &[String]) -> ServerConfig {
     }
     // A configuration that doesn't load stops here: running on defaults
     // instead (port, data_dir, auth off) would be a surprise.
-    ServerConfig::load(explicit_config.as_deref()).unwrap_or_else(|e| {
+    let mut config = ServerConfig::load(explicit_config.as_deref()).unwrap_or_else(|e| {
         eprintln!("Invalid configuration: {e}");
         std::process::exit(1);
-    })
+    });
+    // `--port <n>` / `--port=<n>` over the file and $SAZARE_PORT.
+    let port = args.iter().enumerate().find_map(|(i, a)| {
+        a.strip_prefix("--port=").map(str::to_string).or_else(|| (a == "--port").then(|| args.get(i + 1).cloned()).flatten())
+    });
+    if let Some(p) = port {
+        match p.parse::<u16>() {
+            Ok(n) if n > 0 => config.server.port = n,
+            _ => {
+                eprintln!("--port {p}: expected a port number from 1 to 65535");
+                std::process::exit(2);
+            }
+        }
+    }
+    config
+}
+
+/// What to tell someone whose port is taken: which, and how to choose another.
+pub(crate) fn port_in_use_message(host: &str, port: u16) -> String {
+    let other = if port == 8090 { 8091 } else { 8090 };
+    format!(
+        "Port {port} on {host} is already in use by another program. Start on another port: \
+         `sazare-server start --port {other}` (or SAZARE_PORT={other}, or server.port in the configuration)."
+    )
 }
 
 /// `run`: the server in the foreground.
@@ -568,6 +664,10 @@ async fn serve(args: Vec<String>) {
     // Bind TCP listener
     let listener = match tokio::net::TcpListener::bind(&bind_addr).await {
         Ok(l) => l,
+        Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
+            tracing::error!("{}", port_in_use_message(&config.server.host, config.server.port));
+            std::process::exit(1);
+        }
         Err(e) => {
             tracing::error!("Failed to bind to {}: {}", bind_addr, e);
             std::process::exit(1);
@@ -798,4 +898,40 @@ fn run_backup(config: &ServerConfig, dir: &std::path::Path) -> i32 {
         }
     }
     0
+}
+
+#[cfg(test)]
+mod cli_tests {
+    use super::{check_args, edit_distance};
+
+    fn args(a: &[&str]) -> Vec<String> {
+        a.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn arguments_a_command_takes() {
+        for ok in [
+            &["--demo", "--open"][..],
+            &["--port", "8090", "--config", "c.yaml"],
+            &["--port=8090", "--config=c.yaml"],
+        ] {
+            assert!(check_args("start", &args(ok)).is_ok(), "{ok:?}");
+        }
+        assert!(check_args("logs", &args(&["-f", "-n", "50"])).is_ok());
+        assert!(check_args("backup", &args(&["dir", "--config", "c.yaml"])).is_ok());
+        assert!(check_args("auth", &args(&["hash-password", "admin"])).is_ok());
+    }
+
+    #[test]
+    fn a_mistyped_argument_is_named_with_the_one_meant() {
+        let err = |a: &[&str]| check_args("start", &args(a)).unwrap_err();
+        assert!(err(&["demo"]).contains("Did you mean `--demo`?"));
+        assert!(err(&["--demmo"]).contains("Did you mean `--demo`?"));
+        assert!(err(&["--opn"]).contains("Did you mean `--open`?"));
+        assert!(!err(&["--xyz"]).contains("Did you mean"));
+        assert!(err(&["--port"]).contains("needs a value"));
+        assert!(check_args("status", &args(&["--demo"])).is_err());
+        assert!(check_args("backup", &args(&["a", "b"])).is_err());
+        assert_eq!(edit_distance("demo", "demmo"), 1);
+    }
 }

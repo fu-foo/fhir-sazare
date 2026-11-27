@@ -153,6 +153,9 @@ That's the whole setup. `sazare-server stop` stops it (cleanly — in-flight wri
 finish), `sazare-server status` shows where it runs. See
 [Running the server](#running-the-server).
 
+It listens on port 8080. Is 8080 taken (another server, an editor's port forwarding)?
+`start` says so; pick another with `--port`: `sazare-server start --demo --open --port 8090`.
+
 > **macOS first run** (direct download only): the binary is unsigned, so
 > Gatekeeper blocks it with an "unidentified developer" dialog. Clear the
 > quarantine flag and run:

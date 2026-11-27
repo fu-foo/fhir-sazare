@@ -202,6 +202,16 @@ pub fn start(config: &ServerConfig, forwarded: &[String], open: bool) -> i32 {
         return 0;
     }
 
+    // The port taken by another program (8080 often is): say so here, plainly,
+    // rather than as the last line of the server's log.
+    let host = config.server.host.as_str();
+    if let Err(e) = std::net::TcpListener::bind((host, config.server.port))
+        && e.kind() == std::io::ErrorKind::AddrInUse
+    {
+        eprintln!("{}", crate::port_in_use_message(host, config.server.port));
+        return 1;
+    }
+
     let log = match open_log(&paths.log) {
         Ok(f) => f,
         Err(e) => {
