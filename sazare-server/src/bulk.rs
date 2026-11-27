@@ -87,6 +87,17 @@ pub async fn import(
             }
         };
 
+        // One resource per line: a JSON array (a whole list on one line) or
+        // any other non-object isn't one.
+        if !resource.is_object() {
+            let what = if resource.is_array() { "a JSON array" } else { "not a JSON object" };
+            errors.push(json!({
+                "line": line_num + 1,
+                "error": format!("{what}; NDJSON has one resource (a JSON object) per line")
+            }));
+            continue;
+        }
+
         // Extract resourceType
         let resource_type = match resource.get("resourceType").and_then(|v| v.as_str()) {
             Some(rt) => rt.to_string(),
@@ -223,13 +234,28 @@ pub async fn import(
     let mut issues: Vec<Value> = vec![json!({
         "severity": if errors.is_empty() { "information" } else { "warning" },
         "code": "informational",
-        "diagnostics": format!("{} resources imported, {} errors", created, errors.len())
+        "diagnostics": format!(
+            "{created} resource{} imported, {} error{}",
+            if created == 1 { "" } else { "s" },
+            errors.len(),
+            if errors.len() == 1 { "" } else { "s" }
+        )
     })];
     // The first errors in full; a file with millions of bad lines would make a
     // response as large as the file. The count above is exact.
     const LISTED: usize = 100;
     for err in errors.iter().take(LISTED) {
-        let diag = serde_json::to_string(err).unwrap_or_else(|_| "import error".to_string());
+        // `line 3 (Patient p1): …` — a sentence, not JSON in a string.
+        let what = match (err.get("resourceType").and_then(|v| v.as_str()), err.get("id").and_then(|v| v.as_str())) {
+            (Some(t), Some(id)) => format!(" ({t} {id})"),
+            (Some(t), None) => format!(" ({t})"),
+            _ => String::new(),
+        };
+        let diag = format!(
+            "line {}{what}: {}",
+            err.get("line").and_then(|v| v.as_u64()).unwrap_or(0),
+            err.get("error").and_then(|v| v.as_str()).unwrap_or("import error")
+        );
         issues.push(json!({
             "severity": "error",
             "code": "processing",

@@ -118,6 +118,20 @@ fn parse_r4_definitions() -> Vec<(String, SearchParamDef)> {
     out
 }
 
+/// The resource types each R4 reference search parameter may point to
+/// (`search-parameters/targets.tsv`, generated from the R4 definitions).
+static TARGETS: std::sync::LazyLock<HashMap<String, Vec<&'static str>>> =
+    std::sync::LazyLock::new(|| {
+        include_str!("../search-parameters/targets.tsv")
+            .lines()
+            .filter(|l| !l.starts_with('#') && !l.is_empty())
+            .filter_map(|l| {
+                let mut c = l.split('\t');
+                Some((format!("{}.{}", c.next()?, c.next()?), c.next()?.split(',').collect()))
+            })
+            .collect()
+    });
+
 /// Registry of search parameter definitions per resource type
 pub struct SearchParamRegistry {
     definitions: HashMap<String, Vec<SearchParamDef>>,
@@ -234,6 +248,12 @@ impl SearchParamRegistry {
     /// The resource types with search parameters.
     pub fn resource_types(&self) -> impl Iterator<Item = &str> {
         self.definitions.keys().map(String::as_str)
+    }
+
+    /// The types a reference parameter of R4 may point to (`None`: not an R4
+    /// reference parameter, e.g. a custom one).
+    pub fn reference_targets(&self, resource_type: &str, param: &str) -> Option<&'static [&'static str]> {
+        TARGETS.get(&format!("{resource_type}.{param}")).map(Vec::as_slice)
     }
 
     pub fn has_resource_type(&self, resource_type: &str) -> bool {

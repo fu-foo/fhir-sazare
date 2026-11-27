@@ -2627,3 +2627,22 @@ async fn test_unsupported_search_issue_codes() {
     }
     assert_eq!(code("Patient?birthdate=notadate").await, "invalid");
 }
+
+/// A chain written without types (`subject.family`) searches like the typed
+/// one; an ambiguous one says which type to name.
+#[tokio::test]
+async fn test_chains_without_types() {
+    let (base, _dir) = start_test_server().await;
+    let c = reqwest::Client::new();
+    create(&c, &base, "Patient", &json!({"resourceType": "Patient", "id": "p", "name": [{"family": "Doe"}]})).await;
+    create(&c, &base, "Observation", &json!({"resourceType": "Observation", "status": "final", "code": {"text": "x"},
+        "subject": {"reference": "Patient/p"}})).await;
+    for q in ["subject.family=Doe", "subject:Patient.family=Doe", "patient.family=doe"] {
+        let b: Value = c.get(format!("{base}/Observation?{q}")).send().await.unwrap().json().await.unwrap();
+        assert_eq!(b["total"], 1, "{q}: {b}");
+    }
+    let r = c.get(format!("{base}/Observation?performer.family=Doe")).send().await.unwrap();
+    assert_eq!(r.status(), 400);
+    let b: Value = r.json().await.unwrap();
+    assert!(b["issue"][0]["diagnostics"].as_str().unwrap().contains("performer:"), "{b}");
+}

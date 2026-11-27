@@ -174,6 +174,15 @@ impl SearchQuery {
                 return Err(format!("'{key}': a search value may not contain a NUL character"));
             }
 
+            // A chain without types (`subject.family`, FHIR's own form): each
+            // hop's type from what the reference may point to.
+            let key = match resource_type {
+                Some(rt) if !key.starts_with('_') && key.contains('.') => {
+                    type_untyped_chain(rt, &key, registry)?
+                }
+                _ => key,
+            };
+
             // Reverse chain: `_has:Type:reference-param:search-param=value`.
             // Parsed before the generic `_`-prefixed skip below so it isn't
             // dropped as an unsupported result parameter.
@@ -508,6 +517,65 @@ fn check_chains(
         terminal(&h.source_type, &h.target_param, &h.value, &h.target_param_type).map_err(|e| format!("_has: {e}"))?;
     }
     Ok(())
+}
+
+/// `subject.family` → `subject:Patient.family`: each hop without a type gets
+/// the one type it may point to that has the next parameter (a reference
+/// parameter, for a hop that isn't the last). Typed hops are kept.
+fn type_untyped_chain(resource_type: &str, key: &str, registry: &SearchParamRegistry) -> Result<String, String> {
+    let hops: Vec<&str> = key.split('.').collect();
+    let mut current = resource_type.to_string();
+    let mut out = Vec::with_capacity(hops.len());
+    for (i, hop) in hops.iter().enumerate() {
+        if i == hops.len() - 1 {
+            out.push(hop.to_string());
+            break;
+        }
+        let (param, typed) = match hop.split_once(':') {
+            Some((p, t)) => (p, Some(t.to_string())),
+            None => (*hop, None),
+        };
+        let target = match typed {
+            Some(t) => t,
+            None => {
+                let next = hops[i + 1].split(':').next().unwrap_or("");
+                let last = i + 1 == hops.len() - 1;
+                let Some(targets) = registry.reference_targets(&current, param) else {
+                    return Err(format!(
+                        "'{key}': the type '{param}' of {current} refers to can't be told; write it: {param}:<Type>.{next}"
+                    ));
+                };
+                let fits: Vec<&str> = targets
+                    .iter()
+                    .copied()
+                    .filter(|t| match registry.lookup_param_type(t, next) {
+                        Some(SearchParamType::Reference) => true,
+                        Some(_) => last,
+                        None => last && next.starts_with('_'),
+                    })
+                    .collect();
+                match fits.as_slice() {
+                    [one] => one.to_string(),
+                    [] => {
+                        return Err(format!(
+                            "'{key}': none of the types {current}.{param} refers to ({}) has a parameter '{next}'",
+                            targets.join(", ")
+                        ));
+                    }
+                    many => {
+                        return Err(format!(
+                            "'{key}' is ambiguous: {current}.{param} may refer to {}; name the type, e.g. {param}:{}.{next}",
+                            many.join(", "),
+                            many[0]
+                        ));
+                    }
+                }
+            }
+        };
+        out.push(format!("{param}:{target}"));
+        current = target;
+    }
+    Ok(out.join("."))
 }
 
 fn parse_chain(
@@ -1155,5 +1223,26 @@ mod tests {
             assert!(has(bad).is_err(), "{bad}");
         }
         assert!(has("_has:Observation:subject:code=1234-5").is_ok());
+    }
+
+    #[test]
+    fn chains_without_types_take_the_one_that_fits() {
+        let parse = |q: &str| SearchQuery::parse_for_resource(q, Some("Observation"));
+        // Observation.subject: Device, Group, Location, Patient; only Patient has `family`.
+        let q = parse("subject.family=Doe").unwrap();
+        assert_eq!(q.chain_parameters[0].links[0].target_type, "Patient");
+        assert_eq!(q.chain_parameters[0].target_param, "family");
+        // Typed hops are kept; untyped ones after them resolved too.
+        let q = parse("subject:Patient.general-practitioner.name=x");
+        assert!(q.is_ok() || q.unwrap_err().contains("ambiguous"));
+        // More than one fits: say which, and how to choose.
+        let e = parse("performer.family=Doe").unwrap_err();
+        assert!(e.contains("ambiguous") && e.contains("performer:"), "{e}");
+        // None fits.
+        let e = parse("subject.bogus=x").unwrap_err();
+        assert!(e.contains("none of the types"), "{e}");
+        // Encounter.subject is Patient or Group: `name` on Patient only.
+        let q = SearchQuery::parse_for_resource("subject.name=Ann", Some("Encounter")).unwrap();
+        assert_eq!(q.chain_parameters[0].links[0].target_type, "Patient");
     }
 }

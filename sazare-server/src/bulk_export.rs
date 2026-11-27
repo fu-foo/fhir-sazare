@@ -418,6 +418,15 @@ fn streamed(rx: tokio::sync::mpsc::Receiver<Result<Vec<u8>, std::io::Error>>) ->
 /// export of something other than what was asked.
 #[allow(clippy::result_large_err)]
 fn export_params(raw: Option<String>) -> Result<ExportParams, Response> {
+    const KNOWN: [&str; 4] = ["_type", "_since", "_outputFormat", "_typeFilter"];
+    let pairs: Vec<(String, String)> = serde_urlencoded::from_str(raw.as_deref().unwrap_or("")).unwrap_or_default();
+    if let Some((k, _)) = pairs.iter().find(|(k, _)| !KNOWN.contains(&k.as_str())) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(op_outcome("not-supported", format!("`{k}` is not a parameter of $export (supported: _type, _since, _outputFormat)"))),
+        )
+            .into_response());
+    }
     let params: ExportParams = serde_urlencoded::from_str(raw.as_deref().unwrap_or("")).map_err(|e| {
         (
             StatusCode::BAD_REQUEST,

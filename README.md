@@ -518,10 +518,13 @@ an older version gets its full text on the first start.
 
 ### Chain Search
 
-Search by referenced resource attributes (multi-level up to 4 hops, type required at each hop):
+Search by referenced resource attributes (multi-level up to 4 hops). A hop may name its
+type (`subject:Patient.name`) or leave it out (`subject.name`) when only one of the types
+it may refer to has the next parameter; when several do, the answer says which to name.
 
 ```bash
 # Find Observations where the subject (Patient) has name "Doe"
+curl "http://localhost:8080/Observation?subject.name=Doe"
 curl "http://localhost:8080/Observation?subject:Patient.name=Doe"
 
 # Multi-level: Conditions whose Encounter's subject (Patient) is named "Doe"

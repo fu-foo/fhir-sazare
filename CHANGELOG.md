@@ -8,6 +8,14 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
 
 ### Added
 - `--port <n>` for `start` and `run` (over `server.port` and `$SAZARE_PORT`).
+- **Chains without types**: `subject.name=Doe` (FHIR's own form) was refused as an unknown
+  parameter; only `subject:Patient.name` worked. A hop without a type takes the one type
+  it may refer to (R4's targets) that has the next parameter; when several do, the 400
+  says which to name.
+- `$import` errors read as sentences (`line 3 (Patient): …`, not JSON inside a string); a
+  line holding a JSON array says that NDJSON is one resource per line; plurals fixed.
+- `$export` with an unknown parameter names it in sazare's words (it listed `_typeFilter`,
+  which isn't supported).
 - `sazare-server restart`: stop (when running) and start, with `start`'s options — the
   step after changing the configuration.
 
