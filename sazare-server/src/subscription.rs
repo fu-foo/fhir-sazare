@@ -455,18 +455,36 @@ pub fn is_public_ip(ip: std::net::IpAddr) -> bool {
                 || v4.is_multicast()
                 || v4.is_documentation()
                 || o[0] == 0
-                || (o[0] == 100 && (64..=127).contains(&o[1]))) // 100.64.0.0/10 (CGNAT)
+                || (o[0] == 100 && (64..=127).contains(&o[1])) // 100.64.0.0/10 (CGNAT)
+                || (o[0] == 192 && o[1] == 0 && o[2] == 0) // 192.0.0.0/24 (protocol assignments)
+                || (o[0] == 198 && (o[1] & 0xfe) == 18) // 198.18.0.0/15 (benchmarking)
+                || o[0] >= 240) // 240.0.0.0/4 (reserved)
         }
         IpAddr::V6(v6) => {
+            let seg = v6.segments();
+            let embedded = |hi: u16, lo: u16| IpAddr::V4(std::net::Ipv4Addr::new((hi >> 8) as u8, hi as u8, (lo >> 8) as u8, lo as u8));
+            // IPv4 inside IPv6: mapped (::ffff:a.b.c.d), compatible (::a.b.c.d),
+            // NAT64 (64:ff9b::/96) and 6to4 (2002:aabb:ccdd::/16) all reach
+            // that IPv4 address: judge it.
             if let Some(v4) = v6.to_ipv4_mapped() {
                 return is_public_ip(IpAddr::V4(v4));
             }
-            let seg0 = v6.segments()[0];
+            if seg[..6] == [0, 0, 0, 0, 0, 0] && !v6.is_loopback() && !v6.is_unspecified() {
+                return is_public_ip(embedded(seg[6], seg[7]));
+            }
+            if seg[..6] == [0x64, 0xff9b, 0, 0, 0, 0] {
+                return is_public_ip(embedded(seg[6], seg[7]));
+            }
+            if seg[0] == 0x2002 {
+                return is_public_ip(embedded(seg[1], seg[2]));
+            }
             !(v6.is_loopback()
                 || v6.is_unspecified()
                 || v6.is_multicast()
-                || (seg0 & 0xfe00) == 0xfc00 // fc00::/7 unique local
-                || (seg0 & 0xffc0) == 0xfe80) // fe80::/10 link-local
+                || (seg[0] & 0xfe00) == 0xfc00 // fc00::/7 unique local
+                || (seg[0] & 0xffc0) == 0xfe80 // fe80::/10 link-local
+                || (seg[0] & 0xffc0) == 0xfec0 // fec0::/10 site-local (deprecated)
+                || (seg[0] == 0x2001 && seg[1] == 0x0db8)) // 2001:db8::/32 documentation
         }
     }
 }
@@ -652,5 +670,20 @@ mod delivery_tests {
             assert!(is_public_ip(public.parse().unwrap()), "{public}");
         }
     }
-}
 
+    #[test]
+    fn ipv4_inside_ipv6_and_special_ranges_are_not_public() {
+        use std::net::IpAddr;
+        let ip = |s: &str| s.parse::<IpAddr>().unwrap();
+        for private in [
+            "::ffff:127.0.0.1", "::127.0.0.1", "::10.0.0.1", "64:ff9b::10.0.0.1", "64:ff9b::7f00:1",
+            "2002:7f00:1::", "2002:c0a8:101::1", "fec0::1", "2001:db8::1",
+            "198.18.0.1", "198.19.255.255", "240.0.0.1", "255.255.255.255", "192.0.0.1", "169.254.169.254", "100.64.0.1",
+        ] {
+            assert!(!is_public_ip(ip(private)), "{private}");
+        }
+        for public in ["8.8.8.8", "::ffff:8.8.8.8", "64:ff9b::808:808", "2002:808:808::1", "2606:4700::1111", "198.20.0.1"] {
+            assert!(is_public_ip(ip(public)), "{public}");
+        }
+    }
+}

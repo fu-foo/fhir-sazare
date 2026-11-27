@@ -640,3 +640,70 @@ async fn refusals_are_fhir_json() {
     let b: Value = r.json().await.unwrap();
     assert_eq!(b["resourceType"], "OperationOutcome");
 }
+
+/// A token for one patient reaches nothing of another's through the paths
+/// added before 1.0: searches inside a batch, `$everything`, reverse chains
+/// and includes, chains, a delete's history version, counts, POST _search
+/// and conditional updates.
+#[tokio::test]
+async fn a_patient_token_reaches_no_other_patient_through_the_newer_paths() {
+    let (c, t, _dir) = two_patients().await;
+    let ids = |b: &Value| -> Vec<String> {
+        b["entry"].as_array().map(|e| e.iter().map(|x| format!("{}/{}", x["resource"]["resourceType"].as_str().unwrap_or(""), x["resource"]["id"].as_str().unwrap_or(""))).collect()).unwrap_or_default()
+    };
+    let leaks = |found: Vec<String>| found.into_iter().filter(|i| i.ends_with("p2")).collect::<Vec<_>>();
+
+    // A search inside a batch is the same search (compartment applied).
+    let batch = json!({"resourceType": "Bundle", "type": "batch", "entry": [
+        {"request": {"method": "GET", "url": "Observation"}},
+        {"request": {"method": "GET", "url": "Patient?_revinclude=Observation:subject"}},
+        {"request": {"method": "GET", "url": "Observation?_summary=count"}}]});
+    let (s, b) = c.send(reqwest::Method::POST, "/", &t, Some(batch)).await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(leaks(ids(&b["entry"][0]["resource"])), Vec::<String>::new(), "{b}");
+    assert_eq!(leaks(ids(&b["entry"][1]["resource"])), Vec::<String>::new(), "{b}");
+    assert_eq!(b["entry"][2]["resource"]["total"], 1, "{b}");
+    // Reading another's by id in a batch is refused.
+    let batch = json!({"resourceType": "Bundle", "type": "batch", "entry": [{"request": {"method": "GET", "url": "Observation/o-p2"}}]});
+    let (s, _) = c.send(reqwest::Method::POST, "/", &t, Some(batch)).await;
+    assert_eq!(s, 403);
+
+    // $everything of the other patient; of one's own, only one's own.
+    assert_eq!(c.get("/Patient/p2/$everything", &t).await.0, 403);
+    let (s, b) = c.get("/Patient/p1/$everything?_count=1", &t).await;
+    assert_eq!(s, 200);
+    assert_eq!(b["total"], 2, "{b}");
+    let (_, b2) = c.get("/Patient/p1/$everything?_count=1&_offset=1", &t).await;
+    assert_eq!(leaks([ids(&b), ids(&b2)].concat()), Vec::<String>::new());
+
+    // Chains, reverse chains, includes, counts, POST _search.
+    for q in [
+        "/Observation?subject:Patient._id=p2",
+        "/Patient?_has:Observation:subject:status=final",
+        "/Observation?_include=Observation:subject",
+        "/Patient?_id=p2",
+        "/Observation?_id=o-p2",
+    ] {
+        let (s, b) = c.get(q, &t).await;
+        assert_eq!(s, 200, "{q}: {b}");
+        assert_eq!(leaks(ids(&b)), Vec::<String>::new(), "{q}");
+    }
+    let (_, b) = c.get("/Observation?_summary=count", &t).await;
+    assert_eq!(b["total"], 1);
+    let r = c.http.post(format!("{}/Observation/_search", c.base)).bearer_auth(&t)
+        .header("Content-Type", "application/x-www-form-urlencoded").body("_id=o-p2").send().await.unwrap();
+    let b: Value = r.json().await.unwrap();
+    assert_eq!(b["total"], 0, "{b}");
+
+    // The other patient's resource deleted: its history and its delete
+    // version stay out of reach (403, not 410 or 404).
+    assert_eq!(c.send(reqwest::Method::DELETE, "/Observation/o-p2", ADMIN_KEY, None).await.0, 204);
+    assert_eq!(c.get("/Observation/o-p2/_history", &t).await.0, 403);
+    assert_eq!(c.get("/Observation/o-p2/_history/2", &t).await.0, 403);
+
+    // A conditional update matching only the other's resources creates one's
+    // own instead of replacing theirs; one into their compartment is refused.
+    let obs = |subject: &str| json!({"resourceType": "Observation", "status": "final", "code": {"text": "x"}, "subject": {"reference": subject}});
+    let (s, _) = c.send(reqwest::Method::PUT, "/Observation?subject=Patient/p2", &t, Some(obs("Patient/p2"))).await;
+    assert_eq!(s, 403);
+}

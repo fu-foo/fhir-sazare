@@ -525,6 +525,8 @@ async fn authenticate_jwt(
 
     // Build validation
     let mut validation = Validation::new(algorithm);
+    // A token not yet valid (`nbf` in the future) is refused too.
+    validation.validate_nbf = true;
 
     if let Some(ref issuer) = jwt_settings.issuer {
         validation.set_issuer(&[issuer]);

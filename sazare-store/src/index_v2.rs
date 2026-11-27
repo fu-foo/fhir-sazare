@@ -1097,11 +1097,11 @@ impl IndexV2 {
             return Ok(none);
         }
         let set = Sql::new(
-            sets.iter().map(|s| s.text.clone()).collect::<Vec<_>>().join(" UNION "),
+            union_of(sets.iter().map(|s| s.text.clone()).collect()),
             sets.iter().flat_map(|s| s.args.clone()).collect(),
         );
         let probe = Sql::new(
-            format!("({})", probes.iter().map(|s| s.text.clone()).collect::<Vec<_>>().join(" OR ")),
+            or_of(probes.iter().map(|s| s.text.clone()).collect()),
             probes.iter().flat_map(|s| s.args.clone()).collect(),
         );
         let rank = match (p.name.as_str(), &p.param_type) {
@@ -1274,11 +1274,11 @@ impl IndexV2 {
             return Criterion { set: Sql::new("SELECT 0 AS rid WHERE 0", vec![]), probe: Sql::new("0", vec![]), seekable: true, rank: 0, unique: true, equality: false };
         }
         let set = Sql::new(
-            sets.iter().map(|s| s.text.clone()).collect::<Vec<_>>().join(" UNION "),
+            union_of(sets.iter().map(|s| s.text.clone()).collect()),
             sets.iter().flat_map(|s| s.args.clone()).collect(),
         );
         let probe = Sql::new(
-            format!("({})", probes.iter().map(|s| s.text.clone()).collect::<Vec<_>>().join(" OR ")),
+            or_of(probes.iter().map(|s| s.text.clone()).collect()),
             probes.iter().flat_map(|s| s.args.clone()).collect(),
         );
         Criterion { set, probe, seekable, rank: 5, unique: true, equality: false }
@@ -1407,6 +1407,34 @@ fn number_condition(prefix: Option<&str>, v: &str) -> Option<(String, Vec<Arg>, 
         _ => ("val >= ? AND val < ?", vec![val - half, val + half]),
     };
     Some((cond.to_string(), args.into_iter().map(Arg::Real).collect(), prefix != Some("ne")))
+}
+
+/// The `UNION` of sets of `rid`s, nested in groups so a long list of
+/// alternatives stays within SQLite's 500 terms of one compound SELECT.
+fn union_of(sets: Vec<String>) -> String {
+    const GROUP: usize = 400;
+    if sets.len() <= GROUP {
+        return sets.join(" UNION ");
+    }
+    union_of(sets.chunks(GROUP).map(|g| format!("SELECT rid FROM ({})", g.join(" UNION "))).collect())
+}
+
+/// `(a OR b OR …)` as a balanced tree, so a long list stays within SQLite's
+/// expression depth (1000).
+fn or_of(terms: Vec<String>) -> String {
+    fn tree(t: &[String]) -> String {
+        match t {
+            [one] => one.clone(),
+            _ => {
+                let (l, r) = t.split_at(t.len() / 2);
+                format!("({} OR {})", tree(l), tree(r))
+            }
+        }
+    }
+    if terms.is_empty() {
+        return "0".to_string();
+    }
+    format!("({})", tree(&terms))
 }
 
 fn table_for(kind: &str) -> &'static str {

@@ -2567,3 +2567,20 @@ async fn test_transaction_put_then_delete_one_resource() {
     let b: Value = c.get(format!("{base}/Patient?_summary=count")).send().await.unwrap().json().await.unwrap();
     assert_eq!(b["total"], 0);
 }
+
+/// Up to 1000 comma-separated values in one parameter search correctly
+/// (SQLite caps a compound SELECT at 500 terms: they were a 500); more are a
+/// 400.
+#[tokio::test]
+async fn test_long_lists_of_values() {
+    let (base, _dir) = start_test_server().await;
+    let c = reqwest::Client::new();
+    create(&c, &base, "Patient", &json!({"resourceType": "Patient", "id": "real", "name": [{"family": "Zed"}]})).await;
+    let list = |n: usize, real: &str| (0..n - 1).map(|i| format!("x{i}")).chain([real.to_string()]).collect::<Vec<_>>().join(",");
+    for q in [format!("_id={}", list(1000, "real")), format!("family={}", list(1000, "Ze")), format!("_id={}", list(450, "real"))] {
+        let b: Value = c.get(format!("{base}/Patient?{q}")).send().await.unwrap().json().await.unwrap();
+        assert_eq!(b["total"], 1, "{}", &q[..20]);
+    }
+    let r = c.get(format!("{base}/Patient?_id={}", list(1001, "real"))).send().await.unwrap();
+    assert_eq!(r.status(), 400);
+}

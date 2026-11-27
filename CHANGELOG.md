@@ -7,6 +7,13 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
 ## Unreleased
 
 ### Security
+- **Rest-hook endpoints that reach a private address through IPv6** are refused like the
+  private address itself: IPv4-compatible `::a.b.c.d`, NAT64 `64:ff9b::/96` and 6to4
+  `2002::/16` (each judged by the IPv4 address inside), site-local `fec0::/10`, and the
+  IPv4 ranges 192.0.0.0/24, 198.18.0.0/15 and 240.0.0.0/4.
+- A JWT whose `nbf` is in the future is refused.
+- A parameter with many comma-separated values answered 500 (SQLite's limit of 500
+  terms in a compound SELECT); up to 1000 now search correctly, more are a 400.
 - Dependencies updated for the advisories `cargo audit` reports, among them the bundled
   SQLite (`rusqlite` 0.43, `libsqlite3-sys` 0.40), `rustls`, `rustls-webpki` and the
   `tokio` I/O-safety fix. `rustls-pemfile` (unmaintained) is replaced by the PEM parser

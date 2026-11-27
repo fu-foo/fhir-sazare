@@ -294,6 +294,13 @@ impl SearchQuery {
             // Infer parameter type from name (registry-aware when resource_type is provided)
             let param_type = infer_with_registry(registry, resource_type, &param_name);
 
+            if alternatives(&value).len() > MAX_ALTERNATIVES {
+                return Err(format!(
+                    "'{param_name}' has {} comma-separated values; at most {MAX_ALTERNATIVES} are supported (split the search)",
+                    alternatives(&value).len()
+                ));
+            }
+
             // A reference's type modifier (`subject:Patient=123`) is the
             // typed reference `Patient/123`.
             let (modifier, value) = match modifier {
@@ -579,6 +586,9 @@ fn parse_has(key: &str, raw_value: &str, registry: &SearchParamRegistry) -> Opti
         target_param_type,
     })
 }
+
+/// Comma-separated values one parameter may have (each is a term of the SQL).
+pub const MAX_ALTERNATIVES: usize = 1000;
 
 /// A string as string search compares it: case- and accent-insensitive (FHIR:
 /// "after both have been normalized by case and accent"). `José` → `jose`,
