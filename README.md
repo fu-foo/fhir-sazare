@@ -138,12 +138,12 @@ Each release also has `SHA256SUMS` (check a download with `sha256sum -c SHA256SU
 
 ```bash
 docker run -p 8080:8080 -v sazare-data:/data --log-opt max-size=50m --log-opt max-file=2 \
-  ghcr.io/fu-foo/fhir-sazare:0.17
+  ghcr.io/fu-foo/fhir-sazare:0.18
 ```
 
 (The `--log-opt`s cap the log Docker keeps; `docker-compose.yml` sets the same.)
 
-Tags: `latest` is the newest release, `0.17` the newest 0.17.x, `0.17.0` exactly that
+Tags: `latest` is the newest release, `0.18` the newest 0.18.x, `0.18.0` exactly that
 release, and `edge` the newest `main` (unreleased).
 
 `start` runs the server in the background and returns once it is up;
@@ -866,6 +866,8 @@ see the [design document](design/search-index-v2.md) for the numbers.
 - Done: quantity search; patient compartments in the index
 - Done: long-running operation — the index catches up with the store after a crash,
   `$export` streams, logs turn over
+- Done: R4 conformance — every R4 resource type searchable, writes checked against the R4
+  element definitions, unsupported search syntax refused; security review
 - Stability policy: what 1.0 promises
 - End-to-end and security review before the release
 

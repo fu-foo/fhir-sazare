@@ -48,10 +48,11 @@ into `data_dir`, delete every `search_index*` file — the index generations
 
 ## Version notes
 
-### To the next release
+### To 0.18.0
 
 - **The search index is rebuilt once, in the background**: every R4 resource type now
-  has its search parameters. As in 0.17, the old index answers until the switch.
+  has its search parameters, and strings are folded for accents. As in 0.17, the old
+  index answers until the switch.
 - **`resources.sqlite` moves to schema version 3** (a delete is recorded in the history).
   To go back, restore the backup from step 1.
 - **`POST /Type` ignores an id in the body.** A client that created resources with ids
@@ -61,6 +62,16 @@ into `data_dir`, delete every `search_index*` file — the index generations
   already stored is not checked; an update of it is.
 - Searches with syntax sazare doesn't support (`_filter`, `:text`, a nested `_has`, …)
   answer 400 instead of ignoring it; a resource type that isn't R4 is refused.
+- **JSON only, said so**: `_format=xml` or an `Accept` without JSON is a 406, a body that
+  isn't JSON a 415. An id that isn't a FHIR id (`a_b`, 65+ characters) is refused on
+  writes; stored ones are still read.
+- **`log.level` in the configuration now takes effect** (it was ignored): a file that
+  says `warn` logs less than before. `RUST_LOG` still wins.
+- **Docker**: the image is Debian-based (glibc) instead of Alpine; the data volume and the
+  `sazare` user (uid 10001) are unchanged. `docker-compose.yml` no longer mounts
+  `./config.yaml` (uncomment the line after creating the file).
+- **Linux binaries** need glibc 2.28 or newer (they needed 2.39). Building from source
+  needs Rust 1.89.
 
 ### To 0.17.0
 
