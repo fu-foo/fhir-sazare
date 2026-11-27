@@ -32,6 +32,13 @@ pub fn fhir_date_range(value: &str) -> Option<(i64, i64)> {
         }
         return None;
     }
+    // A date is ASCII digits with `-` between the parts: anything else isn't
+    // one (and slicing by bytes below is then safe).
+    let shape_ok = v.is_ascii()
+        && v.bytes().enumerate().all(|(i, b)| if i == 4 || i == 7 { b == b'-' } else { b.is_ascii_digit() });
+    if !shape_ok {
+        return None;
+    }
     match v.len() {
         4 => {
             let year: i32 = v.parse().ok()?;
@@ -57,3 +64,18 @@ pub fn fhir_date_range(value: &str) -> Option<(i64, i64)> {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::fhir_date_range;
+
+    #[test]
+    fn dates_and_not_dates() {
+        for ok in ["2024", "2024-06", "2024-06-15", "2024-06-15T10:00:00Z", "2024-06-15T10:00:00+09:00", "2024-06-15T10:00"] {
+            assert!(fhir_date_range(ok).is_some(), "{ok}");
+        }
+        // Not dates, and none panics (2024é1 is 7 bytes: slicing it by bytes would).
+        for bad in ["2024X06", "2024é1", "2024年1", "20x4", "2024-6", "2024-06-1", "2024-13", "2024-02-30", "", "abcd-ef"] {
+            assert!(fhir_date_range(bad).is_none(), "{bad}");
+        }
+    }
+}

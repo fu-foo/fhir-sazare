@@ -127,6 +127,16 @@ fn parse_entries(bundle: &Value) -> Result<Vec<BundleEntry>, OperationOutcome> {
             Some((i, q)) => (Some(i.to_string()).filter(|i| !i.is_empty()), Some(q.to_string())),
             None => (id, query),
         };
+        // A write names a FHIR id (`Patient/a/b` would store the id `a/b`).
+        if let Some(id) = &id
+            && method != "GET"
+            && !sazare_core::validation::is_fhir_id(id)
+        {
+            return Err(OperationOutcome::error(
+                IssueType::Invalid,
+                format!("entry[{i}].request.url '{url}': '{id}' is not a FHIR id (1 to 64 letters, digits, '-' or '.')"),
+            ));
+        }
         if query.is_some() && method != "GET" {
             return Err(OperationOutcome::error(
                 IssueType::NotSupported,

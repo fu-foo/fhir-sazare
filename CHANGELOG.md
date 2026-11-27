@@ -7,6 +7,22 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
 ## Unreleased
 
 ### Fixed
+- **The patient compartment follows the R4 elements**: EpisodeOfCare and NutritionOrder
+  are linked by `patient` (not `subject`), SupplyRequest by `requester`, Person by
+  `link.target`, Basic by `subject`, EnrollmentRequest by `candidate` — those resources
+  were in no compartment (a patient-scoped token was refused them, `$everything` and
+  Group `$export` left them out). `$everything` and Group `$export` find members through
+  the index's compartment rows, so a field whose search parameter has another name
+  (`Task.for`) counts too.
+- A transaction that writes and then deletes one resource left it in the search index.
+- `_format=application/fhir+json` with its `+` unencoded (the R4 spec's own example), with
+  `;charset=…` or in capitals, and an `Accept` in capitals, were a 406.
+- `PUT /Type/a_b` with no id in the body, and a Bundle entry `Patient/a/b`, stored an id
+  that isn't a FHIR id.
+- A chain or `_has` with an unknown parameter, an unsupported modifier or a value that
+  isn't a date is a 400 (it found nothing, or ignored the modifier), as at the top level.
+  A date of the wrong shape (`2024X06`) isn't taken for one.
+- `POST /Type/_search` also reads parameters in the URL.
 - A reference search by this server's absolute URL (`subject=https://host/fhir/Patient/1`)
   matches like the local reference; it found nothing.
 - A Subscription whose rest-hook `payload` isn't JSON (`application/fhir+xml`) is

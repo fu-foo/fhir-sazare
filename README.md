@@ -768,10 +768,10 @@ fhir-sazare/
 
 ### Storage
 
-Three separate SQLite databases for clean separation of concerns:
+Separate SQLite databases for clean separation of concerns:
 
 - **`resources.sqlite`** — Resource data with version history
-- **`search_index.sqlite`** — Search parameter index
+- **`search_index.sqlite`** — Search parameter index (after a rebuild, `search_index.gN.sqlite`: the newest generation is used)
 - **`search_index.fts.sqlite`** — Full text for `_text` / `_content` (derived data, like the index; kept in its own file because FTS writes in the shared file made every write ~10× slower)
 - **`audit.sqlite`** — Audit log entries (every request; `audit.retention_days` deletes
   the old ones, unset keeps them all)

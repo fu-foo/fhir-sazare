@@ -101,7 +101,6 @@ pub async fn patient_everything(
     }
     keys.extend(
         crate::with_index_reader(&state, move |state, index| {
-            let patient_ref = format!("Patient/{}", pid);
             let mut seen: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
             let mut keys = Vec::new();
             for comp_type in state.compartment_def.resource_types() {
@@ -111,16 +110,10 @@ pub async fn patient_everything(
                 if au.as_ref().is_some_and(|u| u.grant(comp_type, 'r').is_none()) {
                     continue;
                 }
-                let Some(ref_fields) = state.compartment_def.get_reference_fields(comp_type) else {
-                    continue;
-                };
-                for field in ref_fields {
-                    for id in index.search_reference(comp_type, field, &patient_ref).unwrap_or_default() {
-                        // Each resource once (e.g. Task may match on both "for" and "owner").
-                        let key = (comp_type.to_string(), id);
-                        if seen.insert(key.clone()) {
-                            keys.push(key);
-                        }
+                for id in crate::compartment_members(state, index, comp_type, &pid) {
+                    let key = (comp_type.to_string(), id);
+                    if seen.insert(key.clone()) {
+                        keys.push(key);
                     }
                 }
             }

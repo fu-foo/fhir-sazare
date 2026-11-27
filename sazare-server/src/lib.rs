@@ -228,6 +228,26 @@ pub fn visible_matches(
 /// test the access check applies), so the index pages it; an index without
 /// compartments (v1, or v2 from 0.16 — only while its replacement is built)
 /// reads every match to filter it.
+/// The ids of `comp_type` resources in `patient_id`'s compartment: from the
+/// index's `_compartment` rows (the compartment definition's own test, any
+/// field name), or — on an index from before them — through each
+/// compartment field that is also a reference search parameter.
+pub fn compartment_members(state: &AppState, index: &SearchIndex, comp_type: &str, patient_id: &str) -> Vec<String> {
+    let reference = format!("Patient/{patient_id}");
+    if index.has_compartments() {
+        return index.search_reference(comp_type, sazare_store::COMPARTMENT_PARAM, &reference).unwrap_or_default();
+    }
+    let mut ids = Vec::new();
+    for field in state.compartment_def.get_reference_fields(comp_type).unwrap_or_default() {
+        for id in index.search_reference(comp_type, field, &reference).unwrap_or_default() {
+            if !ids.contains(&id) {
+                ids.push(id);
+            }
+        }
+    }
+    ids
+}
+
 pub fn compartment_search(
     state: &AppState,
     executor: &SearchExecutor<'_>,
@@ -480,13 +500,19 @@ async fn json_only(req: axum::extract::Request, next: axum::middleware::Next) ->
         let format = req.uri().query().and_then(|q| {
             serde_urlencoded::from_str::<Vec<(String, String)>>(q).ok()?.into_iter().find(|(k, _)| k == "_format").map(|(_, v)| v)
         });
+        // `application/fhir+json` arrives with its `+` as a space when not
+        // percent-encoded; parameters (`;charset=…`) and case don't matter.
         if let Some(f) = format
-            && !matches!(f.trim(), "json" | "application/json" | "application/fhir+json" | "application/json+fhir")
+            && !matches!(
+                f.split(';').next().unwrap_or("").trim().replace(' ', "+").to_ascii_lowercase().as_str(),
+                "json" | "application/json" | "application/fhir+json" | "application/json+fhir"
+            )
         {
             return refuse(StatusCode::NOT_ACCEPTABLE, format!("_format={f}: this server answers in JSON only (_format=json)"));
         }
         if let Some(accept) = req.headers().get(header::ACCEPT).and_then(|v| v.to_str().ok()) {
-            let takes_json = accept.split(',').map(|m| m.split(';').next().unwrap_or("").trim()).any(|m| {
+            let accept_lower = accept.to_ascii_lowercase();
+            let takes_json = accept_lower.split(',').map(|m| m.split(';').next().unwrap_or("").trim()).any(|m| {
                 m.is_empty() || m.contains("json") || m == "*/*" || m == "application/*"
             });
             if !takes_json {

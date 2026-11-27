@@ -50,6 +50,8 @@ pub async fn search_post(
     let audit_ctx = AuditContext::from_request(&request);
     let auth_user = request.extensions().get::<AuthUser>().cloned();
     let base_url = super::base_url_from_headers(request.headers());
+    // FHIR lets a POST search carry parameters in the URL too (`?_count=10`).
+    let url_query = request.uri().query().unwrap_or("").to_string();
 
     let body = request.into_body();
     let bytes = axum::body::to_bytes(body, 16 * 1024 * 1024).await.map_err(|e| {
@@ -73,6 +75,7 @@ pub async fn search_post(
         )
     })?;
 
+    let raw_query = [url_query.as_str(), raw_query.trim()].iter().filter(|q| !q.is_empty()).copied().collect::<Vec<_>>().join("&");
     do_search(state, resource_type, raw_query, auth_user, audit_ctx, base_url).await
 }
 

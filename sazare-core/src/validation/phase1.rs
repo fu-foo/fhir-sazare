@@ -63,9 +63,7 @@ impl Phase1Validator {
 
         // A FHIR id: 1–64 of A–Z, a–z, 0–9, '-' and '.'.
         if let Some(id) = resource.get("id") {
-            let ok = id.as_str().is_some_and(|s| {
-                (1..=64).contains(&s.len()) && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'.')
-            });
+            let ok = id.as_str().is_some_and(super::is_fhir_id);
             if !ok {
                 let mut outcome = OperationOutcome::error(
                     IssueType::Invalid,

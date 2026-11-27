@@ -34,6 +34,11 @@ pub struct ValidationResult {
 /// against its type's default profile, if one is configured
 /// ([`ProfileRegistry::set_default_profile`]) — on a copy, so the resource
 /// itself is never modified. In `Warn` mode the violations become warnings.
+/// A FHIR id: 1 to 64 of A–Z, a–z, 0–9, `-` and `.`.
+pub fn is_fhir_id(id: &str) -> bool {
+    (1..=64).contains(&id.len()) && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'.')
+}
+
 pub fn validate_resource_all_phases(
     resource: &Value,
     profile_registry: &ProfileRegistry,

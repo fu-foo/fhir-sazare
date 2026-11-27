@@ -381,6 +381,8 @@ impl SearchQuery {
             });
         }
 
+        check_chains(&chain_parameters, &has_parameters, resource_type, registry)?;
+
         Ok(Self {
             parameters,
             chain_parameters,
@@ -412,6 +414,73 @@ pub const MAX_CHAIN_DEPTH: usize = 4;
 /// `modifier` is everything after it, e.g. `Patient.organization:Organization.name`.
 /// Each hop has the shape `<TargetType>.<rest>` where `rest` is either another
 /// hop (`<ref>:<Type>.…`) or the terminal search param.
+/// Chains and `_has` held to the rules of a top-level parameter: every
+/// reference parameter and terminal parameter exists on its type, modifiers
+/// are ones the index applies, a date is a date. A type the registry has no
+/// list for isn't checked.
+fn check_chains(
+    chains: &[ChainParameter],
+    has: &[HasParameter],
+    resource_type: Option<&str>,
+    registry: &SearchParamRegistry,
+) -> Result<(), String> {
+    let known = |t: &str| registry.has_resource_type(t);
+    let reference_on = |t: &str, p: &str| -> Result<(), String> {
+        if known(t) && registry.lookup_param_type(t, p) != Some(SearchParamType::Reference) {
+            return Err(format!("'{p}' is not a reference search parameter of {t}"));
+        }
+        Ok(())
+    };
+    let terminal = |t: &str, param: &str, value: &str, ty: &SearchParamType| -> Result<(), String> {
+        let (name, modifier) = match param.split_once(':') {
+            Some((n, m)) => (n, Some(m)),
+            None => (param, None),
+        };
+        if known(t) && !name.starts_with('_') && registry.lookup_param_type(t, name).is_none() {
+            return Err(format!("'{name}' is not a search parameter of {t}"));
+        }
+        if let Some(m) = modifier {
+            let ok = match m {
+                "missing" | "not" => true,
+                "exact" | "contains" => *ty == SearchParamType::String,
+                _ => false,
+            };
+            if !ok {
+                return Err(format!("The modifier ':{m}' on '{name}' is not supported in a chain or _has"));
+            }
+        }
+        if *ty == SearchParamType::Date && modifier != Some("missing") {
+            let bad = alternatives(value).iter().any(|d| crate::date::fhir_date_range(&parse_date_prefix(d).1).is_none());
+            if bad || alternatives(value).is_empty() {
+                return Err(format!("Invalid date '{value}' for '{name}' of {t}"));
+            }
+        }
+        Ok(())
+    };
+    for c in chains {
+        let mut current = resource_type.map(str::to_string);
+        for link in &c.links {
+            if let Some(t) = &current {
+                reference_on(t, &link.reference_param)?;
+            }
+            if !crate::r4_types::is_resource_type(&link.target_type) {
+                return Err(format!("'{}' in a chain is not a FHIR R4 resource type", link.target_type));
+            }
+            current = Some(link.target_type.clone());
+        }
+        let last = current.unwrap_or_default();
+        terminal(&last, &c.target_param, &c.value, &c.target_param_type)?;
+    }
+    for h in has {
+        if !crate::r4_types::is_resource_type(&h.source_type) {
+            return Err(format!("_has: '{}' is not a FHIR R4 resource type", h.source_type));
+        }
+        reference_on(&h.source_type, &h.reference_param).map_err(|e| format!("_has: {e}"))?;
+        terminal(&h.source_type, &h.target_param, &h.value, &h.target_param_type).map_err(|e| format!("_has: {e}"))?;
+    }
+    Ok(())
+}
+
 fn parse_chain(
     reference_param: &str,
     modifier: &str,
@@ -1027,4 +1096,25 @@ mod tests {
         assert!(SearchQuery::parse_with_registry("value-quantity:missing=true", Some("Observation"), &crate::SearchParamRegistry::new()).is_ok());
     }
 
+    #[test]
+    fn chains_and_has_are_checked_like_parameters() {
+        let parse = |q: &str| SearchQuery::parse_for_resource(q, Some("Observation"));
+        for bad in [
+            "subject:Patient.bogus=x",
+            "bogus:Patient.name=x",
+            "subject:Foo.name=x",
+            "subject:Patient.name:text=x",
+            "subject:Patient.birthdate=notadate",
+        ] {
+            assert!(parse(bad).is_err(), "{bad}");
+        }
+        for ok in ["subject:Patient.name=x", "subject:Patient.name:exact=X", "subject:Patient.birthdate=ge1980", "subject:Patient.gender:missing=true"] {
+            assert!(parse(ok).is_ok(), "{ok}");
+        }
+        let has = |q: &str| SearchQuery::parse_for_resource(q, Some("Patient"));
+        for bad in ["_has:Observation:subject:bogus=x", "_has:Observation:status:code=x", "_has:Foo:subject:code=x", "_has:Observation:subject:date=x"] {
+            assert!(has(bad).is_err(), "{bad}");
+        }
+        assert!(has("_has:Observation:subject:code=1234-5").is_ok());
+    }
 }

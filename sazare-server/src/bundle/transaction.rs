@@ -317,21 +317,25 @@ pub(super) async fn process_transaction(
     }
 
     // Phase 5: Update indices (outside SQLite transaction — separate DB)
+    // Each resource the transaction touched gets the index of what is now
+    // stored: entries may touch one resource twice (PUT, then DELETE), and
+    // deletes first then writes would leave a deleted one in the index.
     {
-        let index = state.index.lock().await;
-        // Drop index entries for deleted resources — otherwise searches keep
-        // matching them and Bundle.total / _summary=count are inflated.
-        for (resource_type, id) in &deleted_for_index {
-            let _ = index.remove_index(resource_type, id);
+        let mut touched: Vec<(&String, &String)> = Vec::new();
+        for (rt, id) in deleted_for_index.iter().map(|(r, i)| (r, i)).chain(resources_for_index.iter().map(|(r, i, _)| (r, i))) {
+            if !touched.contains(&(rt, id)) {
+                touched.push((rt, id));
+            }
         }
-        for (resource_type, id, resource) in &resources_for_index {
-            crate::handlers::update_search_index(
-                &index,
-                &state.search_param_registry,
-                resource_type,
-                id,
-                resource,
-            );
+        let index = state.index.lock().await;
+        for (resource_type, id) in touched {
+            let stored = state.store.get(resource_type, id).ok().flatten().and_then(|d| serde_json::from_slice::<Value>(&d).ok());
+            match stored {
+                Some(resource) => crate::handlers::update_search_index(&index, &state.search_param_registry, resource_type, id, &resource),
+                None => {
+                    let _ = index.remove_index(resource_type, id);
+                }
+            }
         }
     }
 

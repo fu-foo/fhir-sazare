@@ -2333,6 +2333,11 @@ async fn test_json_only_and_invalid_dates() {
     let status = |r: reqwest::Response| r.status().as_u16();
     assert_eq!(status(c.get(format!("{base}/Patient?_format=xml")).send().await.unwrap()), 406);
     assert_eq!(status(c.get(format!("{base}/Patient?_format=json")).send().await.unwrap()), 200);
+    // The R4 spec's own example, `+` unencoded; parameters; capitals.
+    for f in ["application/fhir+json", "application/fhir%2Bjson;charset=utf-8", "JSON"] {
+        assert_eq!(status(c.get(format!("{base}/Patient?_format={f}")).send().await.unwrap()), 200, "{f}");
+    }
+    assert_eq!(status(c.get(format!("{base}/Patient")).header("Accept", "APPLICATION/FHIR+JSON").send().await.unwrap()), 200);
     assert_eq!(status(c.get(format!("{base}/Patient")).header("Accept", "application/fhir+xml").send().await.unwrap()), 406);
     for ok in ["application/fhir+json", "application/json", "*/*", "text/html, */*;q=0.8"] {
         assert_eq!(status(c.get(format!("{base}/Patient")).header("Accept", ok).send().await.unwrap()), 200, "{ok}");
@@ -2345,6 +2350,9 @@ async fn test_json_only_and_invalid_dates() {
     assert_eq!(status(post("application/fhir+json; charset=utf-8").await.unwrap()), 201);
     let form = c.post(format!("{base}/Patient/_search")).header("Content-Type", "application/x-www-form-urlencoded").body("gender=female").send().await.unwrap();
     assert_eq!(status(form), 200);
+    // Parameters in the URL count too (here: an unknown one, so a 400).
+    let form = c.post(format!("{base}/Patient/_search?bogus=1")).header("Content-Type", "application/x-www-form-urlencoded").body("gender=female").send().await.unwrap();
+    assert_eq!(status(form), 400);
     // Not a FHIR endpoint: form-encoded OAuth (here refused for its own reasons, not 415).
     let token = c.post(format!("{base}/token")).header("Content-Type", "application/x-www-form-urlencoded").body("grant_type=x").send().await.unwrap();
     assert_ne!(status(token), 415);
@@ -2372,6 +2380,13 @@ async fn test_ids_and_paths() {
     for good in ["a-b.c", "A1", &"a".repeat(64)] {
         assert!(put(good).await.unwrap().status().is_success(), "{good:?}");
     }
+    // The URL's id counts when the body has none; in a Bundle too.
+    let r = c.put(format!("{base}/Patient/a_b")).header("Content-Type", "application/fhir+json").body(r#"{"resourceType":"Patient"}"#).send().await.unwrap();
+    assert_eq!(r.status(), 400);
+    let bundle = json!({"resourceType": "Bundle", "type": "batch", "entry": [
+        {"request": {"method": "PUT", "url": "Patient/a/b"}, "resource": {"resourceType": "Patient"}}]});
+    let r = c.post(&base).header("Content-Type", "application/fhir+json").body(bundle.to_string()).send().await.unwrap();
+    assert_eq!(r.status(), 400);
     for path in ["/_history", "/_search", "/nonsense", "/Patient/_history"] {
         let r = c.get(format!("{base}{path}")).send().await.unwrap();
         assert_eq!(r.status(), 404, "{path}");
@@ -2516,4 +2531,39 @@ async fn test_export_parameters_are_checked() {
     for q in ["$export?_type=Patient", "$export?_since=2020-01-01T00:00:00Z&_outputFormat=ndjson", "Patient/$export"] {
         assert_eq!(status(q).await, 200, "{q}");
     }
+}
+
+/// Compartment membership follows the R4 elements (EpisodeOfCare.patient,
+/// Task.for, …): `$everything` and a patient-scoped view find them, through
+/// the index's compartment rows whatever the search parameter is called.
+#[tokio::test]
+async fn test_everything_finds_every_compartment_member() {
+    let (base, _dir) = start_test_server().await;
+    let c = reqwest::Client::new();
+    create(&c, &base, "Patient", &json!({"resourceType": "Patient", "id": "x"})).await;
+    create(&c, &base, "EpisodeOfCare", &json!({"resourceType": "EpisodeOfCare", "status": "active", "patient": {"reference": "Patient/x"}})).await;
+    create(&c, &base, "Task", &json!({"resourceType": "Task", "status": "requested", "intent": "order", "for": {"reference": "Patient/x"}})).await;
+    create(&c, &base, "NutritionOrder", &json!({"resourceType": "NutritionOrder", "status": "active", "intent": "order",
+        "dateTime": "2024-01-01", "patient": {"reference": "Patient/x"}})).await;
+    let b: Value = c.get(format!("{base}/Patient/x/$everything")).send().await.unwrap().json().await.unwrap();
+    let mut types: Vec<&str> = b["entry"].as_array().unwrap().iter().map(|e| e["resource"]["resourceType"].as_str().unwrap()).collect();
+    types.sort();
+    assert_eq!(types, ["EpisodeOfCare", "NutritionOrder", "Patient", "Task"], "{b}");
+}
+
+/// A transaction that writes and then deletes one resource leaves it out of
+/// the index (searches and totals count only what is stored).
+#[tokio::test]
+async fn test_transaction_put_then_delete_one_resource() {
+    let (base, _dir) = start_test_server().await;
+    let c = reqwest::Client::new();
+    let bundle = json!({"resourceType": "Bundle", "type": "transaction", "entry": [
+        {"request": {"method": "PUT", "url": "Patient/gone"}, "resource": {"resourceType": "Patient", "id": "gone", "gender": "other"}},
+        {"request": {"method": "DELETE", "url": "Patient/gone"}}]});
+    let r = c.post(&base).header("Content-Type", "application/fhir+json").body(bundle.to_string()).send().await.unwrap();
+    assert_eq!(r.status(), 200);
+    let b: Value = c.get(format!("{base}/Patient?gender=other")).send().await.unwrap().json().await.unwrap();
+    assert_eq!(b["total"], 0, "{b}");
+    let b: Value = c.get(format!("{base}/Patient?_summary=count")).send().await.unwrap().json().await.unwrap();
+    assert_eq!(b["total"], 0);
 }

@@ -335,12 +335,9 @@ fn patient_resources(
     let mut keys: std::collections::BTreeMap<String, std::collections::BTreeSet<String>> = Default::default();
     for pid in patients {
         keys.entry("Patient".to_string()).or_default().insert(pid.clone());
-        let reference = format!("Patient/{pid}");
         for comp_type in state.compartment_def.resource_types() {
-            for field in state.compartment_def.get_reference_fields(comp_type).unwrap_or_default() {
-                let ids = index.search_reference(comp_type, field, &reference).unwrap_or_default();
-                keys.entry(comp_type.to_string()).or_default().extend(ids);
-            }
+            let ids = crate::compartment_members(state, index, comp_type, pid);
+            keys.entry(comp_type.to_string()).or_default().extend(ids);
         }
     }
     keys.retain(|_, ids| !ids.is_empty());

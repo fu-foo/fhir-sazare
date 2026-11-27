@@ -301,6 +301,17 @@ pub async fn update(
         )
     })?;
 
+    // The URL's id is the one stored (the body may have none): a FHIR id.
+    if !sazare_core::validation::is_fhir_id(&id) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!(OperationOutcome::error(
+                IssueType::Invalid,
+                format!("Invalid id '{id}': an id is 1 to 64 letters, digits, '-' or '.'")
+            ))),
+        ));
+    }
+
     // The body must be the resource the URL names (FHIR: 400 otherwise).
     if resource.resource_type != resource_type {
         return Err((

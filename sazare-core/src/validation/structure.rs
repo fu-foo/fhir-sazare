@@ -42,6 +42,11 @@ static ELEMENTS: LazyLock<HashMap<&'static str, Element>> = LazyLock::new(|| {
 static DEFINED: LazyLock<std::collections::HashSet<&'static str>> =
     LazyLock::new(|| ELEMENTS.keys().filter_map(|p| p.split('.').next()).collect());
 
+/// Whether `path` (`Patient.name`, `Person.link.target`) is an R4 element.
+pub fn has_element(path: &str) -> bool {
+    ELEMENTS.contains_key(path)
+}
+
 /// At most this many problems are reported (the first ones).
 const MAX_ISSUES: usize = 20;
 /// Nesting deeper than this (contained in contained in …) isn't followed.

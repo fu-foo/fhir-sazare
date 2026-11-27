@@ -45,7 +45,6 @@ impl CompartmentDef {
             "DocumentManifest",
             "DocumentReference",
             "Encounter",
-            "EpisodeOfCare",
             "Flag",
             "Goal",
             "ImagingStudy",
@@ -57,7 +56,6 @@ impl CompartmentDef {
             "MedicationDispense",
             "MedicationRequest",
             "MedicationStatement",
-            "NutritionOrder",
             "Observation",
             "Procedure",
             "QuestionnaireResponse",
@@ -65,7 +63,6 @@ impl CompartmentDef {
             "RiskAssessment",
             "ServiceRequest",
             "Specimen",
-            "SupplyRequest",
         ] {
             membership.insert(rt.to_string(), vec!["subject".to_string()]);
         }
@@ -83,8 +80,9 @@ impl CompartmentDef {
             "Immunization",
             "ImmunizationEvaluation",
             "ImmunizationRecommendation",
+            "EpisodeOfCare",
             "MolecularSequence",
-            "Person",
+            "NutritionOrder",
             "RelatedPerson",
             "SupplyDelivery",
             "VisionPrescription",
@@ -93,13 +91,16 @@ impl CompartmentDef {
         }
 
         // Resources whose patient link is a differently-named (or multiple) field.
-        membership.insert("Basic".to_string(), vec!["patient".to_string(), "subject".to_string()]);
+        membership.insert("Basic".to_string(), vec!["subject".to_string()]);
         membership.insert("Consent".to_string(), vec!["patient".to_string()]);
         membership.insert(
             "Coverage".to_string(),
             vec!["beneficiary".to_string(), "subscriber".to_string()],
         );
-        membership.insert("EnrollmentRequest".to_string(), vec!["candidate".to_string(), "subject".to_string()]);
+        membership.insert("EnrollmentRequest".to_string(), vec!["candidate".to_string()]);
+        membership.insert("SupplyRequest".to_string(), vec!["requester".to_string()]);
+        // Nested: the patients a Person links to.
+        membership.insert("Person".to_string(), vec!["link.target".to_string()]);
         membership.insert("ResearchSubject".to_string(), vec!["individual".to_string()]);
         // `target` is an array of references.
         membership.insert("Provenance".to_string(), vec!["target".to_string()]);
@@ -166,11 +167,19 @@ impl CompartmentDef {
             }
         };
         for field in fields {
-            match resource.get(field.as_str()) {
-                Some(Value::Array(arr)) => arr.iter().for_each(&mut take),
-                Some(obj) => take(obj),
-                None => {}
+            // `a.b`: through each `a` (one or a list) to its `b`.
+            let mut values: Vec<&Value> = vec![resource];
+            for step in field.split('.') {
+                values = values
+                    .into_iter()
+                    .filter_map(|v| v.get(step))
+                    .flat_map(|v| match v {
+                        Value::Array(items) => items.iter().collect::<Vec<_>>(),
+                        one => vec![one],
+                    })
+                    .collect();
             }
+            values.into_iter().for_each(&mut take);
         }
         out
     }
@@ -301,5 +310,31 @@ mod tests {
             "status": "final"
         });
         assert!(!comp.resource_belongs_to_patient("Observation", &obs, "p123"));
+    }
+
+    /// Every compartment field is an element of its type in R4 (an element
+    /// that doesn't exist would never put a resource in a compartment).
+    #[test]
+    fn compartment_fields_are_r4_elements() {
+        let def = CompartmentDef::patient_compartment();
+        for rt in def.resource_types() {
+            if rt == "Patient" {
+                continue;
+            }
+            for field in def.get_reference_fields(rt).unwrap() {
+                let path = format!("{rt}.{field}");
+                assert!(crate::validation::structure::has_element(&path), "{path} is not an R4 element");
+            }
+        }
+    }
+
+    #[test]
+    fn nested_compartment_fields() {
+        let def = CompartmentDef::patient_compartment();
+        let person = serde_json::json!({"resourceType": "Person", "link": [
+            {"target": {"reference": "Patient/a"}}, {"target": {"reference": "RelatedPerson/r"}}, {"target": {"reference": "Patient/b"}}]});
+        assert_eq!(def.patients_of("Person", &person), vec!["a", "b"]);
+        let eoc = serde_json::json!({"resourceType": "EpisodeOfCare", "patient": {"reference": "Patient/a"}});
+        assert_eq!(def.patients_of("EpisodeOfCare", &eoc), vec!["a"]);
     }
 }
