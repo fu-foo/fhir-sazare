@@ -197,7 +197,7 @@ pub(crate) fn check_entry_body(
 /// entry's body and for the existing resource it reads, replaces or deletes.
 fn authorize_entries(state: &AppState, user: &AuthUser, entries: &[BundleEntry], transaction: bool) -> Result<(), OperationOutcome> {
     use crate::auth::patient_scope_may;
-    use crate::compartment_check::{check_compartment_access, check_compartment_write};
+    use crate::compartment_check::check_compartment_write;
 
     let deny = |i: usize, why: String| {
         OperationOutcome::error(IssueType::Forbidden, format!("entry[{i}]: {why}"))
@@ -262,10 +262,10 @@ fn authorize_entries(state: &AppState, user: &AuthUser, entries: &[BundleEntry],
         if let Some(data) = current
             && let Ok(existing) = serde_json::from_slice::<Value>(&data)
         {
+            // A read of another patient's resource isn't refused here (that
+            // would tell it exists): the entry answers 404 as for none.
             if writes {
                 check_compartment_write(Some(user), &state.compartment_def, rt, &existing, perm).map_err(to_resp)?;
-            } else {
-                check_compartment_access(Some(user), &state.compartment_def, rt, &existing).map_err(to_resp)?;
             }
         }
     }

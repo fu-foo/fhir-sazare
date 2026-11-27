@@ -59,6 +59,12 @@ pub fn check_compartment_access_for(
 
     if compartment.resource_belongs_to_patient(resource_type, resource, patient_id) {
         Ok(())
+    } else if perm == 'r' {
+        // Another patient's resource is not there for this token: the same
+        // 404 as a resource that doesn't exist, so a read can't tell which
+        // ids exist (patient data).
+        let id = resource.get("id").and_then(|v| v.as_str()).unwrap_or("");
+        Err((StatusCode::NOT_FOUND, Json(json!(OperationOutcome::not_found(resource_type, id)))))
     } else {
         Err((
             StatusCode::FORBIDDEN,

@@ -31,7 +31,7 @@
 - **Subscription** — REST-hook and WebSocket (R4 `bind`/`ping` at `/ws`) notifications on resource changes
 - **Webhooks** — Lifecycle event hooks (`BundleCreated`, `TaskCompleted`) to configured endpoints
 - **Authentication** — API key, Basic auth, JWT (HS256/RS256/JWK URL), SMART on FHIR scopes
-- **Compartment access control** — Patient-scoped token restricts access to own data
+- **Compartment access control** — Patient-scoped token restricts access to own data (another patient's resources read as not found, 404: their ids can't be probed)
 - **TLS/HTTPS** — Optional TLS via config
 - **Graceful shutdown** — Clean shutdown on SIGTERM / Ctrl+C
 

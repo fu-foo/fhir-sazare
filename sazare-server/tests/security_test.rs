@@ -143,8 +143,14 @@ async fn history_and_vread_respect_the_patient_compartment() {
     let (c, t, _d) = two_patients().await;
     assert_eq!(c.get("/Observation/o-p1/_history", &t).await.0, 200);
     assert_eq!(c.get("/Observation/o-p1/_history/1", &t).await.0, 200);
-    assert_eq!(c.get("/Observation/o-p2/_history", &t).await.0, 403);
-    assert_eq!(c.get("/Observation/o-p2/_history/1", &t).await.0, 403);
+    // Another patient's: as if it didn't exist (404, the same answer as for
+    // an id nobody has), so a token can't tell which ids exist.
+    assert_eq!(c.get("/Observation/o-p2/_history", &t).await.0, 404);
+    assert_eq!(c.get("/Observation/o-p2/_history/1", &t).await.0, 404);
+    let (s_other, b_other) = c.get("/Observation/o-p2", &t).await;
+    let (s_none, b_none) = c.get("/Observation/no-such", &t).await;
+    assert_eq!((s_other, s_none), (404, 404));
+    assert_eq!(b_other["issue"][0]["code"], b_none["issue"][0]["code"]);
     // Admin is unaffected.
     assert_eq!(c.get("/Observation/o-p2/_history/1", ADMIN_KEY).await.0, 200);
 }
@@ -276,10 +282,15 @@ async fn bundles_accept_api_credentials_and_authorize_each_entry() {
     let (s, b) = c.send(reqwest::Method::POST, "/", ADMIN_KEY, Some(bundle("batch", vec![get("o-p2")]))).await;
     assert_eq!(s, 200, "{b}");
 
-    // Patient token: own data passes, anything else refuses the whole Bundle.
+    // Patient token: own data passes; another patient's read is a 404 entry
+    // (as if absent); any write outside refuses the whole Bundle.
     let ok = |b: Value| async { c.send(reqwest::Method::POST, "/", &t, Some(b)).await.0 };
     assert_eq!(ok(bundle("batch", vec![get("o-p1")])).await, 200);
-    assert_eq!(ok(bundle("batch", vec![get("o-p1"), get("o-p2")])).await, 403);
+    let (s, b) = c.send(reqwest::Method::POST, "/", &t, Some(bundle("batch", vec![get("o-p1"), get("o-p2")]))).await;
+    assert_eq!(s, 200);
+    assert_eq!(b["entry"][0]["response"]["status"], "200 OK", "{b}");
+    assert_eq!(b["entry"][1]["response"]["status"], "404 Not Found", "{b}");
+    assert!(b["entry"][1].get("resource").is_none());
     assert_eq!(ok(bundle("transaction", vec![post_obs("Patient/p1")])).await, 200);
     assert_eq!(ok(bundle("transaction", vec![post_obs("Patient/p2")])).await, 403);
     let del = json!({"request": {"method": "DELETE", "url": "Observation/o-p2"}});
@@ -360,7 +371,7 @@ async fn mixed_scopes_keep_the_compartment_for_patient_types() {
     let (c, _t, _d) = two_patients().await;
     let t = jwt("patient/Observation.rs user/Practitioner.rs", Some("p1"));
     assert_eq!(c.get("/Observation/o-p1", &t).await.0, 200);
-    assert_eq!(c.get("/Observation/o-p2", &t).await.0, 403);
+    assert_eq!(c.get("/Observation/o-p2", &t).await.0, 404);
     let (_, b) = c.get("/Observation", &t).await;
     assert_eq!(ids_of(&b, "Observation"), vec!["o-p1"]);
 }
@@ -371,7 +382,7 @@ async fn mixed_permissions_on_one_type_keep_the_compartment_for_reads() {
     // Unrestricted create, but reading only within the compartment.
     let t = jwt("patient/Observation.rs user/Observation.c", Some("p1"));
     assert_eq!(c.get("/Observation/o-p1", &t).await.0, 200);
-    assert_eq!(c.get("/Observation/o-p2", &t).await.0, 403);
+    assert_eq!(c.get("/Observation/o-p2", &t).await.0, 404);
     let (_, b) = c.get("/Observation", &t).await;
     assert_eq!(ids_of(&b, "Observation"), vec!["o-p1"]);
     // The user/ create permission does apply to creates.
@@ -663,13 +674,13 @@ async fn a_patient_token_reaches_no_other_patient_through_the_newer_paths() {
     assert_eq!(leaks(ids(&b["entry"][0]["resource"])), Vec::<String>::new(), "{b}");
     assert_eq!(leaks(ids(&b["entry"][1]["resource"])), Vec::<String>::new(), "{b}");
     assert_eq!(b["entry"][2]["resource"]["total"], 1, "{b}");
-    // Reading another's by id in a batch is refused.
+    // Reading another's by id in a batch: a 404 entry, as for none.
     let batch = json!({"resourceType": "Bundle", "type": "batch", "entry": [{"request": {"method": "GET", "url": "Observation/o-p2"}}]});
-    let (s, _) = c.send(reqwest::Method::POST, "/", &t, Some(batch)).await;
-    assert_eq!(s, 403);
+    let (_, b) = c.send(reqwest::Method::POST, "/", &t, Some(batch)).await;
+    assert_eq!(b["entry"][0]["response"]["status"], "404 Not Found", "{b}");
 
     // $everything of the other patient; of one's own, only one's own.
-    assert_eq!(c.get("/Patient/p2/$everything", &t).await.0, 403);
+    assert_eq!(c.get("/Patient/p2/$everything", &t).await.0, 404);
     let (s, b) = c.get("/Patient/p1/$everything?_count=1", &t).await;
     assert_eq!(s, 200);
     assert_eq!(b["total"], 2, "{b}");
@@ -696,10 +707,10 @@ async fn a_patient_token_reaches_no_other_patient_through_the_newer_paths() {
     assert_eq!(b["total"], 0, "{b}");
 
     // The other patient's resource deleted: its history and its delete
-    // version stay out of reach (403, not 410 or 404).
+    // version stay out of reach (404, as for none — not 410).
     assert_eq!(c.send(reqwest::Method::DELETE, "/Observation/o-p2", ADMIN_KEY, None).await.0, 204);
-    assert_eq!(c.get("/Observation/o-p2/_history", &t).await.0, 403);
-    assert_eq!(c.get("/Observation/o-p2/_history/2", &t).await.0, 403);
+    assert_eq!(c.get("/Observation/o-p2/_history", &t).await.0, 404);
+    assert_eq!(c.get("/Observation/o-p2/_history/2", &t).await.0, 404);
 
     // A conditional update matching only the other's resources creates one's
     // own instead of replacing theirs; one into their compartment is refused.
@@ -731,14 +742,14 @@ async fn compartment_checks_see_the_stored_id() {
     assert_eq!(s, 200, "{b}");
 }
 
-/// Another patient's deleted resource: reading it says nothing (403, not
+/// Another patient's deleted resource: reading it says nothing (404, not
 /// 410), and it can't be created again by someone else to take over its
 /// history.
 #[tokio::test]
 async fn another_patients_deleted_resource_stays_theirs() {
     let (c, t, _dir) = two_patients().await;
     assert_eq!(c.send(reqwest::Method::DELETE, "/Observation/o-p2", ADMIN_KEY, None).await.0, 204);
-    assert_eq!(c.get("/Observation/o-p2", &t).await.0, 403);
+    assert_eq!(c.get("/Observation/o-p2", &t).await.0, 404);
     let obs = json!({"resourceType": "Observation", "id": "o-p2", "status": "final", "code": {"text": "x"}, "subject": {"reference": "Patient/p1"}});
     assert_eq!(c.put("/Observation/o-p2", &t, obs.clone()).await, 403);
     let bundle = json!({"resourceType": "Bundle", "type": "batch", "entry": [{"request": {"method": "PUT", "url": "Observation/o-p2"}, "resource": obs}]});

@@ -363,6 +363,10 @@ async fn process_batch_entry(
             match state.store.get(&entry.resource_type, &id) {
                 Ok(Some(data)) => {
                     let resource: Value = serde_json::from_slice(&data).unwrap_or(json!({}));
+                    // Another patient's resource: as if there were none.
+                    if crate::compartment_check::check_compartment_access(auth_user, &state.compartment_def, &entry.resource_type, &resource).is_err() {
+                        return json!({"response": { "status": "404 Not Found" }});
+                    }
                     json!({
                         "resource": resource,
                         "response": { "status": "200 OK" }
