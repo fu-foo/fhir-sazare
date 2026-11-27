@@ -2646,3 +2646,18 @@ async fn test_chains_without_types() {
     let b: Value = r.json().await.unwrap();
     assert!(b["issue"][0]["diagnostics"].as_str().unwrap().contains("performer:"), "{b}");
 }
+
+/// The dashboard's tab icon is served, without credentials, as SVG.
+#[tokio::test]
+async fn test_favicon() {
+    let (base, _dir) = start_test_server().await;
+    let c = reqwest::Client::new();
+    for p in ["favicon.svg", "favicon.ico"] {
+        let r = c.get(format!("{base}/{p}")).send().await.unwrap();
+        assert_eq!(r.status(), 200, "{p}");
+        assert_eq!(r.headers()["content-type"], "image/svg+xml", "{p}");
+        assert!(r.text().await.unwrap().starts_with("<svg"), "{p}");
+    }
+    let page = c.get(format!("{base}/")).send().await.unwrap().text().await.unwrap();
+    assert!(page.contains(r#"href="/favicon.svg""#));
+}

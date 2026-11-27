@@ -397,6 +397,8 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         // Dashboard
         .route("/", get(dashboard::dashboard_page).post(bundle::process_bundle))
         .route("/$status", get(dashboard::status_api))
+        .route("/favicon.svg", get(dashboard::favicon))
+        .route("/favicon.ico", get(dashboard::favicon))
         // Dashboard browse (Basic auth only when auth is enabled — operators)
         .route("/$browse/{resource_type}", get(dashboard::browse_list))
         .route("/$browse/{resource_type}/{id}", get(dashboard::browse_read))
@@ -487,8 +489,10 @@ fn panic_response(_panic: Box<dyn std::any::Any + Send + 'static>) -> axum::resp
 }
 
 /// Endpoints that aren't FHIR (they keep their own content types).
-const NOT_FHIR: [&str; 9] = [
+const NOT_FHIR: [&str; 11] = [
     "/health",
+    "/favicon.svg",
+    "/favicon.ico",
     "/$status",
     "/$browse/",
     "/$apps",
@@ -559,7 +563,7 @@ async fn json_only(req: axum::extract::Request, next: axum::middleware::Next) ->
 /// type was stored, and searched as if it existed, with every search empty.
 async fn known_resource_type(req: axum::extract::Request, next: axum::middleware::Next) -> axum::response::Response {
     // The server's own top-level paths; anything else first is a type.
-    const ROUTES: [&str; 9] = ["", "health", "metrics", "metadata", "token", "ws", "ui", "apps", "favicon.ico"];
+    const ROUTES: [&str; 10] = ["", "health", "metrics", "metadata", "token", "ws", "ui", "apps", "favicon.ico", "favicon.svg"];
     let mut segments = req.uri().path().trim_start_matches('/').split('/');
     let first = segments.next().unwrap_or("");
     let not_found = |msg: String| {

@@ -273,6 +273,7 @@ pub async fn auth_middleware(
     let path = request.uri().path();
     if path == "/health" || path == "/metadata" || path == "/$apps"
         || path == "/token"
+        || path == "/favicon.svg" || path == "/favicon.ico"
         || path.starts_with("/.well-known/")
         || crate::apps::is_app_path(&state, path)
     {

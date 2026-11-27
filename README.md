@@ -33,7 +33,8 @@
 - **Authentication** — API key, Basic auth, JWT (HS256/RS256/JWK URL), SMART on FHIR scopes
 - **Compartment access control** — Patient-scoped token restricts access to own data (another patient's resources read as not found, 404: their ids can't be probed)
 - **TLS/HTTPS** — Optional TLS via config
-- **Graceful shutdown** — Clean shutdown on SIGTERM / Ctrl+C
+- **Graceful shutdown** — `sazare-server stop`, SIGTERM (Docker, systemd, launchd) or Ctrl+C
+  under `run`: in-flight writes finish first
 
 ---
 

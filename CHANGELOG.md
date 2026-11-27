@@ -7,6 +7,8 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
 ## Unreleased
 
 ### Added
+- A tab icon for the dashboard (`/favicon.svg`, also at `/favicon.ico`): さざれ石 grown into
+  a rock, with moss. It was empty.
 - `--port <n>` for `start` and `run` (over `server.port` and `$SAZARE_PORT`).
 - **Chains without types**: `subject.name=Doe` (FHIR's own form) was refused as an unknown
   parameter; only `subject:Patient.name` worked. A hop without a type takes the one type

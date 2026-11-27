@@ -128,12 +128,28 @@ pub async fn browse_read(
     }
 }
 
+/// The tab icon: さざれ石 grown into a rock, moss on top. Shapes, not detail,
+/// so it reads at 16 px.
+pub const FAVICON_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#2c3e50"/><path d="M5 58c0-20 11-38 27-38s27 18 27 38z" fill="#c3cbd1"/><path d="M11 37c4-11 12-19 21-19s17 8 21 19c-6-4-13-6-21-6s-15 2-21 6z" fill="#2ecc71"/></svg>"##;
+
+/// `GET /favicon.svg` (and `/favicon.ico`, which browsers ask for on their
+/// own — they take SVG there too).
+pub async fn favicon() -> impl IntoResponse {
+    (
+        [
+            (axum::http::header::CONTENT_TYPE, "image/svg+xml"),
+            (axum::http::header::CACHE_CONTROL, "public, max-age=86400"),
+        ],
+        FAVICON_SVG,
+    )
+}
+
 const DASHBOARD_HTML: &str = r##"<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="icon" href="data:,">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <title>sazare FHIR Server</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
