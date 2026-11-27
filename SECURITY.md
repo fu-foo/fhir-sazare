@@ -40,5 +40,13 @@ Deployment, which is up to whoever runs it:
   exposes credentials and data.
 - **The data directory** holds the data unencrypted; protect it (and its backups) as you
   would the data itself.
+- **No rate limiting** is built in (repeated failed logins are locked out). Exposed to
+  the internet, put a reverse proxy in front that limits request rates and sizes.
+- **Bulk operations are operators' tools**: `$import` and `$export` need system-level
+  scopes (or an API key / Basic user). An export keeps a copy of the data it covers on
+  disk for an hour (at most 8 jobs at once): plan the disk for it.
+- **TLS certificates** are read at startup: restart after renewing them.
+- **Files served under `/apps` and `/ui`** come only from their directories: no `..`, no
+  symbolic links (a link is refused even when it points inside).
 - sazare is a single-node server for development, research, prototypes and small
   deployments. It has not been certified for any regulatory regime.

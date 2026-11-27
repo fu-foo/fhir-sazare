@@ -12,6 +12,9 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
   `2002::/16` (each judged by the IPv4 address inside), site-local `fec0::/10`, and the
   IPv4 ranges 192.0.0.0/24, 198.18.0.0/15 and 240.0.0.0/4.
 - A JWT whose `nbf` is in the future is refused.
+- `/ui` (`SAZARE_UI_DIR`) followed symbolic links out of its directory; it is served by
+  the same code as `/apps` now (no `..`, no symlinks, nothing outside).
+- SECURITY.md: no built-in rate limiting, bulk operations and their disk use, TLS reload.
 - A parameter with many comma-separated values answered 500 (SQLite's limit of 500
   terms in a compound SELECT); up to 1000 now search correctly, more are a 400.
 - Dependencies updated for the advisories `cargo audit` reports, among them the bundled

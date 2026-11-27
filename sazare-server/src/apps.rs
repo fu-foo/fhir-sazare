@@ -136,6 +136,13 @@ async fn serve_app_file(State(state): State<Arc<AppState>>, name: String, file_p
     let Some(app_dir) = resolve_app_dir(&state, &name) else {
         return (StatusCode::NOT_FOUND, "App not found").into_response();
     };
+    serve_static(app_dir, file_path).await
+}
+
+/// Serve `file_path` from `app_dir` (canonical): no `..`, no symlink on the
+/// way, nothing outside the directory; a directory's `index.html`, else the
+/// root `index.html` (single-page apps). Also serves `/ui`.
+pub(crate) async fn serve_static(app_dir: std::path::PathBuf, file_path: String) -> Response {
     if file_path.is_empty() {
         let index = app_dir.join("index.html");
         if index.is_file() {
@@ -292,5 +299,35 @@ mod tests {
             mime_from_extension(std::path::Path::new("unknown")),
             "application/octet-stream"
         );
+    }
+}
+
+#[cfg(test)]
+mod serve_static_tests {
+    use super::serve_static;
+
+    #[tokio::test]
+    async fn nothing_outside_the_directory_and_no_symlinks() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().join("ui");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("index.html"), "ui").unwrap();
+        std::fs::write(dir.join("a.js"), "js").unwrap();
+        std::fs::write(root.path().join("secret.txt"), "SECRET").unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(root.path().join("secret.txt"), dir.join("link.txt")).unwrap();
+        let dir = dir.canonicalize().unwrap();
+        let status = |p: &str| {
+            let d = dir.clone();
+            let p = p.to_string();
+            async move { serve_static(d, p).await.status().as_u16() }
+        };
+        assert_eq!(status("a.js").await, 200);
+        assert_eq!(status("").await, 200);
+        for bad in ["../secret.txt", "..\\secret.txt", "x/../../secret.txt"] {
+            assert_eq!(status(bad).await, 400, "{bad}");
+        }
+        #[cfg(unix)]
+        assert_eq!(status("link.txt").await, 403);
     }
 }

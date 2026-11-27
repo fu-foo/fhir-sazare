@@ -38,7 +38,6 @@ use tokio::sync::Mutex;
 use tower_http::{
     cors::{Any, CorsLayer},
     limit::RequestBodyLimitLayer,
-    services::ServeDir,
     trace::TraceLayer,
 };
 
@@ -364,9 +363,18 @@ pub fn build_router(state: Arc<AppState>) -> Router {
     // Optional UI: served from SAZARE_UI_DIR if set and exists
     let ui_dir = std::env::var("SAZARE_UI_DIR").ok().filter(|p| std::path::Path::new(p).is_dir());
     let mut router = app_router;
-    if let Some(dir) = ui_dir.as_ref() {
-        tracing::info!("UI: serving static files from {} at /ui", dir);
-        router = router.nest_service("/ui", ServeDir::new(dir));
+    if let Some(dir) = ui_dir.as_ref().and_then(|d| std::path::Path::new(d).canonicalize().ok()) {
+        tracing::info!("UI: serving static files from {} at /ui", dir.display());
+        // The same rules as /apps: nothing outside the directory, no symlinks.
+        let root = dir.clone();
+        let sub = dir;
+        router = router
+            .route("/ui", get(|| async { axum::response::Redirect::permanent("/ui/") }))
+            .route("/ui/", get(move || apps::serve_static(root.clone(), String::new())))
+            .route(
+                "/ui/{*path}",
+                get(move |axum::extract::Path(p): axum::extract::Path<String>| apps::serve_static(sub.clone(), p)),
+            );
     }
 
     router

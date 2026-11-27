@@ -24,7 +24,7 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 axum = { version = "0.8", features = ["macros", "ws"] }
 tower = "0.5"
-tower-http = { version = "0.6", features = ["trace", "cors", "limit", "fs", "catch-panic"] }
+tower-http = { version = "0.6", features = ["trace", "cors", "limit", "catch-panic"] }
 uuid = { version = "1.0", features = ["v4"] }
 chrono = "0.4"
 argon2 = { version = "0.5", features = ["std", "rand"] }
