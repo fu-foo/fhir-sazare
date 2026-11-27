@@ -97,15 +97,27 @@ async fn client_jwks(client: &BackendClient) -> Result<JwkSet, String> {
         return serde_json::from_value(inline.clone()).map_err(|e| format!("bad inline jwks: {e}"));
     }
     if let Some(url) = &client.jwks_url {
-        let resp = crate::http_client()
-            .get(url)
-            .send()
-            .await
-            .map_err(|e| format!("jwks fetch failed: {e}"))?;
-        return resp
-            .json::<JwkSet>()
-            .await
-            .map_err(|e| format!("bad jwks json: {e}"));
+        // Cached: a key set fetched is used for 5 minutes, a failed fetch is
+        // not retried for 10 s — each (even forged) assertion naming a client
+        // no longer makes this server fetch its JWKS again.
+        type Cached = (std::time::Instant, Result<JwkSet, String>);
+        static CACHE: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<String, Cached>>> =
+            std::sync::LazyLock::new(Default::default);
+        if let Some((at, result)) = CACHE.lock().unwrap_or_else(|e| e.into_inner()).get(url) {
+            let fresh = match result {
+                Ok(_) => at.elapsed() < std::time::Duration::from_secs(300),
+                Err(_) => at.elapsed() < std::time::Duration::from_secs(10),
+            };
+            if fresh {
+                return result.clone();
+            }
+        }
+        let fetched = match crate::http_client().get(url).send().await {
+            Ok(resp) => resp.json::<JwkSet>().await.map_err(|e| format!("bad jwks json: {e}")),
+            Err(e) => Err(format!("jwks fetch failed: {e}")),
+        };
+        CACHE.lock().unwrap_or_else(|e| e.into_inner()).insert(url.clone(), (std::time::Instant::now(), fetched.clone()));
+        return fetched;
     }
     Err("client has no jwks or jwks_url".into())
 }
@@ -269,6 +281,7 @@ async fn issue_token(state: Arc<AppState>, req: TokenRequest) -> Response {
     };
     validation.set_audience(&[aud]);
     validation.set_required_spec_claims(&["exp"]);
+    validation.validate_nbf = true;
     let assertion_claims = match jsonwebtoken::decode::<Value>(assertion, &decoding_key, &validation) {
         Ok(data) => data.claims,
         Err(e) => {

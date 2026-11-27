@@ -108,7 +108,7 @@ pub struct BackendClient {
     #[serde(default)]
     pub jwks: Option<serde_json::Value>,
     /// Scopes this client may be granted (space- or comma-separated list of
-    /// allowed scope patterns). If empty, any requested system/ scope is granted.
+    /// allowed scope patterns). If empty, none is granted.
     #[serde(default)]
     pub allowed_scopes: Vec<String>,
 }

@@ -351,6 +351,21 @@ impl SqliteStore {
         Ok(deleted)
     }
 
+    /// The newest version in the history (for a deleted resource: the record
+    /// of its delete, which holds what it was).
+    pub fn latest_version(&self, resource_type: &str, id: &str) -> Result<Option<Vec<u8>>> {
+        let conn = self.reader();
+        let row = conn
+            .query_row(
+                "SELECT value FROM resource_history WHERE resource_type = ?1 AND id = ?2 \
+                 ORDER BY CAST(version_id AS INTEGER) DESC LIMIT 1",
+                params![resource_type, id],
+                |r| r.get::<_, String>(0),
+            )
+            .optional()?;
+        Ok(row.map(String::into_bytes))
+    }
+
     /// A version from the history, and whether it is the record of a delete.
     pub fn get_history_version(&self, resource_type: &str, id: &str, version_id: &str) -> Result<Option<(Vec<u8>, bool)>> {
         let conn = self.reader();

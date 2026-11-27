@@ -2584,3 +2584,29 @@ async fn test_long_lists_of_values() {
     let r = c.get(format!("{base}/Patient?_id={}", list(1001, "real"))).send().await.unwrap();
     assert_eq!(r.status(), 400);
 }
+
+/// Input edges: a NUL in a search value is a 400 (full-text search failed
+/// on it with a 500); forwarded headers only set an http(s) scheme and a
+/// plain host in the links; chains and _has have the value-count cap too.
+#[tokio::test]
+async fn test_input_edges() {
+    let (base, _dir) = start_test_server().await;
+    let c = reqwest::Client::new();
+    for q in ["Patient?_content=a%00b", "Patient?family=a%00"] {
+        assert_eq!(c.get(format!("{base}/{q}")).send().await.unwrap().status(), 400, "{q}");
+    }
+    let b: Value = c.get(format!("{base}/Patient"))
+        .header("X-Forwarded-Proto", "javascript")
+        .header("X-Forwarded-Host", "evil.example/x y")
+        .send().await.unwrap().json().await.unwrap();
+    let link = b["link"][0]["url"].as_str().unwrap();
+    assert!(link.starts_with("http://127.0.0.1:"), "{link}");
+    let b: Value = c.get(format!("{base}/Patient"))
+        .header("X-Forwarded-Proto", "HTTPS, http")
+        .header("X-Forwarded-Host", "fhir.example.org, internal")
+        .send().await.unwrap().json().await.unwrap();
+    assert!(b["link"][0]["url"].as_str().unwrap().starts_with("https://fhir.example.org/"), "{b}");
+    let many = (0..1001).map(|i| format!("c{i}")).collect::<Vec<_>>().join(",");
+    let r = c.get(format!("{base}/Patient?_has:Observation:subject:code={many}")).send().await.unwrap();
+    assert_eq!(r.status(), 400);
+}

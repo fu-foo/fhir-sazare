@@ -104,8 +104,13 @@ pub async fn conditional_update(
         }
     };
 
-    // Compartment check
-    check_compartment_write(auth_user.as_ref(), &state.compartment_def, &resource_type, &body_value, 'u')?;
+    // Compartment check, with the id it is stored under: the match's (the body
+    // may have none), or for a create the body's (none: a new one).
+    let mut as_stored = body_value.clone();
+    if let (Some(id), Some(obj)) = (&match_id, as_stored.as_object_mut()) {
+        obj.insert("id".into(), Value::String(id.clone()));
+    }
+    check_compartment_write(auth_user.as_ref(), &state.compartment_def, &resource_type, &as_stored, 'u')?;
 
     // Validate
     if let Err(outcome) = validate_resource_all_phases(
@@ -169,7 +174,13 @@ pub async fn conditional_update(
                     .unwrap_or(0);
                 (current + 1).to_string()
             }
-            _ => state.store.next_version(&resource_type, &id).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!(OperationOutcome::storage_error(e.to_string())))))?,
+            _ => {
+                // A deleted resource's id: the one it was must be the caller's.
+                if let Some(was) = super::crud::deleted_content(&state, &resource_type, &id) {
+                    check_compartment_write(auth_user.as_ref(), &state.compartment_def, &resource_type, &was, 'u')?;
+                }
+                state.store.next_version(&resource_type, &id).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!(OperationOutcome::storage_error(e.to_string())))))?
+            }
         };
         // Preserve caller-provided meta (profile, source, …); only stamp the
         // server-managed versionId/lastUpdated.

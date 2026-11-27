@@ -42,6 +42,10 @@ Deployment, which is up to whoever runs it:
   would the data itself.
 - **No rate limiting** is built in (repeated failed logins are locked out). Exposed to
   the internet, put a reverse proxy in front that limits request rates and sizes.
+- **Behind a reverse proxy**, have it set (overwrite, not pass on) `X-Forwarded-Proto` and
+  `X-Forwarded-Host`: links, Locations and the CapabilityStatement are built from them.
+  Without a proxy, a client can name another host in its own responses' links (only an
+  `http`/`https` scheme and a plain host are taken).
 - **Bulk operations are operators' tools**: `$import` and `$export` need system-level
   scopes (or an API key / Basic user). An export keeps a copy of the data it covers on
   disk for an hour (at most 8 jobs at once): plan the disk for it.

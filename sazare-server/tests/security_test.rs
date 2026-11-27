@@ -707,3 +707,44 @@ async fn a_patient_token_reaches_no_other_patient_through_the_newer_paths() {
     let (s, _) = c.send(reqwest::Method::PUT, "/Observation?subject=Patient/p2", &t, Some(obs("Patient/p2"))).await;
     assert_eq!(s, 403);
 }
+
+/// The compartment check sees the id the server stores: a POST's body id is
+/// ignored (a new id is assigned), so a patient token can't create a Patient
+/// by naming its own id in the body; a PUT without a body id is checked by
+/// the URL's id. A transaction's urn:uuid references to oneself are resolved
+/// before the check.
+#[tokio::test]
+async fn compartment_checks_see_the_stored_id() {
+    let (c, t, _dir) = two_patients().await;
+    let (s, b) = c.send(reqwest::Method::POST, "/Patient", &t, Some(json!({"resourceType": "Patient", "id": "p1"}))).await;
+    assert_eq!(s, 403, "a new Patient is outside the token's compartment: {b}");
+    // PUT of one's own Patient with no id in the body.
+    assert_eq!(c.put("/Patient/p1", &t, json!({"resourceType": "Patient", "gender": "female"})).await, 200);
+    // A transaction creating an Observation for oneself through a urn:uuid
+    // reference is allowed (it's resolved before the check)... here the
+    // reference is to Patient/p1 directly, and via urn to a PUT of p1.
+    let bundle = json!({"resourceType": "Bundle", "type": "transaction", "entry": [
+        {"fullUrl": "urn:uuid:aaaa", "request": {"method": "PUT", "url": "Patient/p1"}, "resource": {"resourceType": "Patient", "id": "p1"}},
+        {"request": {"method": "POST", "url": "Observation"}, "resource": {"resourceType": "Observation", "status": "final",
+            "code": {"text": "x"}, "subject": {"reference": "urn:uuid:aaaa"}}}]});
+    let (s, b) = c.send(reqwest::Method::POST, "/", &t, Some(bundle)).await;
+    assert_eq!(s, 200, "{b}");
+}
+
+/// Another patient's deleted resource: reading it says nothing (403, not
+/// 410), and it can't be created again by someone else to take over its
+/// history.
+#[tokio::test]
+async fn another_patients_deleted_resource_stays_theirs() {
+    let (c, t, _dir) = two_patients().await;
+    assert_eq!(c.send(reqwest::Method::DELETE, "/Observation/o-p2", ADMIN_KEY, None).await.0, 204);
+    assert_eq!(c.get("/Observation/o-p2", &t).await.0, 403);
+    let obs = json!({"resourceType": "Observation", "id": "o-p2", "status": "final", "code": {"text": "x"}, "subject": {"reference": "Patient/p1"}});
+    assert_eq!(c.put("/Observation/o-p2", &t, obs.clone()).await, 403);
+    let bundle = json!({"resourceType": "Bundle", "type": "batch", "entry": [{"request": {"method": "PUT", "url": "Observation/o-p2"}, "resource": obs}]});
+    let (s, _) = c.send(reqwest::Method::POST, "/", &t, Some(bundle)).await;
+    assert_eq!(s, 403);
+    // One's own deleted resource: 410 as before.
+    assert_eq!(c.send(reqwest::Method::DELETE, "/Observation/o-p1", ADMIN_KEY, None).await.0, 204);
+    assert_eq!(c.get("/Observation/o-p1", &t).await.0, 410);
+}

@@ -80,15 +80,23 @@ pub fn version_location(base_url: &str, resource_type: &str, id: &str, version_i
 /// Reconstruct the externally-visible base URL (scheme + authority) from request
 /// headers, honoring `X-Forwarded-Proto`/`X-Forwarded-Host`.
 pub fn base_url_from_headers(headers: &HeaderMap) -> String {
+    // Only `http` / `https`, and a host[:port] (no path, space or userinfo):
+    // these end up in links and Locations the client follows.
     let scheme = headers
         .get("x-forwarded-proto")
         .and_then(|v| v.to_str().ok())
-        .map(|s| s.split(',').next().unwrap_or(s).trim().to_string())
+        .map(|s| s.split(',').next().unwrap_or(s).trim().to_ascii_lowercase())
+        .filter(|s| s == "http" || s == "https")
         .unwrap_or_else(|| "http".to_string());
+    let is_host = |h: &&str| {
+        !h.is_empty() && h.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b':' | b'[' | b']' | b'_'))
+    };
     let host = headers
         .get("x-forwarded-host")
-        .or_else(|| headers.get(header::HOST))
         .and_then(|v| v.to_str().ok())
+        .map(|s| s.split(',').next().unwrap_or(s).trim())
+        .filter(is_host)
+        .or_else(|| headers.get(header::HOST).and_then(|v| v.to_str().ok()).map(str::trim).filter(is_host))
         .unwrap_or("localhost");
     format!("{scheme}://{host}")
 }

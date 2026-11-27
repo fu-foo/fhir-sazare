@@ -4,6 +4,25 @@ All notable changes to sazare. Versions follow [Semantic Versioning](https://sem
 until 1.0, a minor version (0.x.0) may change behavior — those changes are listed under
 **Behavior changes**. See [UPGRADING.md](UPGRADING.md) for how to upgrade.
 
+## Unreleased
+
+### Security
+- **A patient-scoped token could create a Patient outside its compartment**: the
+  compartment check saw the body's id (`{"resourceType":"Patient","id":"p1"}`), which a
+  create then ignores for a new one. Checks now see the stored id — none for a create,
+  the URL's for an update (a PUT of one's own Patient without a body id was refused), the
+  match's for a conditional update — and, in a transaction, the body's `urn:uuid:`
+  references resolved.
+- **Another patient's deleted resource** answered 410 to a read (telling that it
+  existed), and a PUT to its id created it again, continuing its history. Both are held
+  to the compartment of what it was (the record of its delete): 403.
+- SMART Backend Services: a client's JWKS fetched from its `jwks_url` is cached (5
+  minutes; a failure 10 s), so assertions no longer each make the server fetch it; the
+  assertion's `nbf` is checked.
+- `X-Forwarded-Proto` is taken only as `http`/`https`, `X-Forwarded-Host` only as a plain
+  host (first of a list); a NUL in a search value is a 400 (full-text search answered
+  500); chains and `_has` have the 1000-value cap too.
+
 ## 0.18.0 — 2026-11-27
 
 ### Security

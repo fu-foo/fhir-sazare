@@ -169,6 +169,10 @@ impl SearchQuery {
             // once the parameter type is known (see `decode_query_value`).
             let raw_value = parts[1];
             let value = decode_query_value(raw_value, false)?;
+            // No FHIR value has a NUL (full-text search would fail on one).
+            if value.contains('\0') || key.contains('\0') {
+                return Err(format!("'{key}': a search value may not contain a NUL character"));
+            }
 
             // Reverse chain: `_has:Type:reference-param:search-param=value`.
             // Parsed before the generic `_`-prefixed skip below so it isn't
@@ -473,7 +477,15 @@ fn check_chains(
         }
         Ok(())
     };
+    let too_many = |name: &str, value: &str| -> Result<(), String> {
+        let n = alternatives(value).len();
+        if n > MAX_ALTERNATIVES {
+            return Err(format!("'{name}' has {n} comma-separated values; at most {MAX_ALTERNATIVES} are supported"));
+        }
+        Ok(())
+    };
     for c in chains {
+        too_many(&c.target_param, &c.value)?;
         let mut current = resource_type.map(str::to_string);
         for link in &c.links {
             if let Some(t) = &current {
@@ -488,6 +500,7 @@ fn check_chains(
         terminal(&last, &c.target_param, &c.value, &c.target_param_type)?;
     }
     for h in has {
+        too_many(&h.target_param, &h.value)?;
         if !crate::r4_types::is_resource_type(&h.source_type) {
             return Err(format!("_has: '{}' is not a FHIR R4 resource type", h.source_type));
         }

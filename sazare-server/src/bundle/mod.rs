@@ -195,13 +195,28 @@ pub(crate) fn check_entry_body(
 /// Apply the per-request authorization rules to each Bundle entry: JWT scopes
 /// (and the patient-token restrictions), then the patient compartment for the
 /// entry's body and for the existing resource it reads, replaces or deletes.
-fn authorize_entries(state: &AppState, user: &AuthUser, entries: &[BundleEntry]) -> Result<(), OperationOutcome> {
+fn authorize_entries(state: &AppState, user: &AuthUser, entries: &[BundleEntry], transaction: bool) -> Result<(), OperationOutcome> {
     use crate::auth::patient_scope_may;
     use crate::compartment_check::{check_compartment_access, check_compartment_write};
 
     let deny = |i: usize, why: String| {
         OperationOutcome::error(IssueType::Forbidden, format!("entry[{i}]: {why}"))
     };
+    // A body's urn:uuid references to sibling entries, resolved as a
+    // transaction will (a batch stores them as they are): a PUT entry is its
+    // Type/id; a POST entry gets a new id (so it is nobody's compartment yet).
+    let refs: HashMap<String, String> = entries
+        .iter()
+        .filter(|_| transaction)
+        .filter_map(|e| {
+            let full = e.full_url.clone()?;
+            let rt = e.resource_type.clone();
+            match (e.method.as_str(), &e.id) {
+                ("PUT", Some(id)) => Some((full, format!("{rt}/{id}"))),
+                _ => Some((full, format!("{rt}/(new)"))),
+            }
+        })
+        .collect();
     for (i, e) in entries.iter().enumerate() {
         // `Type?query` (conditional/search URLs) authorizes as `Type`.
         let rt = e.resource_type.split('?').next().unwrap_or("");
@@ -223,10 +238,28 @@ fn authorize_entries(state: &AppState, user: &AuthUser, entries: &[BundleEntry])
         if let Some(body) = &e.resource
             && matches!(e.method.as_str(), "POST" | "PUT")
         {
-            check_compartment_write(Some(user), &state.compartment_def, rt, body, perm).map_err(to_resp)?;
+            // As stored: references resolved; a POST's body id ignored, a
+            // PUT's the URL's.
+            let mut as_stored = body.clone();
+            resolve_references(&mut as_stored, &refs);
+            if let Some(obj) = as_stored.as_object_mut() {
+                match (e.method.as_str(), &e.id) {
+                    ("PUT", Some(id)) => {
+                        obj.insert("id".into(), Value::String(id.clone()));
+                    }
+                    _ => {
+                        obj.remove("id");
+                    }
+                }
+            }
+            check_compartment_write(Some(user), &state.compartment_def, rt, &as_stored, perm).map_err(to_resp)?;
         }
-        if let Some(id) = &e.id
-            && let Ok(Some(data)) = state.store.get(rt, id)
+        // The resource the entry reads, replaces or deletes — or, deleted,
+        // the record of what it was.
+        let current = e.id.as_ref().and_then(|id| {
+            state.store.get(rt, id).ok().flatten().or_else(|| state.store.latest_version(rt, id).ok().flatten())
+        });
+        if let Some(data) = current
             && let Ok(existing) = serde_json::from_slice::<Value>(&data)
         {
             if writes {
@@ -317,7 +350,7 @@ pub async fn process_bundle(
     // Every entry is authorized up front, exactly like the equivalent direct
     // request; one refused entry refuses the whole Bundle.
     if let Some(user) = auth_user.as_ref()
-        && let Err(outcome) = authorize_entries(&state, user, &entries)
+        && let Err(outcome) = authorize_entries(&state, user, &entries, bundle_type == "transaction")
     {
         return (StatusCode::FORBIDDEN, Json(json!(outcome))).into_response();
     }

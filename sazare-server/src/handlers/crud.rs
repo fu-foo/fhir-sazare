@@ -61,8 +61,14 @@ pub async fn create(
     // switch, every other write).
     let _write_gate = state.write_gate.read().await;
 
-    // Compartment check: patient-scoped tokens can only create resources in their compartment
-    check_compartment_write(auth_user.as_ref(), &state.compartment_def, &resource_type, &body, 'c')?;
+    // Compartment check: patient-scoped tokens can only create resources in
+    // their compartment — judged on what is stored: without the body's id,
+    // which a create ignores (a Patient "p1" would be stored under a new id).
+    let mut as_stored = body.clone();
+    if let Some(obj) = as_stored.as_object_mut() {
+        obj.remove("id");
+    }
+    check_compartment_write(auth_user.as_ref(), &state.compartment_def, &resource_type, &as_stored, 'c')?;
 
     // Conditional create: If-None-Exist header
     if let Some(if_none_exist) = headers.get("If-None-Exist").and_then(|v| v.to_str().ok()) {
@@ -234,7 +240,11 @@ pub async fn read(
             Ok(response_with_etag(StatusCode::OK, resource).into_response())
         }
         Ok(None) => {
-            // A previously-deleted resource is Gone (410), not merely Not Found.
+            // A previously-deleted resource is Gone (410), not merely Not Found —
+            // to whom it belonged: someone else's is a 403 (as it was).
+            if let Some(was) = deleted_content(&state, &resource_type, &id) {
+                check_compartment_access(auth_user.as_ref(), &state.compartment_def, &resource_type, &was)?;
+            }
             if state.store.is_deleted(&resource_type, &id).unwrap_or(false) {
                 return Err((
                     StatusCode::GONE,
@@ -273,7 +283,12 @@ pub async fn update(
 
     // The new content must be in the caller's compartment too (the existing
     // version is checked below) — this also covers update-as-create.
-    check_compartment_write(auth_user.as_ref(), &state.compartment_def, &resource_type, &body, 'u')?;
+    // Judged with the id it is stored under (the URL's; the body may have none).
+    let mut as_stored = body.clone();
+    if let Some(obj) = as_stored.as_object_mut() {
+        obj.insert("id".into(), Value::String(id.clone()));
+    }
+    check_compartment_write(auth_user.as_ref(), &state.compartment_def, &resource_type, &as_stored, 'u')?;
 
     // Validate
     if let Err(outcome) = validate_resource_all_phases(
@@ -391,6 +406,11 @@ pub async fn update(
                 ((current_ver + 1).to_string(), false, Some(current_ver_str))
             }
             Ok(None) => {
+                // Created again under a deleted resource's id: the one it was
+                // must have been the caller's to write.
+                if let Some(was) = deleted_content(&state, &resource_type, &id) {
+                    check_compartment_write(auth_user.as_ref(), &state.compartment_def, &resource_type, &was, 'u')?;
+                }
                 // If-Match supplied but nothing to match → precondition failed.
                 if if_match.is_some() {
                     return Err((
@@ -774,6 +794,17 @@ pub(crate) fn after_write(state: &Arc<AppState>, resource_type: &str, id: &str, 
         });
     }
     state.webhook.maybe_task_completed(resource);
+}
+
+/// What a resource that is no longer stored was, from the record of its
+/// delete: compartment checks hold for it as for the resource (reading it,
+/// or creating it again under the same id, would cross the compartment).
+pub(crate) fn deleted_content(state: &AppState, resource_type: &str, id: &str) -> Option<Value> {
+    if state.store.get(resource_type, id).ok().flatten().is_some() {
+        return None;
+    }
+    let data = state.store.latest_version(resource_type, id).ok().flatten()?;
+    serde_json::from_slice(&data).ok()
 }
 
 pub(crate) async fn restore_index(state: &Arc<AppState>, resource_type: &str, id: &str) {
