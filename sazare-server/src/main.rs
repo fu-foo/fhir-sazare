@@ -486,6 +486,9 @@ async fn serve(args: Vec<String>) {
         tracing::error!("Search index: catching up with the store failed: {e} (POST /$reindex rebuilds it)");
     }
     sazare_server::consistency::spawn_marker(state.clone());
+    if let Some(days) = config.audit.retention_days {
+        spawn_audit_retention(state.clone(), days);
+    }
 
     // `--demo`: load the curated sample dataset so a fresh run has something to
     // explore immediately.
@@ -710,6 +713,36 @@ pub(crate) fn open_browser(url: &str) {
 }
 
 /// Graceful shutdown signal handler
+/// `audit.retention_days`: at startup and every hour, delete the audit
+/// entries older than that, 10,000 at a time (the audit log is free for the
+/// requests' entries in between).
+fn spawn_audit_retention(state: Arc<AppState>, days: u32) {
+    tokio::spawn(async move {
+        let mut every = tokio::time::interval(std::time::Duration::from_secs(3600));
+        loop {
+            every.tick().await;
+            let mut total = 0;
+            loop {
+                let n = match state.audit.lock().await.prune_older_than(days, 10_000) {
+                    Ok(n) => n,
+                    Err(e) => {
+                        tracing::warn!("Audit log: deleting entries older than {days} days failed: {e}");
+                        break;
+                    }
+                };
+                total += n;
+                if n < 10_000 {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+            if total > 0 {
+                tracing::info!("Audit log: {total} entries older than {days} days deleted (audit.retention_days)");
+            }
+        }
+    });
+}
+
 /// How long requests in flight may run on after a stop.
 const STOP_GRACE: std::time::Duration = std::time::Duration::from_secs(30);
 

@@ -19,6 +19,7 @@ pub struct ServerConfig {
     pub index: IndexSettings,
     pub validation: ValidationSettings,
     pub subscription: SubscriptionSettings,
+    pub audit: AuditSettings,
     /// The configuration file this was loaded from, if any (absolute).
     #[serde(skip)]
     pub source: Option<PathBuf>,
@@ -26,6 +27,15 @@ pub struct ServerConfig {
     /// credentials), collected while loading.
     #[serde(skip)]
     pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[serde(default)]
+pub struct AuditSettings {
+    /// Delete audit entries older than this many days (checked at startup
+    /// and hourly). Unset: keep every entry.
+    pub retention_days: Option<u32>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

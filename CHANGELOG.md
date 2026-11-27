@@ -57,7 +57,13 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
   every patient. Invalid `_count`, `_offset`, `_summary` and `_total` values are a 400
   too. `_format` and `_pretty` are accepted (JSON is the one format).
 
+### Added
+- `audit.retention_days`: audit entries older than that are deleted (at startup and
+  hourly, a batch at a time). Unset, every entry is kept, as before.
+
 ### Changed
+- The audit log's commits are no longer each synced to disk (one per request, reads
+  included): a crash of the server loses nothing, a power loss the last entries.
 - A reference's type modifier is applied: `subject:Patient=123` means
   `subject=Patient/123` (the type used to be dropped). `_tag:not=…` and the other `_`
   search parameters keep their modifier (one used to drop the whole parameter).

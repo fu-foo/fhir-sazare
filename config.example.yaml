@@ -38,6 +38,11 @@ log:
   # Log level: trace, debug, info, warn, error
   level: "info"
 
+# audit:
+#   # Delete audit entries older than this many days (checked at startup and
+#   # hourly). Unset: keep every entry — the log grows with every request.
+#   retention_days: 365
+
 # subscription:
 #   # Allow rest-hook endpoints on loopback/private/link-local addresses
 #   # (localhost, 10.x, 192.168.x, 169.254.x, ...). Off by default when auth is

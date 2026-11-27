@@ -65,6 +65,9 @@ impl AuditLog {
         // failing with SQLITE_BUSY. rusqlite's default too; stated so it's not lost.
         conn.busy_timeout(std::time::Duration::from_secs(5))?;
         conn.execute_batch(crate::WAL_PRAGMAS)?;
+        // One commit per request (reads included): not each synced to disk. A
+        // crash of the server loses nothing; a power loss, the last entries.
+        conn.execute_batch("PRAGMA synchronous=NORMAL;")?;
         crate::migrate::run_migrations(&mut conn, Self::MIGRATIONS)?;
         Ok(Self { conn })
     }
@@ -109,6 +112,17 @@ impl AuditLog {
     }
 
     /// Record a success log entry (helper)
+    /// Delete up to `limit` entries older than `days` days; how many went
+    /// (fewer than `limit`: none older remain). A batch at a time, so the
+    /// caller can let writers in between.
+    pub fn prune_older_than(&self, days: u32, limit: usize) -> Result<usize> {
+        Ok(self.conn.execute(
+            "DELETE FROM audit_log WHERE id IN \
+             (SELECT id FROM audit_log WHERE timestamp < datetime('now', ?1) LIMIT ?2)",
+            rusqlite::params![format!("-{days} days"), limit as i64],
+        )?)
+    }
+
     pub fn log_success(
         &self,
         operation: Operation,
@@ -238,5 +252,20 @@ mod tests {
         // Most recent first
         assert_eq!(entries[0].1, "update");
         assert_eq!(entries[0].4, "error");
+    }
+
+    #[test]
+    fn entries_past_the_retention_go_a_batch_at_a_time() {
+        let audit = AuditLog::open(":memory:").unwrap();
+        for _ in 0..5 {
+            audit.log_success(Operation::Read, "Patient", "p", None, None).unwrap();
+        }
+        // Three of them from long ago.
+        audit.conn.execute("UPDATE audit_log SET timestamp = datetime('now', '-40 days') WHERE id <= 3", []).unwrap();
+        assert_eq!(audit.prune_older_than(30, 2).unwrap(), 2, "a full batch");
+        assert_eq!(audit.prune_older_than(30, 2).unwrap(), 1, "the rest: fewer than the batch");
+        assert_eq!(audit.prune_older_than(30, 2).unwrap(), 0);
+        let left: i64 = audit.conn.query_row("SELECT COUNT(*) FROM audit_log", [], |r| r.get(0)).unwrap();
+        assert_eq!(left, 2);
     }
 }
