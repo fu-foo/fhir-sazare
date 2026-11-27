@@ -6,6 +6,14 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
 
 ## Unreleased
 
+### Security
+- Dependencies updated for the advisories `cargo audit` reports, among them the bundled
+  SQLite (`rusqlite` 0.43, `libsqlite3-sys` 0.40), `rustls`, `rustls-webpki` and the
+  `tokio` I/O-safety fix. `rustls-pemfile` (unmaintained) is replaced by the PEM parser
+  in `rustls-pki-types`. Two unmaintained dependencies remain, with no known vulnerability:
+  `serde_yaml`'s `unsafe-libyaml` (it reads only the operator's own configuration file)
+  and `chrono`.
+
 ### Fixed
 - **The patient compartment follows the R4 elements**: EpisodeOfCare and NutritionOrder
   are linked by `patient` (not `subject`), SupplyRequest by `requester`, Person by
@@ -23,6 +31,9 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
   isn't a date is a 400 (it found nothing, or ignored the modifier), as at the top level.
   A date of the wrong shape (`2024X06`) isn't taken for one.
 - `POST /Type/_search` also reads parameters in the URL.
+- A chain or `_has` ending in a number or quantity with a value that isn't one is a 400,
+  and one ending in a reference takes this server's absolute URL as the local reference.
+  A Subscription `payload` is matched without regard to case.
 - A reference search by this server's absolute URL (`subject=https://host/fhir/Patient/1`)
   matches like the local reference; it found nothing.
 - A Subscription whose rest-hook `payload` isn't JSON (`application/fhir+xml`) is
@@ -84,8 +95,8 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
 - The CapabilityStatement declares conditional update and delete (`single`) and the
   `_include` values of each type.
 - Docker: a `HEALTHCHECK` on `GET /health`; `docker-compose.yml` gives a stop 45 s.
-- Building needs Rust 1.88 (the README said 1.85); `rust-version` is set, and CI builds
-  with 1.88.
+- Building needs Rust 1.89 (the README said 1.85; the updated SQLite binding needs 1.89);
+  `rust-version` is set, and CI builds with it.
 
 ### Behavior changes
 - **String search ignores accents as well as case**, as FHIR specifies: `family=jose`

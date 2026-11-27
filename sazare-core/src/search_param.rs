@@ -449,10 +449,19 @@ fn check_chains(
                 return Err(format!("The modifier ':{m}' on '{name}' is not supported in a chain or _has"));
             }
         }
-        if *ty == SearchParamType::Date && modifier != Some("missing") {
-            let bad = alternatives(value).iter().any(|d| crate::date::fhir_date_range(&parse_date_prefix(d).1).is_none());
-            if bad || alternatives(value).is_empty() {
-                return Err(format!("Invalid date '{value}' for '{name}' of {t}"));
+        if modifier != Some("missing") {
+            let alts = alternatives(value);
+            let bad = match ty {
+                SearchParamType::Date => alts.iter().any(|d| crate::date::fhir_date_range(&parse_date_prefix(d).1).is_none()),
+                SearchParamType::Number => alts.iter().any(|n| parse_number_prefix(n).1.trim().parse::<f64>().is_err()),
+                SearchParamType::Quantity => alts.iter().any(|q| {
+                    let q = parse_number_prefix(q).1;
+                    !matches!(q.matches('|').count(), 0 | 2) || q.split('|').next().unwrap_or("").trim().parse::<f64>().is_err()
+                }),
+                _ => false,
+            };
+            if bad || (alts.is_empty() && matches!(ty, SearchParamType::Date | SearchParamType::Number | SearchParamType::Quantity)) {
+                return Err(format!("Invalid value '{value}' for '{name}' of {t}"));
             }
         }
         Ok(())
@@ -1112,7 +1121,14 @@ mod tests {
             assert!(parse(ok).is_ok(), "{ok}");
         }
         let has = |q: &str| SearchQuery::parse_for_resource(q, Some("Patient"));
-        for bad in ["_has:Observation:subject:bogus=x", "_has:Observation:status:code=x", "_has:Foo:subject:code=x", "_has:Observation:subject:date=x"] {
+        for bad in [
+            "_has:Observation:subject:bogus=x",
+            "_has:Observation:status:code=x",
+            "_has:Foo:subject:code=x",
+            "_has:Observation:subject:date=x",
+            "_has:Observation:subject:value-quantity=abc",
+            "_has:Observation:subject:value-quantity=5.4|mg",
+        ] {
             assert!(has(bad).is_err(), "{bad}");
         }
         assert!(has("_has:Observation:subject:code=1234-5").is_ok());

@@ -16,12 +16,22 @@ jobs:
       - run: cargo test --all
       - run: cargo clippy --all --all-targets -- -D warnings
 
+  # Known vulnerabilities in the dependencies (RustSec). Fails on an advisory;
+  # "unmaintained" notices are shown, not failed on.
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo install cargo-audit --locked
+      - run: cargo audit
+
   # The oldest Rust that builds it (rust-version in Cargo.toml).
   msrv:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.88
+      - uses: dtolnay/rust-toolchain@1.89
       - uses: Swatinem/rust-cache@v2
       - run: cargo check --all-targets
 

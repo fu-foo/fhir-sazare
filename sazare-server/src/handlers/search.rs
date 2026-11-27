@@ -120,6 +120,11 @@ pub(crate) async fn do_search(
             p.value = p.value.split(',').map(|v| v.strip_prefix(&own).unwrap_or(v)).collect::<Vec<_>>().join(",");
         }
     }
+    for c in query.chain_parameters.iter_mut().filter(|c| c.target_param_type == sazare_core::SearchParamType::Reference) {
+        if c.value.contains(&own) {
+            c.value = c.value.split(',').map(|v| v.strip_prefix(&own).unwrap_or(v)).collect::<Vec<_>>().join(",");
+        }
+    }
     for h in query.has_parameters.iter_mut().filter(|h| h.target_param_type == sazare_core::SearchParamType::Reference) {
         if h.value.contains(&own) {
             h.value = h.value.split(',').map(|v| v.strip_prefix(&own).unwrap_or(v)).collect::<Vec<_>>().join(",");

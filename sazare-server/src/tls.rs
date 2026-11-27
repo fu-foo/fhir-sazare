@@ -137,14 +137,11 @@ pub fn load_tls_acceptor(
     cert_path: &str,
     key_path: &str,
 ) -> Result<TlsAcceptor, Box<dyn std::error::Error>> {
-    use std::io::BufReader;
+    use tokio_rustls::rustls::pki_types::pem::PemObject;
+    use tokio_rustls::rustls::pki_types::{CertificateDer, PrivateKeyDer};
 
-    let cert_file = std::fs::File::open(cert_path)
-        .map_err(|e| format!("Failed to open cert file '{}': {}", cert_path, e))?;
-    let key_file = std::fs::File::open(key_path)
-        .map_err(|e| format!("Failed to open key file '{}': {}", key_path, e))?;
-
-    let certs: Vec<_> = rustls_pemfile::certs(&mut BufReader::new(cert_file))
+    let certs: Vec<CertificateDer<'static>> = CertificateDer::pem_file_iter(cert_path)
+        .map_err(|e| format!("Failed to open cert file '{}': {}", cert_path, e))?
         .collect::<Result<_, _>>()
         .map_err(|e| format!("Failed to parse certificates: {}", e))?;
 
@@ -152,9 +149,8 @@ pub fn load_tls_acceptor(
         return Err("No certificates found in cert file".into());
     }
 
-    let key = rustls_pemfile::private_key(&mut BufReader::new(key_file))
-        .map_err(|e| format!("Failed to parse private key: {}", e))?
-        .ok_or("No private key found in key file")?;
+    let key = PrivateKeyDer::from_pem_file(key_path)
+        .map_err(|e| format!("Failed to read a private key from '{}': {}", key_path, e))?;
 
     // Explicitly select ring as crypto provider (both ring and aws-lc-rs may be
     // in the dependency tree via reqwest, preventing auto-detection)

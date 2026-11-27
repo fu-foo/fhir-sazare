@@ -498,11 +498,12 @@ impl SqliteStore {
         let conn = self.reader();
 
         // Total count
-        let total: usize = conn.query_row(
+        let total: i64 = conn.query_row(
             "SELECT COUNT(*) FROM resources WHERE resource_type = ?",
             params![resource_type],
             |row| row.get(0),
         )?;
+        let total = total as usize;
 
         let mut stmt = conn.prepare(
             "SELECT id, value FROM resources WHERE resource_type = ? \

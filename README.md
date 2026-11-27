@@ -243,7 +243,7 @@ taste.)
 
 ### Build from source (optional)
 
-Prefer to build it yourself? You'll need **Rust 1.88+** (2024 edition):
+Prefer to build it yourself? You'll need **Rust 1.89+** (2024 edition):
 
 ```bash
 git clone https://github.com/fu-foo/fhir-sazare.git

@@ -90,7 +90,7 @@ pub fn validate_subscription(
             }
             // The notification body: none (absent payload) or JSON.
             if let Some(payload) = channel.get("payload").and_then(|v| v.as_str())
-                && !payload.split(';').next().unwrap_or("").trim().contains("json")
+                && !payload.split(';').next().unwrap_or("").trim().to_ascii_lowercase().contains("json")
             {
                 return Err(format!(
                     "channel.payload '{payload}' is not supported: notifications are sent as application/fhir+json (or leave payload out for an empty ping)"
@@ -285,7 +285,7 @@ impl SubscriptionManager {
             .get("payload")
             .and_then(|v| v.as_str())
             .unwrap_or("");
-        let body = if payload_type.contains("json") {
+        let body = if payload_type.to_ascii_lowercase().contains("json") {
             state.store.get(resource_type, resource_id).ok().flatten()
         } else {
             None
@@ -582,7 +582,7 @@ mod tests {
         // Notifications are JSON (or an empty ping): XML was accepted and
         // then sent as an empty ping.
         let mut sub = valid_subscription();
-        for ok in ["application/fhir+json", "application/json; charset=utf-8"] {
+        for ok in ["application/fhir+json", "application/json; charset=utf-8", "Application/FHIR+JSON"] {
             sub["channel"]["payload"] = json!(ok);
             assert!(validate_subscription(&sub, &registry()).is_ok(), "{ok}");
         }
