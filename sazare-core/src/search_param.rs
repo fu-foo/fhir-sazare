@@ -174,8 +174,14 @@ impl SearchQuery {
             // Parsed before the generic `_`-prefixed skip below so it isn't
             // dropped as an unsupported result parameter.
             if key.starts_with("_has:") {
-                if let Some(has) = parse_has(&key, raw_value, registry) {
-                    has_parameters.push(has);
+                match parse_has(&key, raw_value, registry) {
+                    Some(has) => has_parameters.push(has),
+                    None => {
+                        return Err(format!(
+                            "'{key}' is not a reverse chain this server supports: expected \
+                             _has:Type:reference-param:search-param (one level, no modifier)"
+                        ));
+                    }
                 }
                 continue;
             }
@@ -192,12 +198,12 @@ impl SearchQuery {
             }
 
             if key == "_count" {
-                count = value.parse().ok();
+                count = Some(value.trim().parse().map_err(|_| format!("Invalid _count '{value}': expected a number"))?);
                 continue;
             }
 
             if key == "_offset" {
-                offset = value.parse().ok();
+                offset = Some(value.trim().parse().map_err(|_| format!("Invalid _offset '{value}': expected a number"))?);
                 continue;
             }
 
@@ -208,13 +214,17 @@ impl SearchQuery {
                     "text" => Some(SummaryMode::Text),
                     "count" => Some(SummaryMode::Count),
                     "data" => Some(SummaryMode::Data),
-                    _ => None,
+                    _ => return Err(format!("Invalid _summary '{value}': expected true, false, text, data or count")),
                 };
                 continue;
             }
 
             if key == "_total" {
-                omit_total = value.trim() == "none";
+                omit_total = match value.trim() {
+                    "none" => true,
+                    "estimate" | "accurate" => false,
+                    _ => return Err(format!("Invalid _total '{value}': expected none, estimate or accurate")),
+                };
                 continue;
             }
 
@@ -235,14 +245,24 @@ impl SearchQuery {
                 continue;
             }
 
-            // Skip other standard result parameters that start with "_"
-            // (e.g. _sort, _total, _contained, _containedType)
-            // These are not search filters and should be ignored if unsupported.
-            // Allowlist underscore-prefixed params that ARE search filters.
+            // Formatting only (JSON is the one format).
+            if key == "_format" || key == "_pretty" {
+                continue;
+            }
+
+            // Any other `_` parameter is a search filter this server has
+            // (`_id`, `_tag`, … with their modifiers) or an error: ignoring
+            // `_filter`, `_list`, `_contained`, `_include:iterate`, … would
+            // answer a broader search than the one asked.
             const UNDERSCORE_SEARCH_PARAMS: &[&str] =
                 &["_id", "_lastUpdated", "_profile", "_tag", "_security", "_text", "_content"];
-            if key.starts_with('_') && !UNDERSCORE_SEARCH_PARAMS.contains(&key.as_ref()) {
-                continue;
+            let base = key.split(':').next().unwrap_or(&key);
+            if key.starts_with('_') && !UNDERSCORE_SEARCH_PARAMS.contains(&base) {
+                return Err(format!(
+                    "'{key}' is not supported by this server. Search with the parameters listed in \
+                     GET /metadata, and _count, _offset, _sort, _total, _summary, _elements, _include, \
+                     _revinclude, _has."
+                ));
             }
 
             // Parse parameter name and modifier
@@ -273,6 +293,36 @@ impl SearchQuery {
 
             // Infer parameter type from name (registry-aware when resource_type is provided)
             let param_type = infer_with_registry(registry, resource_type, &param_name);
+
+            // A reference's type modifier (`subject:Patient=123`) is the
+            // typed reference `Patient/123`.
+            let (modifier, value) = match modifier {
+                Some(m) if param_type == SearchParamType::Reference && m.starts_with(|c: char| c.is_ascii_uppercase()) => {
+                    let typed = alternatives(&value)
+                        .iter()
+                        .map(|v| if v.contains('/') { v.to_string() } else { format!("{m}/{v}") })
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    (None, typed)
+                }
+                m => (m, value),
+            };
+            // Modifiers this server applies; any other would be ignored, and
+            // the search answered as if it weren't there.
+            if let Some(m) = modifier.as_deref() {
+                let supported = match m {
+                    "missing" | "not" => true,
+                    "exact" | "contains" => param_type == SearchParamType::String,
+                    _ => false,
+                };
+                if !supported {
+                    return Err(format!(
+                        "The modifier ':{m}' on '{param_name}' is not supported by this server \
+                         (supported: :missing and :not; :exact and :contains on strings; a resource \
+                         type on references, e.g. subject:Patient)"
+                    ));
+                }
+            }
 
             // Parse date prefix (ge, le, gt, lt, eq)
             let (prefix, actual_value) = if param_type == SearchParamType::Date {
@@ -707,13 +757,12 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_has_malformed_ignored() {
-        // Missing the search-param segment -> not a valid one-level _has.
-        let query = SearchQuery::parse("_has:Observation:patient=x").unwrap();
-        assert!(query.has_parameters.is_empty());
-        // Nested _has is out of scope for now and is dropped, not mis-parsed.
-        let nested = SearchQuery::parse("_has:Group:member:_has=y").unwrap();
-        assert!(nested.has_parameters.is_empty());
+    fn test_parse_has_malformed_is_an_error() {
+        // Missing the search-param segment -> not a valid one-level _has;
+        // nested _has isn't supported. Either would drop a condition, so the
+        // search would match more than asked: an error (400), not ignored.
+        assert!(SearchQuery::parse("_has:Observation:patient=x").is_err());
+        assert!(SearchQuery::parse("_has:Group:member:_has=y").is_err());
     }
 
     #[test]
@@ -773,11 +822,40 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_unknown_underscore_param_skipped() {
-        let query = SearchQuery::parse("_contained=true").unwrap();
-        assert_eq!(query.parameters.len(), 0);
+    fn test_parse_unsupported_underscore_param_is_an_error() {
+        // Unsupported filters / result parameters would widen or change the
+        // answer if ignored.
+        for q in ["_contained=true", "_filter=name eq x", "_list=x", "_query=x", "_include:iterate=Patient:link", "_bogus=1"] {
+            assert!(SearchQuery::parse(q).is_err(), "{q}");
+        }
+        // Formatting parameters are fine; filters keep their modifiers.
+        assert!(SearchQuery::parse("_format=json&_pretty=true").unwrap().parameters.is_empty());
+        let q = SearchQuery::parse("_tag:not=x").unwrap();
+        assert_eq!(q.parameters[0].modifier.as_deref(), Some("not"));
         assert!(SearchQuery::parse("_total=none").unwrap().omit_total);
         assert!(!SearchQuery::parse("_total=accurate").unwrap().omit_total);
+        for q in ["_total=all", "_summary=maybe", "_count=ten", "_offset=-"] {
+            assert!(SearchQuery::parse(q).is_err(), "{q}");
+        }
+    }
+
+    #[test]
+    fn test_unsupported_modifiers_are_an_error() {
+        let parse = |q: &str| SearchQuery::parse_for_resource(q, Some("Observation"));
+        for q in ["code:text=x", "code:below=x", "code:in=http://vs", "code:of-type=x", "status:exact=final", "subject:identifier=x", "date:bogus=2020"] {
+            assert!(parse(q).is_err(), "{q}");
+        }
+        for q in ["code:not=x", "date:missing=true", "subject:missing=false"] {
+            assert!(parse(q).is_ok(), "{q}");
+        }
+        assert!(SearchQuery::parse_for_resource("name:exact=Ada&name:contains=d", Some("Patient")).is_ok());
+    }
+
+    #[test]
+    fn test_reference_type_modifier_is_a_typed_reference() {
+        let q = SearchQuery::parse_for_resource("subject:Patient=123,Group/9", Some("Observation")).unwrap();
+        assert_eq!(q.parameters[0].modifier, None);
+        assert_eq!(q.parameters[0].value, "Patient/123,Group/9");
     }
 
     #[test]

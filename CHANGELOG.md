@@ -26,7 +26,18 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
 - Building needs Rust 1.88 (the README said 1.85); `rust-version` is set, and CI builds
   with 1.88.
 
+### Behavior changes
+- **Unsupported search syntax is a 400 instead of being ignored.** `_filter`, `_list`,
+  `_query`, `_contained`, `_include:iterate`, a malformed or nested `_has`, and unsupported
+  modifiers (`:text`, `:below`, `:in`, `:of-type`, `:identifier`, `:exact` on a token, …)
+  were dropped, so the search matched more than asked — `Patient?_filter=…` returned
+  every patient. Invalid `_count`, `_offset`, `_summary` and `_total` values are a 400
+  too. `_format` and `_pretty` are accepted (JSON is the one format).
+
 ### Changed
+- A reference's type modifier is applied: `subject:Patient=123` means
+  `subject=Patient/123` (the type used to be dropped). `_tag:not=…` and the other `_`
+  search parameters keep their modifier (one used to drop the whole parameter).
 - **The Linux binaries are static (musl)**: they run on any Linux. They needed glibc 2.39
   (Ubuntu 24.04 or newer), so RHEL 8/9, Ubuntu 20.04/22.04 and Debian 12 couldn't run
   them. The static builds (and the Docker image) use mimalloc, as musl's allocator is

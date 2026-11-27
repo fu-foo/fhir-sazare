@@ -62,11 +62,13 @@ Know these before you rely on sazare:
 - **FHIR R4 (4.0.1) only.** No R4B / R5.
 - **Search:** every R4 parameter of type string, token, date, reference, number and
   quantity for the built-in resource types, with `:exact`, `:contains`, `:missing`,
-  `:not`; chains up to 4 hops; one level of `_has`. Quantities match their number with a
-  system and code, or a code or unit, as written (no unit conversion). Not supported:
-  `uri`/`composite` parameters, `_filter`, `_list`, `_query`, nested `_has`,
-  `:above`/`:below`/`:in`/`:text` modifiers. For resource types with a built-in parameter
-  list, unknown parameters are a 400, never silently ignored.
+  `:not` and a reference's type (`subject:Patient`); chains up to 4 hops; one level of
+  `_has`. Quantities match their number with a system and code, or a code or unit, as
+  written (no unit conversion). Not supported: `uri`/`composite` parameters, `_filter`,
+  `_list`, `_query`, `_contained`, `_include:iterate`, nested `_has`,
+  `:above`/`:below`/`:in`/`:text`/`:identifier`/`:of-type` modifiers. What isn't supported
+  is a 400 — an unknown parameter, modifier or `_` parameter is never silently ignored
+  (that would answer a broader search than the one asked).
 - **Custom SearchParameters** use a FHIRPath subset (paths, `|`, `ofType`/`as`,
   `extension()`, `where(a = 'x' and ...)`, `resolve() is`, `[n]`); others are rejected at load.
 - **Validation** checks declared (or default) profiles — cardinality, types, fixed values,
