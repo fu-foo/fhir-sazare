@@ -10,6 +10,13 @@ permissions:
   contents: read
   packages: write
 
+# One build per branch or tag at a time, the newest winning: pushes to main
+# in quick succession used to build in parallel, and whichever finished last
+# set `edge` — not necessarily the newest commit.
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
