@@ -18,6 +18,11 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
   stops without them.
 - `sazare-server backup` no longer copies the search index (derived, rebuilt on
   restore — 6 GB at 10M resources — and without its full-text half anyway).
+- A conditional update (`PUT /Type?search`) sent no Subscription notifications or
+  webhooks (every other write did); its 201 now has a `Location` header too.
+- A Bundle entry's `request.ifMatch` was ignored, so a transaction or batch `PUT` /
+  `DELETE` replaced whatever version was current. A transaction now fails as a whole
+  (412) when an entry's version isn't current; a batch fails that entry (412).
 - Building needs Rust 1.88 (the README said 1.85); `rust-version` is set, and CI builds
   with 1.88.
 

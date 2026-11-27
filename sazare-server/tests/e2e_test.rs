@@ -1237,6 +1237,27 @@ async fn test_websocket_subscription_ping() {
     // Exactly one ping: the non-matching create didn't produce one.
     let extra = tokio::time::timeout(std::time::Duration::from_millis(500), ws.next()).await;
     assert!(extra.is_err(), "unexpected frame: {extra:?}");
+
+    // A conditional update notifies too: creating (no match) and updating (one).
+    let obs = json!({
+        "resourceType": "Observation",
+        "status": "final",
+        "code": {"coding": [{"system": "http://loinc.org", "code": "1111-1"}]}
+    });
+    for want in [201, 200] {
+        let r = client
+            .put(format!("{base_url}/Observation?code=http://loinc.org|1111-1"))
+            .header("Content-Type", "application/fhir+json")
+            .body(obs.to_string())
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(r.status(), want);
+        if want == 201 {
+            assert!(r.headers().contains_key("location"), "a create has a Location");
+        }
+        assert_eq!(next_text(&mut ws).await, format!("ping {sub_id}"), "conditional update ({want})");
+    }
 }
 
 #[tokio::test]
@@ -2151,4 +2172,56 @@ async fn test_fhir_content_type() {
     let caps: Value = c.get(format!("{base}/metadata")).send().await.unwrap().json().await.unwrap();
     let types: Vec<&str> = caps["rest"][0]["resource"].as_array().unwrap().iter().map(|r| r["type"].as_str().unwrap()).collect();
     assert!(types.contains(&"Appointment"), "{types:?}");
+}
+
+/// `request.ifMatch` in a Bundle: a transaction whose entry names a version
+/// that isn't current fails as a whole (412); a batch fails that entry.
+#[tokio::test]
+async fn test_bundle_if_match() {
+    let (base, _dir) = start_test_server().await;
+    let c = reqwest::Client::new();
+    let put = |id: &str, family: &str, if_match: &str| {
+        let mut request = json!({"method": "PUT", "url": format!("Patient/{id}")});
+        if !if_match.is_empty() {
+            request["ifMatch"] = json!(if_match);
+        }
+        json!({"resource": {"resourceType": "Patient", "id": id, "name": [{"family": family}]}, "request": request})
+    };
+    let post = |kind: &str, entries: Vec<Value>| {
+        let c = c.clone();
+        let url = format!("{base}/");
+        let body = json!({"resourceType": "Bundle", "type": kind, "entry": entries});
+        async move {
+            let r = c.post(url).header("Content-Type", "application/fhir+json").body(body.to_string()).send().await.unwrap();
+            (r.status().as_u16(), r.json::<Value>().await.unwrap())
+        }
+    };
+    let family = |id: &str| {
+        let c = c.clone();
+        let url = format!("{base}/Patient/{id}");
+        async move { c.get(url).send().await.unwrap().json::<Value>().await.unwrap()["name"][0]["family"].clone() }
+    };
+    let (s, _) = post("transaction", vec![put("a", "A1", ""), put("b", "B1", "")]).await;
+    assert_eq!(s, 200);
+
+    // Transaction: one stale ifMatch, nothing is written.
+    let (s, b) = post("transaction", vec![put("a", "A2", "W/\"1\""), put("b", "B2", "W/\"7\"")]).await;
+    assert_eq!(s, 412, "{b}");
+    assert_eq!(family("a").await, "A1");
+    let (s, _) = post("transaction", vec![put("a", "A2", "W/\"1\""), put("b", "B2", "1")]).await;
+    assert_eq!(s, 200);
+    assert_eq!(family("b").await, "B2");
+
+    // Batch: each entry on its own.
+    let (s, b) = post("batch", vec![put("a", "A3", "W/\"2\""), put("b", "B3", "W/\"1\"")]).await;
+    assert_eq!(s, 200);
+    assert!(b["entry"][0]["response"]["status"].as_str().unwrap().starts_with("200"), "{b}");
+    assert!(b["entry"][1]["response"]["status"].as_str().unwrap().starts_with("412"), "{b}");
+    assert_eq!(family("a").await, "A3");
+    assert_eq!(family("b").await, "B2");
+    // A batch DELETE with a stale ifMatch leaves the resource.
+    let del = json!({"request": {"method": "DELETE", "url": "Patient/b", "ifMatch": "W/\"1\""}});
+    let (_, b) = post("batch", vec![del]).await;
+    assert!(b["entry"][0]["response"]["status"].as_str().unwrap().starts_with("412"), "{b}");
+    assert_eq!(family("b").await, "B2");
 }

@@ -13,7 +13,7 @@ use sazare_store::SearchExecutor;
 use serde_json::{json, Value};
 use std::sync::Arc;
 
-use super::{response_with_etag, update_search_index};
+use super::{base_url_from_headers, response_with_etag, response_with_headers, update_search_index, version_location};
 use crate::audit::{self, AuditContext};
 use crate::auth::AuthUser;
 use crate::compartment_check::check_compartment_write;
@@ -202,7 +202,9 @@ pub async fn conditional_update(
         }
 
         audit::log_operation_success(&audit_ctx, "CREATE", &resource_type, &id, &state.audit);
-        Ok(response_with_etag(StatusCode::CREATED, resource_value).into_response())
+        super::crud::after_write(&state, &resource_type, &id, &resource_value);
+        let location = version_location(&base_url_from_headers(&parts.headers), &resource_type, &id, &version_id);
+        Ok(response_with_headers(StatusCode::CREATED, resource_value, Some(location)).into_response())
     } else {
         // 1 match → update
         let id = match_id.unwrap();
@@ -253,6 +255,7 @@ pub async fn conditional_update(
         }
 
         audit::log_operation_success(&audit_ctx, "UPDATE", &resource_type, &id, &state.audit);
+        super::crud::after_write(&state, &resource_type, &id, &resource_value);
         Ok(response_with_etag(StatusCode::OK, resource_value).into_response())
     }
 }

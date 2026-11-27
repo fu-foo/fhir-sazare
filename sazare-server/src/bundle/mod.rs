@@ -33,7 +33,28 @@ pub(crate) struct BundleEntry {
     pub full_url: Option<String>,
     pub resource: Option<Value>,
     pub if_none_exist: Option<String>,
+    /// `request.ifMatch`: the version the entry expects to replace or delete
+    /// (`W/"3"` → `3`).
+    pub if_match: Option<String>,
 }
+
+/// The version an ETag names: `W/"3"`, `"3"` or `3` → `3`.
+pub(crate) fn etag_version(etag: &str) -> String {
+    etag.trim().trim_start_matches("W/").trim_matches('"').to_string()
+}
+
+/// The `meta.versionId` of a stored resource.
+pub(crate) fn stored_version(data: &[u8]) -> Option<String> {
+    serde_json::from_slice::<Value>(data)
+        .ok()?
+        .pointer("/meta/versionId")
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+}
+
+/// The start of the error a transaction fails with when an entry's
+/// `ifMatch` doesn't name the current version (412).
+pub(crate) const IF_MATCH_FAILED: &str = "ifMatch failed";
 
 /// Parse request.url to extract resource type and optional id.
 /// "Patient" -> ("Patient", None)
@@ -98,6 +119,7 @@ fn parse_entries(bundle: &Value) -> Result<Vec<BundleEntry>, OperationOutcome> {
         let full_url = entry.get("fullUrl").and_then(|f| f.as_str()).map(|s| s.to_string());
         let resource = entry.get("resource").cloned();
         let if_none_exist = request.get("ifNoneExist").and_then(|v| v.as_str()).map(|s| s.to_string());
+        let if_match = request.get("ifMatch").and_then(|v| v.as_str()).map(etag_version);
 
         parsed.push(BundleEntry {
             method,
@@ -106,6 +128,7 @@ fn parse_entries(bundle: &Value) -> Result<Vec<BundleEntry>, OperationOutcome> {
             full_url,
             resource,
             if_none_exist,
+            if_match,
         });
     }
     Ok(parsed)

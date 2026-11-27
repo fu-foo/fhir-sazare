@@ -195,6 +195,18 @@ pub(super) async fn process_transaction(
             }
 
             let (ref resource_type, ref id) = assigned[i];
+            // `ifMatch`: the version the entry expects (checked in the
+            // transaction, so nothing changes in between).
+            if let Some(want) = &entry.if_match {
+                let current = ops.get(resource_type, id)?.as_deref().and_then(super::stored_version);
+                if current.as_deref() != Some(want.as_str()) {
+                    return Err(sazare_store::StoreError::Other(format!(
+                        "{}: entry[{i}] {resource_type}/{id} expects version {want}, the current one is {}",
+                        super::IF_MATCH_FAILED,
+                        current.as_deref().unwrap_or("none (not found)")
+                    )));
+                }
+            }
             match entry.method.as_str() {
                 "POST" => {
                     let resource = entry.resource.as_mut().unwrap();
@@ -286,6 +298,16 @@ pub(super) async fn process_transaction(
     });
 
     if let Err(e) = tx_result {
+        if let sazare_store::StoreError::Other(msg) = &e
+            && msg.starts_with(super::IF_MATCH_FAILED)
+        {
+            audit::log_operation_error(audit_ctx, "TRANSACTION", "Bundle", None, msg, &state.audit);
+            return (
+                StatusCode::PRECONDITION_FAILED,
+                Json(json!(OperationOutcome::error(IssueType::Conflict, format!("Transaction failed: {msg}")))),
+            )
+                .into_response();
+        }
         let outcome = OperationOutcome::storage_error(format!("Transaction failed: {}", e));
         audit::log_operation_error(
             audit_ctx, "TRANSACTION", "Bundle", None,

@@ -729,6 +729,21 @@ pub async fn delete_resource(
 
 /// After a lost compare-and-swap: make the index match what is stored again —
 /// the stored resource's entries, or none if it no longer exists.
+/// After a resource was written: Subscription notifications (in the
+/// background) and the lifecycle webhook. Every write path calls it.
+pub(crate) fn after_write(state: &Arc<AppState>, resource_type: &str, id: &str, resource: &Value) {
+    {
+        let state = state.clone();
+        let rt = resource_type.to_string();
+        let rid = id.to_string();
+        let rv = resource.clone();
+        tokio::spawn(async move {
+            SubscriptionManager::notify(&state, &rt, &rid, &rv).await;
+        });
+    }
+    state.webhook.maybe_task_completed(resource);
+}
+
 pub(crate) async fn restore_index(state: &Arc<AppState>, resource_type: &str, id: &str) {
     let stored = state
         .store

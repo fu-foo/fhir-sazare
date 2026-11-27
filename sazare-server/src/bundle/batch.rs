@@ -228,10 +228,21 @@ async fn process_batch_entry(
             }
 
             let data = serde_json::to_vec(&resource).unwrap();
-            match state
-                .store
-                .put_with_version(&entry.resource_type, &id, &version_id, &data)
-            {
+            // `ifMatch`: replace only that version (compare-and-swap).
+            let written = match &entry.if_match {
+                Some(want) => match state.store.put_with_version_cas(&entry.resource_type, &id, Some(want), &version_id, &data) {
+                    Ok(true) => Ok(()),
+                    Ok(false) => {
+                        return error_entry(
+                            "412 Precondition Failed",
+                            &format!("entry[{index}]: {}/{id} is not at version {want}", entry.resource_type),
+                        );
+                    }
+                    Err(e) => Err(e),
+                },
+                None => state.store.put_with_version(&entry.resource_type, &id, &version_id, &data),
+            };
+            match written {
                 Ok(()) => {
                     // Re-index
                     {
@@ -275,6 +286,15 @@ async fn process_batch_entry(
                 }
             };
 
+            if let Some(want) = &entry.if_match {
+                let current = state.store.get(&entry.resource_type, &id).ok().flatten();
+                if current.as_deref().and_then(super::stored_version).as_deref() != Some(want.as_str()) {
+                    return error_entry(
+                        "412 Precondition Failed",
+                        &format!("entry[{index}]: {}/{id} is not at version {want}", entry.resource_type),
+                    );
+                }
+            }
             match state.store.delete(&entry.resource_type, &id) {
                 Ok(_) => {
                     // Remove indices
