@@ -65,6 +65,15 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
   with 1.88.
 
 ### Behavior changes
+- **String search ignores accents as well as case**, as FHIR specifies: `family=jose`
+  finds José, `given=nandu` Ñandú. `:exact` still compares as written. (Index format 5:
+  part of the one rebuild of this release.)
+- **Concurrent updates of one resource all succeed** (without `If-Match` the last one
+  wins, each a version): 29 of 30 simultaneous PUTs to one id answered 409. Updates and
+  patches of a resource now go one at a time; a patch is applied to the version current
+  when it runs. With `If-Match`, one that names a version no longer current is a 412.
+- A PATCH that isn't a JSON Patch (a FHIRPath Patch) is a 415 saying so; it was "invalid
+  JSON Patch".
 - **A create (`POST /Type`) ignores an id in the body** and assigns one, as R4 specifies
   (transaction and batch entries always did). It used to keep the body's id, or answer
   409 when it existed. To choose the id, `PUT /Type/{id}`. `$import` keeps the ids in the

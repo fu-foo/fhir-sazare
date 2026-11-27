@@ -502,6 +502,14 @@ fn parse_has(key: &str, raw_value: &str, registry: &SearchParamRegistry) -> Opti
     })
 }
 
+/// A string as string search compares it: case- and accent-insensitive (FHIR:
+/// "after both have been normalized by case and accent"). `José` → `jose`,
+/// `Ñandú` → `nandu`; characters without accents (CJK, …) are unchanged.
+pub fn fold_string(value: &str) -> String {
+    use unicode_normalization::{char::is_combining_mark, UnicodeNormalization};
+    value.nfd().filter(|c| !is_combining_mark(*c)).collect::<String>().to_lowercase()
+}
+
 /// Percent-decode one query-string key or value. Per
 /// `application/x-www-form-urlencoded` (what HTML forms, `curl
 /// --data-urlencode` and POST `_search` bodies produce), `+` means a space.

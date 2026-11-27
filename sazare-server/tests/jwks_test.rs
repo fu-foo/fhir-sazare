@@ -50,6 +50,7 @@ async fn start(jwk_url: &str) -> (String, TempDir) {
         webhook: Arc::new(sazare_server::webhook::WebhookManager::new(Default::default())),
         export_jobs: Arc::new(sazare_server::bulk_export::ExportJobs::new()),
         seen_jti: std::sync::Mutex::new(std::collections::HashMap::new()),
+        resource_locks: Default::default(),
     });
     let app = build_router(state);
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

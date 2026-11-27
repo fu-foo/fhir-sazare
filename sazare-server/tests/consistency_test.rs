@@ -19,6 +19,16 @@ struct Server {
     base: String,
 }
 
+/// A server is never left running by a test that fails half way.
+impl Drop for Server {
+    fn drop(&mut self) {
+        if self.child.try_wait().ok().flatten().is_none() {
+            let _ = self.child.kill();
+            let _ = self.child.wait();
+        }
+    }
+}
+
 // The child is waited for by `stop` or the test (after a kill).
 #[allow(clippy::zombie_processes)]
 async fn start(dir: &Path, port: u16) -> Server {
@@ -115,9 +125,10 @@ async fn a_restart_after_a_crash_puts_the_index_back_in_step_with_the_store() {
     // An index write whose store step never ran: written, then the process
     // dies before the minute is up, and the store never had it.
     put(&s.base, "d", "Delta").await;
-    let mut child = s.child;
-    child.kill().unwrap();
-    child.wait().unwrap();
+    let mut s = s;
+    s.child.kill().unwrap();
+    s.child.wait().unwrap();
+    drop(s);
     {
         let db = rusqlite::Connection::open(&store).unwrap();
         db.execute("DELETE FROM resources WHERE resource_type = 'Patient' AND id = 'd'", []).unwrap();

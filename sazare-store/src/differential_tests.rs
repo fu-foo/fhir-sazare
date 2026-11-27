@@ -184,6 +184,22 @@ fn dataset(rng: &mut Rng, patients: usize, observations: usize, dangling: bool) 
 
 type Entries = Vec<(String, String, String, Option<String>)>;
 
+thread_local! {
+    /// The engine under test folds accents in string search (v2) or only case
+    /// (v1, serving only during an upgrade).
+    static FOLD_ACCENTS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// The model's string normalization (written apart from the engine's).
+fn model_norm(s: &str) -> String {
+    if FOLD_ACCENTS.with(|f| f.get()) {
+        use unicode_normalization::UnicodeNormalization;
+        s.nfd().filter(|c| !unicode_normalization::char::is_combining_mark(*c)).collect::<String>().to_lowercase()
+    } else {
+        s.to_lowercase()
+    }
+}
+
 /// The reference model: does `entries` (one resource's extracted values) match
 /// one parameter of a query?
 fn param_matches(entries: &Entries, p: &SearchParameter) -> bool {
@@ -231,8 +247,8 @@ fn param_matches(entries: &Entries, p: &SearchParameter) -> bool {
             },
             SearchParamType::String => match p.modifier.as_deref() {
                 Some("exact") => value == v,
-                Some("contains") => value.to_lowercase().contains(&v.to_lowercase()),
-                _ => value.to_lowercase().starts_with(&v.to_lowercase()),
+                Some("contains") => model_norm(value).contains(&model_norm(v)),
+                _ => model_norm(value).starts_with(&model_norm(v)),
             },
             SearchParamType::Reference => value == v,
             SearchParamType::Date => {
@@ -458,6 +474,7 @@ enum Which {
 }
 
 fn run(which: Which, seed: u64, patients: usize, observations: usize, queries: usize) {
+    FOLD_ACCENTS.with(|f| f.set(matches!(which, Which::V2)));
     let mut rng = Rng(seed.max(1));
     let registry = SearchParamRegistry::new();
     let resources = dataset(&mut rng, patients, observations, matches!(which, Which::V2));
@@ -536,13 +553,14 @@ fn sort_key(entries: &Entries, param: &str, descending: bool) -> Option<String> 
             let start = v.split('/').next().and_then(fhir_date_range).map(|r| r.0).unwrap_or(i64::MIN);
             format!("{:020}", start as i128 - i64::MIN as i128)
         } else {
-            v.to_lowercase()
+            model_norm(v)
         }
     });
     if descending { keys.max() } else { keys.min() }
 }
 
 fn run_sorted(which: Which, seed: u64, patients: usize, observations: usize, queries: usize) {
+    FOLD_ACCENTS.with(|f| f.set(matches!(which, Which::V2)));
     let mut rng = Rng(seed.max(1));
     let registry = SearchParamRegistry::new();
     let resources = dataset(&mut rng, patients, observations, matches!(which, Which::V2));

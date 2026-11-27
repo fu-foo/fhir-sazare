@@ -12,3 +12,6 @@ serde_json.workspace = true
 thiserror.workspace = true
 rusqlite = { version = "0.35", features = ["bundled"] }
 chrono = "0.4"
+
+[dev-dependencies]
+unicode-normalization = "0.1"

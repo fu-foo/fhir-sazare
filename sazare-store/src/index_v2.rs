@@ -439,7 +439,7 @@ impl IndexV2 {
     fn write_value(&self, pid: i64, kind: &str, value: &str, system: Option<&str>, rid: i64) -> Result<bool> {
         match kind {
             "string" => {
-                self.conn.prepare_cached("INSERT OR IGNORE INTO v_string (pid, norm, rid, exact) VALUES (?1, ?2, ?3, ?4)")?.execute(params![pid, value.to_lowercase(), rid, value])?;
+                self.conn.prepare_cached("INSERT OR IGNORE INTO v_string (pid, norm, rid, exact) VALUES (?1, ?2, ?3, ?4)")?.execute(params![pid, sazare_core::search_param::fold_string(value), rid, value])?;
             }
             "date" => {
                 let (lo, hi) = match value.split_once('/') {
@@ -1134,15 +1134,15 @@ impl IndexV2 {
         let t = table_for(kind);
         Ok(Some(match kind {
             "string" => match p.modifier.as_deref() {
-                Some("exact") => ("norm = ? AND exact = ?".into(), vec![Arg::Text(v.to_lowercase()), Arg::Text(v.into())], None, true),
+                Some("exact") => ("norm = ? AND exact = ?".into(), vec![Arg::Text(sazare_core::search_param::fold_string(v)), Arg::Text(v.into())], None, true),
                 Some("contains") => (
                     "norm LIKE ? ESCAPE '\\'".into(),
-                    vec![Arg::Text(format!("%{}%", escape_like(&v.to_lowercase())))],
+                    vec![Arg::Text(format!("%{}%", escape_like(&sazare_core::search_param::fold_string(v))))],
                     None,
                     false,
                 ),
                 _ => {
-                    let lower = v.to_lowercase();
+                    let lower = sazare_core::search_param::fold_string(v);
                     (
                         "norm >= ? AND norm < ?".into(),
                         vec![Arg::Text(lower.clone()), Arg::Text(format!("{lower}\u{10FFFF}"))],

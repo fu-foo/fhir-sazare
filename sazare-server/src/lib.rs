@@ -73,6 +73,35 @@ pub struct AppState {
     /// Seen SMART Backend Services assertion `jti` values (→ assertion `exp`),
     /// for one-time-use replay protection. Pruned lazily on insert.
     pub seen_jti: std::sync::Mutex<std::collections::HashMap<String, u64>>,
+    /// One write at a time per resource (update, patch): see [`ResourceLocks`].
+    pub resource_locks: ResourceLocks,
+}
+
+/// A lock per resource (`Type/id`), so concurrent updates of one resource go
+/// one after another instead of racing to its compare-and-swap (where all
+/// but one lose and retry). Entries go when nobody holds or waits for them.
+#[derive(Default)]
+pub struct ResourceLocks {
+    locks: std::sync::Mutex<std::collections::HashMap<String, std::sync::Weak<tokio::sync::Mutex<()>>>>,
+}
+
+impl ResourceLocks {
+    pub async fn lock(&self, resource_type: &str, id: &str) -> tokio::sync::OwnedMutexGuard<()> {
+        let lock = {
+            let mut locks = self.locks.lock().unwrap_or_else(|e| e.into_inner());
+            let key = format!("{resource_type}/{id}");
+            match locks.get(&key).and_then(std::sync::Weak::upgrade) {
+                Some(lock) => lock,
+                None => {
+                    locks.retain(|_, w| w.strong_count() > 0);
+                    let lock = std::sync::Arc::new(tokio::sync::Mutex::new(()));
+                    locks.insert(key, std::sync::Arc::downgrade(&lock));
+                    lock
+                }
+            }
+        };
+        lock.lock_owned().await
+    }
 }
 
 /// Conditional create result

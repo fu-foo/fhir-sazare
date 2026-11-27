@@ -25,7 +25,8 @@ pub const QUANTITY_SEP: char = '\u{1F}';
 /// Bump when the way resources are turned into index rows changes (not just
 /// the parameter set), so existing indexes are rebuilt on upgrade.
 /// 3: index v2 (integer keys, a table per value kind). 4: `_compartment`, quantities.
-pub const INDEX_FORMAT: u32 = 4;
+/// 5: strings folded for accents as well as case.
+pub const INDEX_FORMAT: u32 = 5;
 
 /// The index parameter holding a resource's patient compartments
 /// (`Patient/<id>`); not a search parameter clients can use.

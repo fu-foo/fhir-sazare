@@ -9,6 +9,18 @@ use serde_json::{json, Value};
 
 const BIN: &str = env!("CARGO_BIN_EXE_sazare-server");
 
+/// The server process, killed if a failed assertion leaves it running.
+struct Guard(std::process::Child);
+
+impl Drop for Guard {
+    fn drop(&mut self) {
+        if self.0.try_wait().ok().flatten().is_none() {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+}
+
 fn free_port() -> u16 {
     std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port()
 }
@@ -31,12 +43,12 @@ async fn stop_during_a_background_rebuild_exits_promptly() {
 
     let log_path = dir.path().join("server.log");
     let log = std::fs::File::create(&log_path).unwrap();
-    let mut server = Command::new(BIN)
+    let mut server = Guard(Command::new(BIN)
         .args(["run", "--config", cfg.to_str().unwrap()])
         .stdout(Stdio::from(log.try_clone().unwrap()))
         .stderr(Stdio::from(log))
         .spawn()
-        .unwrap();
+        .unwrap());
     let mut up = false;
     for _ in 0..200 {
         if client.get(format!("{base}/health")).send().await.is_ok() {
@@ -66,14 +78,14 @@ async fn stop_during_a_background_rebuild_exits_promptly() {
     assert!(stop.status.success(), "stop: {}", String::from_utf8_lossy(&stop.stderr));
     let mut exited = false;
     for _ in 0..200 {
-        if server.try_wait().unwrap().is_some() {
+        if server.0.try_wait().unwrap().is_some() {
             exited = true;
             break;
         }
         std::thread::sleep(Duration::from_millis(50));
     }
     if !exited {
-        let _ = server.kill();
+        let _ = server.0.kill();
     }
     assert!(exited, "the server was still running 10 s after stop (it waited for the rebuild)");
     assert!(started.elapsed() < Duration::from_secs(10));
@@ -110,12 +122,12 @@ async fn stop_does_not_wait_for_a_request_forever() {
         ),
     )
     .unwrap();
-    let mut server = Command::new(BIN)
+    let mut server = Guard(Command::new(BIN)
         .args(["run", "--config", cfg.to_str().unwrap()])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
-        .unwrap();
+        .unwrap());
     let base = format!("http://127.0.0.1:{port}");
     let mut up = false;
     for _ in 0..200 {
@@ -138,15 +150,15 @@ async fn stop_does_not_wait_for_a_request_forever() {
     });
     let mut exited = false;
     for _ in 0..1000 {
-        if server.try_wait().unwrap().is_some() {
+        if server.0.try_wait().unwrap().is_some() {
             exited = true;
             break;
         }
         std::thread::sleep(Duration::from_millis(50));
     }
     if !exited {
-        let _ = server.kill();
-        let _ = server.wait();
+        let _ = server.0.kill();
+        let _ = server.0.wait();
     }
     assert!(exited, "the server was still waiting for the request after 50 s");
     let took = started.elapsed();

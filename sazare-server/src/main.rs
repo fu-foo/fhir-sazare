@@ -474,6 +474,7 @@ async fn serve(args: Vec<String>) {
         )),
         export_jobs: Arc::new(sazare_server::bulk_export::ExportJobs::in_dir(config.storage.data_dir.join("exports"))),
         seen_jti: std::sync::Mutex::new(std::collections::HashMap::new()),
+        resource_locks: Default::default(),
     });
 
     // Put back what a crash cut in two between the store and the index,

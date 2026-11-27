@@ -294,7 +294,7 @@ pub async fn update(
         ));
     }
 
-    let mut resource: Resource = serde_json::from_value(body).map_err(|e| {
+    let resource: Resource = serde_json::from_value(body).map_err(|e| {
         (
             StatusCode::BAD_REQUEST,
             Json(json!(OperationOutcome::error(IssueType::Invalid, e.to_string()))),
@@ -333,114 +333,137 @@ pub async fn update(
         .and_then(|v| v.to_str().ok())
         .map(|s| s.trim_matches('"').trim_start_matches("W/\"").trim_end_matches('"').to_string());
 
-    // If-Match without a matching resource → 412. Get existing resource and
-    // compute the new version, tracking whether this PUT creates a new resource
-    // (update-as-create) so we can return the correct 201 vs 200 status.
-    let (new_version, is_create, expected_current) = match state.store.get(&resource_type, &id) {
-        Ok(Some(data)) => {
-            let existing: Value = serde_json::from_slice(&data).unwrap_or_default();
+    // Without If-Match the last write wins: a write that loses the race to
+    // another (compare-and-swap below) reads the new current version and
+    // tries again.
+    const MAX_ATTEMPTS: usize = 20;
+    let _one_at_a_time = state.resource_locks.lock(&resource_type, &id).await;
+    let body = resource;
+    let mut attempt = 0;
+    let (new_version, is_create, resource_value) = loop {
+        attempt += 1;
+        let mut resource = body.clone();
+        // If-Match without a matching resource → 412. Get existing resource and
+        // compute the new version, tracking whether this PUT creates a new resource
+        // (update-as-create) so we can return the correct 201 vs 200 status.
+        let (new_version, is_create, expected_current) = match state.store.get(&resource_type, &id) {
+            Ok(Some(data)) => {
+                let existing: Value = serde_json::from_slice(&data).unwrap_or_default();
 
-            // Compartment check on existing resource
-            check_compartment_write(auth_user.as_ref(), &state.compartment_def, &resource_type, &existing, 'u')?;
+                // Compartment check on existing resource
+                check_compartment_write(auth_user.as_ref(), &state.compartment_def, &resource_type, &existing, 'u')?;
 
-            let current_ver_str = existing
-                .get("meta")
-                .and_then(|m| m.get("versionId"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("0")
-                .to_string();
+                let current_ver_str = existing
+                    .get("meta")
+                    .and_then(|m| m.get("versionId"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("0")
+                    .to_string();
 
-            // If-Match check (precondition) → 412 Precondition Failed on mismatch.
-            if let Some(ref expected) = if_match
-                && expected != &current_ver_str
-            {
-                return Err((
-                    StatusCode::PRECONDITION_FAILED,
-                    Json(json!(OperationOutcome::error(
-                        IssueType::Conflict,
-                        format!(
-                            "Version conflict: expected {}, current is {}",
-                            expected, current_ver_str
-                        )
-                    ))),
-                ));
+                // If-Match check (precondition) → 412 Precondition Failed on mismatch.
+                if let Some(ref expected) = if_match
+                    && expected != &current_ver_str
+                {
+                    return Err((
+                        StatusCode::PRECONDITION_FAILED,
+                        Json(json!(OperationOutcome::error(
+                            IssueType::Conflict,
+                            format!(
+                                "Version conflict: expected {}, current is {}",
+                                expected, current_ver_str
+                            )
+                        ))),
+                    ));
+                }
+
+                let current_ver: i32 = current_ver_str.parse().unwrap_or(0);
+                ((current_ver + 1).to_string(), false, Some(current_ver_str))
             }
-
-            let current_ver: i32 = current_ver_str.parse().unwrap_or(0);
-            ((current_ver + 1).to_string(), false, Some(current_ver_str))
-        }
-        Ok(None) => {
-            // If-Match supplied but nothing to match → precondition failed.
-            if if_match.is_some() {
-                return Err((
-                    StatusCode::PRECONDITION_FAILED,
-                    Json(json!(OperationOutcome::error(
-                        IssueType::Conflict,
-                        "If-Match supplied but resource does not exist"
-                    ))),
-                ));
+            Ok(None) => {
+                // If-Match supplied but nothing to match → precondition failed.
+                if if_match.is_some() {
+                    return Err((
+                        StatusCode::PRECONDITION_FAILED,
+                        Json(json!(OperationOutcome::error(
+                            IssueType::Conflict,
+                            "If-Match supplied but resource does not exist"
+                        ))),
+                    ));
+                }
+                // Continue the history of a deleted resource rather than
+                // overwriting its version 1.
+                let next = state.store.next_version(&resource_type, &id).map_err(|e| {
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(json!(OperationOutcome::storage_error(e.to_string()))),
+                    )
+                })?;
+                (next, true, None)
             }
-            // Continue the history of a deleted resource rather than
-            // overwriting its version 1.
-            let next = state.store.next_version(&resource_type, &id).map_err(|e| {
-                (
+            Err(e) => {
+                return Err((
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(json!(OperationOutcome::storage_error(e.to_string()))),
-                )
-            })?;
-            (next, true, None)
-        }
-        Err(e) => {
-            return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!(OperationOutcome::storage_error(e.to_string()))),
-            ))
-        }
-    };
+                ))
+            }
+        };
 
-    resource.id = Some(id.clone());
-    let mut meta = resource.meta.take().unwrap_or_default();
-    meta.version_id = Some(new_version.clone());
-    meta.last_updated = Some(chrono::Utc::now().to_rfc3339());
-    resource.meta = Some(meta);
+        resource.id = Some(id.clone());
+        let mut meta = resource.meta.take().unwrap_or_default();
+        meta.version_id = Some(new_version.clone());
+        meta.last_updated = Some(chrono::Utc::now().to_rfc3339());
+        resource.meta = Some(meta);
 
-    let json_bytes = serde_json::to_vec(&resource).map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!(OperationOutcome::storage_error(e.to_string()))),
-        )
-    })?;
-
-    // Reindex before persisting (see the create handler: indexing first keeps a
-    // committed resource from ever being invisible to search after a crash).
-    let resource_value = serde_json::to_value(&resource).unwrap_or_default();
-    {
-        let index = state.index.lock().await;
-        update_search_index(&index, &state.search_param_registry, &resource_type, &id, &resource_value);
-    }
-
-    // Compare-and-swap on the version we read: if a concurrent writer changed
-    // the resource since, the write is refused (no lost update). On refusal,
-    // restore the index to reflect the actually-stored resource before returning.
-    let written = state
-        .store
-        .put_with_version_cas(&resource_type, &id, expected_current.as_deref(), &new_version, &json_bytes)
-        .map_err(|e| {
+        let json_bytes = serde_json::to_vec(&resource).map_err(|e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!(OperationOutcome::storage_error(e.to_string()))),
             )
         })?;
-    if !written {
+
+        // Reindex before persisting (see the create handler: indexing first keeps a
+        // committed resource from ever being invisible to search after a crash).
+        let resource_value = serde_json::to_value(&resource).unwrap_or_default();
+        {
+            let index = state.index.lock().await;
+            update_search_index(&index, &state.search_param_registry, &resource_type, &id, &resource_value);
+        }
+
+        // Compare-and-swap on the version we read: if a concurrent writer changed
+        // the resource since, the write is refused (no lost update). On refusal,
+        // restore the index to reflect the actually-stored resource before returning.
+        let written = state
+            .store
+            .put_with_version_cas(&resource_type, &id, expected_current.as_deref(), &new_version, &json_bytes)
+            .map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!(OperationOutcome::storage_error(e.to_string()))),
+                )
+            })?;
+        if written {
+            break (new_version, is_create, resource_value);
+        }
+        // A concurrent write got there first: put the index back to what is
+        // stored, then read again (an If-Match named a version no longer
+        // current: 412).
         restore_index(&state, &resource_type, &id).await;
-        return Err((
-            StatusCode::CONFLICT,
-            Json(json!(OperationOutcome::error(
-                IssueType::Conflict,
-                "Resource was modified concurrently; retry the update"
-            ))),
-        ));
-    }
+        if if_match.is_some() {
+            return Err((
+                StatusCode::PRECONDITION_FAILED,
+                Json(json!(OperationOutcome::error(IssueType::Conflict, "Version conflict: the resource changed meanwhile"))),
+            ));
+        }
+        if attempt >= MAX_ATTEMPTS {
+            return Err((
+                StatusCode::CONFLICT,
+                Json(json!(OperationOutcome::error(
+                    IssueType::Conflict,
+                    "Resource was modified concurrently; retry the update"
+                ))),
+            ));
+        }
+    };
 
     audit::log_operation_success(&audit_ctx, "UPDATE", &resource_type, &id, &state.audit);
 
@@ -472,161 +495,199 @@ pub async fn patch_resource(
     let audit_ctx = AuditContext::from_request(&request);
     let auth_user = request.extensions().get::<AuthUser>().cloned();
     let (headers, patch_body) = extract_body(request).await?;
+    // JSON Patch only: a FHIRPath Patch (a Parameters resource,
+    // application/fhir+json) would fail as "invalid JSON Patch".
+    let media = headers
+        .get(axum::http::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v.split(';').next().unwrap_or("").trim().to_ascii_lowercase());
+    if let Some(media) = media
+        && media != "application/json-patch+json"
+        && media != "application/json"
+    {
+        return Err((
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            Json(json!(OperationOutcome::error(
+                IssueType::NotSupported,
+                format!("PATCH takes a JSON Patch (Content-Type: application/json-patch+json), not {media}; FHIRPath Patch is not supported")
+            ))),
+        ));
+    }
     // Index and store writes happen under the write gate (shared), so an index
     // switch never finds a write between its two steps. Taken once the body
     // is in: a slow upload must not hold up a switch (or, behind a waiting
     // switch, every other write).
     let _write_gate = state.write_gate.read().await;
 
-    // Get existing resource
-    let data = match state.store.get(&resource_type, &id) {
-        Ok(Some(data)) => data,
-        Ok(None) => {
-            return Err((
-                StatusCode::NOT_FOUND,
-                Json(json!(OperationOutcome::not_found(&resource_type, &id))),
-            ))
-        }
-        Err(e) => {
-            return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!(OperationOutcome::storage_error(e.to_string()))),
-            ))
-        }
-    };
+    // A patch applies to the current version: one that loses the race to
+    // another write (compare-and-swap below) is applied again to the new one.
+    const MAX_ATTEMPTS: usize = 20;
+    let _one_at_a_time = state.resource_locks.lock(&resource_type, &id).await;
+    let mut attempt = 0;
+    let resource = loop {
+        attempt += 1;
+        // Get existing resource
+        let data = match state.store.get(&resource_type, &id) {
+            Ok(Some(data)) => data,
+            Ok(None) => {
+                return Err((
+                    StatusCode::NOT_FOUND,
+                    Json(json!(OperationOutcome::not_found(&resource_type, &id))),
+                ))
+            }
+            Err(e) => {
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!(OperationOutcome::storage_error(e.to_string()))),
+                ))
+            }
+        };
 
-    let mut resource: Value = serde_json::from_slice(&data).map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!(OperationOutcome::storage_error(e.to_string()))),
-        )
-    })?;
-
-    // Compartment check on existing resource
-    check_compartment_write(auth_user.as_ref(), &state.compartment_def, &resource_type, &resource, 'u')?;
-
-    // If-Match check
-    let if_match = headers
-        .get(header::IF_MATCH)
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.trim_matches('"').trim_start_matches("W/\"").trim_end_matches('"').to_string());
-
-    let current_ver_str = extract_version(&resource).unwrap_or_else(|| "0".to_string());
-
-    if let Some(ref expected) = if_match
-        && expected != &current_ver_str
-    {
-        return Err((
-            StatusCode::PRECONDITION_FAILED,
-            Json(json!(OperationOutcome::error(
-                IssueType::Conflict,
-                format!("Version conflict: expected {}, current is {}", expected, current_ver_str)
-            ))),
-        ));
-    }
-
-    // Apply JSON Patch
-    let patch_ops: json_patch::Patch = serde_json::from_value(patch_body).map_err(|e| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(json!(OperationOutcome::error(
-                IssueType::Invalid,
-                format!("Invalid JSON Patch: {}", e)
-            ))),
-        )
-    })?;
-
-    json_patch::patch(&mut resource, &patch_ops).map_err(|e| {
-        (
-            StatusCode::UNPROCESSABLE_ENTITY,
-            Json(json!(OperationOutcome::error(
-                IssueType::Processing,
-                format!("Patch failed: {}", e)
-            ))),
-        )
-    })?;
-
-    // A patch may change content, not identity.
-    if resource.get("resourceType").and_then(|v| v.as_str()) != Some(resource_type.as_str())
-        || resource.get("id").and_then(|v| v.as_str()) != Some(id.as_str())
-    {
-        return Err((
-            StatusCode::UNPROCESSABLE_ENTITY,
-            Json(json!(OperationOutcome::error(
-                IssueType::Processing,
-                "A patch may not change the resource's resourceType or id"
-            ))),
-        ));
-    }
-
-    // The patched result must stay in the caller's compartment.
-    check_compartment_write(auth_user.as_ref(), &state.compartment_def, &resource_type, &resource, 'u')?;
-
-    // Same rules for a patched Subscription as for a PUT one.
-    if resource_type == "Subscription"
-        && let Err(e) = subscription::validate_subscription(&resource, &state.search_param_registry)
-    {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            Json(json!(OperationOutcome::error(IssueType::Invalid, e))),
-        ));
-    }
-
-    // Validate patched resource
-    if let Err(outcome) = validate_resource_all_phases(
-        &resource,
-        &state.profile_registry,
-        &state.terminology_registry,
-    ) {
-        return Err((StatusCode::BAD_REQUEST, Json(json!(outcome))));
-    }
-
-    // Update version
-    let current_ver: i32 = current_ver_str.parse().unwrap_or(0);
-    let new_version = (current_ver + 1).to_string();
-
-    // Stamp meta even when the patch removed it.
-    if let Some(obj) = resource.as_object_mut() {
-        super::merge_version_meta(obj, &new_version);
-    }
-
-    // Save
-    let json_bytes = serde_json::to_vec(&resource).map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!(OperationOutcome::storage_error(e.to_string()))),
-        )
-    })?;
-
-    // Reindex before persisting, consistent with create/update: a crash between
-    // the two writes then leaves only a harmless stale index entry rather than a
-    // committed resource that's invisible to search.
-    {
-        let index = state.index.lock().await;
-        update_search_index(&index, &state.search_param_registry, &resource_type, &id, &resource);
-    }
-
-    // Compare-and-swap against the version the patch was applied to: a
-    // concurrent update in between makes this a 409, not a lost update.
-    let written = state
-        .store
-        .put_with_version_cas(&resource_type, &id, Some(&current_ver_str), &new_version, &json_bytes)
-        .map_err(|e| {
+        let mut resource: Value = serde_json::from_slice(&data).map_err(|e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!(OperationOutcome::storage_error(e.to_string()))),
             )
         })?;
-    if !written {
+
+        // Compartment check on existing resource
+        check_compartment_write(auth_user.as_ref(), &state.compartment_def, &resource_type, &resource, 'u')?;
+
+        // If-Match check
+        let if_match = headers
+            .get(header::IF_MATCH)
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.trim_matches('"').trim_start_matches("W/\"").trim_end_matches('"').to_string());
+
+        let current_ver_str = extract_version(&resource).unwrap_or_else(|| "0".to_string());
+
+        if let Some(ref expected) = if_match
+            && expected != &current_ver_str
+        {
+            return Err((
+                StatusCode::PRECONDITION_FAILED,
+                Json(json!(OperationOutcome::error(
+                    IssueType::Conflict,
+                    format!("Version conflict: expected {}, current is {}", expected, current_ver_str)
+                ))),
+            ));
+        }
+
+        // Apply JSON Patch
+        let patch_ops: json_patch::Patch = serde_json::from_value(patch_body.clone()).map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!(OperationOutcome::error(
+                    IssueType::Invalid,
+                    format!("Invalid JSON Patch: {}", e)
+                ))),
+            )
+        })?;
+
+        json_patch::patch(&mut resource, &patch_ops).map_err(|e| {
+            (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Json(json!(OperationOutcome::error(
+                    IssueType::Processing,
+                    format!("Patch failed: {}", e)
+                ))),
+            )
+        })?;
+
+        // A patch may change content, not identity.
+        if resource.get("resourceType").and_then(|v| v.as_str()) != Some(resource_type.as_str())
+            || resource.get("id").and_then(|v| v.as_str()) != Some(id.as_str())
+        {
+            return Err((
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Json(json!(OperationOutcome::error(
+                    IssueType::Processing,
+                    "A patch may not change the resource's resourceType or id"
+                ))),
+            ));
+        }
+
+        // The patched result must stay in the caller's compartment.
+        check_compartment_write(auth_user.as_ref(), &state.compartment_def, &resource_type, &resource, 'u')?;
+
+        // Same rules for a patched Subscription as for a PUT one.
+        if resource_type == "Subscription"
+            && let Err(e) = subscription::validate_subscription(&resource, &state.search_param_registry)
+        {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(json!(OperationOutcome::error(IssueType::Invalid, e))),
+            ));
+        }
+
+        // Validate patched resource
+        if let Err(outcome) = validate_resource_all_phases(
+            &resource,
+            &state.profile_registry,
+            &state.terminology_registry,
+        ) {
+            return Err((StatusCode::BAD_REQUEST, Json(json!(outcome))));
+        }
+
+        // Update version
+        let current_ver: i32 = current_ver_str.parse().unwrap_or(0);
+        let new_version = (current_ver + 1).to_string();
+
+        // Stamp meta even when the patch removed it.
+        if let Some(obj) = resource.as_object_mut() {
+            super::merge_version_meta(obj, &new_version);
+        }
+
+        // Save
+        let json_bytes = serde_json::to_vec(&resource).map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!(OperationOutcome::storage_error(e.to_string()))),
+            )
+        })?;
+
+        // Reindex before persisting, consistent with create/update: a crash between
+        // the two writes then leaves only a harmless stale index entry rather than a
+        // committed resource that's invisible to search.
+        {
+            let index = state.index.lock().await;
+            update_search_index(&index, &state.search_param_registry, &resource_type, &id, &resource);
+        }
+
+        // Compare-and-swap against the version the patch was applied to: a
+        // concurrent update in between makes this a 409, not a lost update.
+        let written = state
+            .store
+            .put_with_version_cas(&resource_type, &id, Some(&current_ver_str), &new_version, &json_bytes)
+            .map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!(OperationOutcome::storage_error(e.to_string()))),
+                )
+            })?;
+        if written {
+            break resource;
+        }
+        // A concurrent write got there first: put the index back to what is
+        // stored, then apply the patch to the new current version (an If-Match
+        // named one no longer current: 412).
         restore_index(&state, &resource_type, &id).await;
-        return Err((
-            StatusCode::CONFLICT,
-            Json(json!(OperationOutcome::error(
-                IssueType::Conflict,
-                "The resource changed while the patch was applied; retry"
-            ))),
-        ));
-    }
+        if if_match.is_some() {
+            return Err((
+                StatusCode::PRECONDITION_FAILED,
+                Json(json!(OperationOutcome::error(IssueType::Conflict, "Version conflict: the resource changed meanwhile"))),
+            ));
+        }
+        if attempt >= MAX_ATTEMPTS {
+            return Err((
+                StatusCode::CONFLICT,
+                Json(json!(OperationOutcome::error(
+                    IssueType::Conflict,
+                    "The resource changed while the patch was applied; retry"
+                ))),
+            ));
+        }
+    };
 
     audit::log_operation_success(&audit_ctx, "PATCH", &resource_type, &id, &state.audit);
 

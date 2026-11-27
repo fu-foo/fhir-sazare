@@ -964,6 +964,7 @@ mod tests {
             webhook: Arc::new(crate::webhook::WebhookManager::new(Default::default())),
             export_jobs: Arc::new(crate::bulk_export::ExportJobs::new()),
             seen_jti: std::sync::Mutex::new(std::collections::HashMap::new()),
+        resource_locks: Default::default(),
         })
     }
 

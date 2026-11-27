@@ -34,6 +34,7 @@ async fn start_https() -> (String, TempDir) {
         webhook: Arc::new(sazare_server::webhook::WebhookManager::new(Default::default())),
         export_jobs: Arc::new(sazare_server::bulk_export::ExportJobs::new()),
         seen_jti: std::sync::Mutex::new(std::collections::HashMap::new()),
+        resource_locks: Default::default(),
     });
     let fixtures = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures");
     let acceptor = sazare_server::tls::load_tls_acceptor(

@@ -40,6 +40,7 @@ async fn start_test_server() -> (String, TempDir) {
         webhook: Arc::new(sazare_server::webhook::WebhookManager::new(Default::default())),
         export_jobs: Arc::new(sazare_server::bulk_export::ExportJobs::new()),
         seen_jti: std::sync::Mutex::new(std::collections::HashMap::new()),
+        resource_locks: Default::default(),
     });
 
     let app = build_router(state);
@@ -116,6 +117,7 @@ async fn test_webhook_task_completed_fires() {
         webhook,
         export_jobs: Arc::new(sazare_server::bulk_export::ExportJobs::new()),
         seen_jti: std::sync::Mutex::new(std::collections::HashMap::new()),
+        resource_locks: Default::default(),
     });
     let app = build_router(state);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -451,6 +453,7 @@ async fn test_smart_backend_services_token_flow() {
         webhook: Arc::new(sazare_server::webhook::WebhookManager::new(Default::default())),
         export_jobs: Arc::new(sazare_server::bulk_export::ExportJobs::new()),
         seen_jti: std::sync::Mutex::new(std::collections::HashMap::new()),
+        resource_locks: Default::default(),
     });
     let app = build_router(state);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -2411,4 +2414,71 @@ async fn test_batch_search_entries() {
     let (s, b) = post(json!([{"request": {"method": "PUT", "url": "Patient?identifier=x"}, "resource": {"resourceType": "Patient"}}])).await;
     assert_eq!(s, 400, "{b}");
     assert!(b["issue"][0]["diagnostics"].as_str().unwrap().contains("conditional PUT"), "{b}");
+}
+
+/// String search is accent- as well as case-insensitive (FHIR); `:exact` is
+/// neither. A FHIRPath Patch is refused as such.
+#[tokio::test]
+async fn test_accents_and_patch_kinds() {
+    let (base, _dir) = start_test_server().await;
+    let c = reqwest::Client::new();
+    create(&c, &base, "Patient", &json!({"resourceType": "Patient", "id": "j", "name": [{"family": "José", "given": ["Ñandú"]}]})).await;
+    let total = |q: &str| {
+        let c = c.clone();
+        let url = format!("{base}/Patient?{q}");
+        async move { c.get(url).send().await.unwrap().json::<Value>().await.unwrap()["total"].clone() }
+    };
+    for q in ["family=jose", "family=JOSÉ", "given=nandu", "family:contains=OSE", "name=jos"] {
+        assert_eq!(total(q).await, 1, "{q}");
+    }
+    assert_eq!(total("family:exact=José").await, 1);
+    assert_eq!(total("family:exact=Jose").await, 0);
+    let r = c.patch(format!("{base}/Patient/j")).header("Content-Type", "application/fhir+json")
+        .body(r#"{"resourceType":"Parameters","parameter":[]}"#).send().await.unwrap();
+    assert_eq!(r.status(), 415);
+}
+
+/// Concurrent writes to one resource: without If-Match the last wins and
+/// every one is a version (none a 409); concurrent patches all apply; with
+/// the same If-Match only one succeeds, the others are a 412.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn test_concurrent_writes_to_one_resource() {
+    let (base, _dir) = start_test_server().await;
+    let c = reqwest::Client::new();
+    let put = |n: usize, if_match: Option<&'static str>| {
+        let c = c.clone();
+        let url = format!("{base}/Patient/c");
+        async move {
+            let mut r = c.put(url).header("Content-Type", "application/fhir+json")
+                .body(json!({"resourceType": "Patient", "id": "c", "name": [{"text": n.to_string()}]}).to_string());
+            if let Some(m) = if_match {
+                r = r.header("If-Match", m);
+            }
+            let resp = r.send().await.unwrap();
+            let st = resp.status().as_u16();
+            st
+        }
+    };
+    let statuses = futures_util::future::join_all((0..30).map(|n| put(n, None))).await;
+    assert!(statuses.iter().all(|s| *s == 200 || *s == 201), "{statuses:?}");
+    let h: Value = c.get(format!("{base}/Patient/c/_history")).send().await.unwrap().json().await.unwrap();
+    assert_eq!(h["total"], 30, "every write a version");
+
+    let patch = |n: usize| {
+        let c = c.clone();
+        let url = format!("{base}/Patient/c");
+        async move {
+            c.patch(url).header("Content-Type", "application/json-patch+json")
+                .body(json!([{"op": "add", "path": "/name/-", "value": {"text": format!("p{n}")}}]).to_string())
+                .send().await.unwrap().status().as_u16()
+        }
+    };
+    let statuses = futures_util::future::join_all((0..20).map(patch)).await;
+    assert!(statuses.iter().all(|s| *s == 200), "{statuses:?}");
+    let p: Value = c.get(format!("{base}/Patient/c")).send().await.unwrap().json().await.unwrap();
+    assert_eq!(p["name"].as_array().unwrap().len(), 21, "no patch lost");
+
+    let statuses = futures_util::future::join_all((0..10).map(|n| put(n, Some("W/\"50\"")))).await;
+    assert_eq!(statuses.iter().filter(|s| **s == 200).count(), 1, "{statuses:?}");
+    assert!(statuses.iter().all(|s| *s == 200 || *s == 412), "{statuses:?}");
 }
