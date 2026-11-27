@@ -274,6 +274,30 @@ fn write_export(
     out: &mut dyn FnMut(&str, &str) -> Result<(), String>,
 ) -> Result<(), String> {
     let since_dt = parse_since(since)?;
+    // A Group's patients: their resources, found in the index, not by
+    // reading every resource of the compartment's types.
+    if let ExportScope::Patients(ids) = scope {
+        let readers = state.index_readers.current();
+        let keys = match readers.get() {
+            Some(reader) => patient_resources(state, &reader, ids),
+            None => patient_resources(state, &state.index.blocking_lock(), ids),
+        };
+        for (rtype, ids) in keys {
+            if let Some(types) = type_filter
+                && !types.iter().any(|t| t == &rtype)
+            {
+                continue;
+            }
+            for id in ids {
+                let Some(data) = state.store.get(&rtype, &id).map_err(|e| format!("Export failed: {e}"))? else { continue };
+                if exported(state, scope, since_dt, &rtype, &data) {
+                    let Ok(text) = std::str::from_utf8(&data) else { continue };
+                    out(&rtype, text.trim_end())?;
+                }
+            }
+        }
+        return Ok(());
+    }
     let types = state.store.count_by_type().map_err(|e| format!("Export failed: {e}"))?;
     for (rtype, _) in types {
         if let Some(types) = type_filter
@@ -298,6 +322,28 @@ fn write_export(
         }
     }
     Ok(())
+}
+
+/// The resources in the compartments of `patients`, by type (ids sorted):
+/// each patient, and what links to it through the compartment's fields.
+fn patient_resources(
+    state: &AppState,
+    index: &sazare_store::SearchIndex,
+    patients: &[String],
+) -> std::collections::BTreeMap<String, std::collections::BTreeSet<String>> {
+    let mut keys: std::collections::BTreeMap<String, std::collections::BTreeSet<String>> = Default::default();
+    for pid in patients {
+        keys.entry("Patient".to_string()).or_default().insert(pid.clone());
+        let reference = format!("Patient/{pid}");
+        for comp_type in state.compartment_def.resource_types() {
+            for field in state.compartment_def.get_reference_fields(comp_type).unwrap_or_default() {
+                let ids = index.search_reference(comp_type, field, &reference).unwrap_or_default();
+                keys.entry(comp_type.to_string()).or_default().extend(ids);
+            }
+        }
+    }
+    keys.retain(|_, ids| !ids.is_empty());
+    keys
 }
 
 /// Whether a stored resource of an exported type goes into the export: in

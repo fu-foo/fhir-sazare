@@ -29,6 +29,13 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
   under the built-in TLS. Under TLS, a request without `X-Forwarded-Proto` is taken as
   https. The CapabilityStatement's OAuth endpoints are the identity provider's (or this
   server's `/token`) instead of a placeholder that wasn't a URI.
+- **`$everything` pages**: it returned a patient's whole compartment in one Bundle (all of
+  it in memory), with relative full URLs. It now takes `_count` (100 by default, at most
+  1000), `_offset` and `_type`, links the next page, and gives absolute full URLs; other
+  parameters (`start`, `end`, `_since`) are a 400.
+- **Group `$export` finds the members' resources in the index** instead of reading and
+  testing every resource of the compartment's types — a group of a few patients on a large
+  server read all of them.
 - **A delete is a version in the history.** `DELETE` removed the current resource and
   left no trace in `_history`; it now records a version (the store's schema moves to 3),
   listed as a `DELETE` entry, and a vread of it answers 410. A re-create continues after
