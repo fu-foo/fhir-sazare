@@ -25,39 +25,53 @@ fn free_port() -> u16 {
     std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port()
 }
 
+/// Start a server on the data directory in `dir`, logging to `log`: on a
+/// free port, and known to be this process once its run info names its pid
+/// (a port taken by another test's server between finding and binding it
+/// would otherwise look like a server that is up). Returns it, its port and
+/// its configuration file.
+async fn start_server(dir: &std::path::Path, log: &std::path::Path) -> (Guard, u16, std::path::PathBuf) {
+    let cfg = dir.join("config.yaml");
+    for _ in 0..5 {
+        let port = free_port();
+        std::fs::write(
+            &cfg,
+            format!(
+                "server:\n  host: 127.0.0.1\n  port: {port}\nauth:\n  enabled: false\nstorage:\n  data_dir: {}\nlog:\n  level: info\n",
+                dir.join("data").display()
+            ),
+        )
+        .unwrap();
+        let out = std::fs::OpenOptions::new().create(true).append(true).open(log).unwrap();
+        let mut server = Guard(Command::new(BIN)
+            .args(["run", "--config", cfg.to_str().unwrap()])
+            .stdout(Stdio::from(out.try_clone().unwrap()))
+            .stderr(Stdio::from(out))
+            .spawn()
+            .unwrap());
+        let pid = server.0.id();
+        let run = dir.join("data/sazare.run.json");
+        for _ in 0..200 {
+            if server.0.try_wait().unwrap().is_some() {
+                break; // the port was taken: another one
+            }
+            let ours = std::fs::read_to_string(&run).ok().and_then(|t| serde_json::from_str::<Value>(&t).ok()).is_some_and(|r| r["pid"] == pid);
+            if ours && reqwest::get(format!("http://127.0.0.1:{port}/health")).await.is_ok() {
+                return (server, port, cfg);
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    }
+    panic!("server did not start: {}", std::fs::read_to_string(log).unwrap_or_default());
+}
+
 #[tokio::test]
 async fn stop_during_a_background_rebuild_exits_promptly() {
     let dir = tempfile::tempdir().unwrap();
-    let port = free_port();
-    let cfg = dir.path().join("config.yaml");
-    std::fs::write(
-        &cfg,
-        format!(
-            "server:\n  host: 127.0.0.1\n  port: {port}\nauth:\n  enabled: false\nstorage:\n  data_dir: {}\nlog:\n  level: info\n",
-            dir.path().join("data").display()
-        ),
-    )
-    .unwrap();
+    let log_path = dir.path().join("server.log");
+    let (mut server, port, cfg) = start_server(dir.path(), &log_path).await;
     let base = format!("http://127.0.0.1:{port}");
     let client = reqwest::Client::new();
-
-    let log_path = dir.path().join("server.log");
-    let log = std::fs::File::create(&log_path).unwrap();
-    let mut server = Guard(Command::new(BIN)
-        .args(["run", "--config", cfg.to_str().unwrap()])
-        .stdout(Stdio::from(log.try_clone().unwrap()))
-        .stderr(Stdio::from(log))
-        .spawn()
-        .unwrap());
-    let mut up = false;
-    for _ in 0..200 {
-        if client.get(format!("{base}/health")).send().await.is_ok() {
-            up = true;
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
-    assert!(up, "server did not start");
 
     // Enough resources that a rebuild takes a while.
     for chunk in 0..8 {
@@ -112,32 +126,7 @@ async fn stop_during_a_background_rebuild_exits_promptly() {
 async fn stop_does_not_wait_for_a_request_forever() {
     use std::io::Write;
     let dir = tempfile::tempdir().unwrap();
-    let port = free_port();
-    let cfg = dir.path().join("config.yaml");
-    std::fs::write(
-        &cfg,
-        format!(
-            "server:\n  host: 127.0.0.1\n  port: {port}\nauth:\n  enabled: false\nstorage:\n  data_dir: {}\n",
-            dir.path().join("data").display()
-        ),
-    )
-    .unwrap();
-    let mut server = Guard(Command::new(BIN)
-        .args(["run", "--config", cfg.to_str().unwrap()])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .unwrap());
-    let base = format!("http://127.0.0.1:{port}");
-    let mut up = false;
-    for _ in 0..200 {
-        if reqwest::get(format!("{base}/health")).await.is_ok() {
-            up = true;
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
-    assert!(up, "server did not start");
+    let (mut server, port, cfg) = start_server(dir.path(), &dir.path().join("server.log")).await;
 
     let mut slow = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
     write!(slow, "PUT /Patient/p HTTP/1.1\r\nHost: x\r\nContent-Type: application/fhir+json\r\nContent-Length: 100\r\n\r\n{{").unwrap();
