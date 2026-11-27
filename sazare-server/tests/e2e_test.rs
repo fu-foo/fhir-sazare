@@ -2256,3 +2256,38 @@ async fn test_urls_follow_the_request() {
     };
     assert!(manifest["request"].as_str().unwrap().starts_with("https://fhir.example.org/"), "{manifest}");
 }
+
+/// `$everything` pages (`_count`, `_offset`, a next link) and filters by
+/// `_type`; entries have absolute full URLs; other parameters are a 400.
+#[tokio::test]
+async fn test_everything_pages() {
+    let (base, _dir) = start_test_server().await;
+    let c = reqwest::Client::new();
+    let pid = create(&c, &base, "Patient", &json!({"resourceType": "Patient"})).await;
+    for _ in 0..5 {
+        create(&c, &base, "Observation", &json!({"resourceType": "Observation", "status": "final",
+            "code": {"text": "x"}, "subject": {"reference": format!("Patient/{pid}")}})).await;
+    }
+    let mut url = format!("{base}/Patient/{pid}/$everything?_count=2");
+    let mut seen = std::collections::HashSet::new();
+    let mut pages = 0;
+    loop {
+        let b: Value = c.get(&url).send().await.unwrap().json().await.unwrap();
+        assert_eq!(b["total"], 6, "{b}");
+        for e in b["entry"].as_array().unwrap() {
+            let full = e["fullUrl"].as_str().unwrap();
+            assert!(full.starts_with("http://"), "{full}");
+            assert!(seen.insert(full.to_string()), "{full} twice");
+        }
+        pages += 1;
+        match b["link"].as_array().unwrap().iter().find(|l| l["relation"] == "next") {
+            Some(next) => url = next["url"].as_str().unwrap().to_string(),
+            None => break,
+        }
+    }
+    assert_eq!((pages, seen.len()), (3, 6));
+    let b: Value = c.get(format!("{base}/Patient/{pid}/$everything?_type=Observation")).send().await.unwrap().json().await.unwrap();
+    assert_eq!(b["total"], 5);
+    let r = c.get(format!("{base}/Patient/{pid}/$everything?start=2020-01-01")).send().await.unwrap();
+    assert_eq!(r.status(), 400);
+}
