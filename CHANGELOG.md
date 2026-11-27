@@ -23,6 +23,11 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
 - A Bundle entry's `request.ifMatch` was ignored, so a transaction or batch `PUT` /
   `DELETE` replaced whatever version was current. A transaction now fails as a whole
   (412) when an entry's version isn't current; a batch fails that entry (412).
+- **A delete is a version in the history.** `DELETE` removed the current resource and
+  left no trace in `_history`; it now records a version (the store's schema moves to 3),
+  listed as a `DELETE` entry, and a vread of it answers 410. A re-create continues after
+  it. History entries say `POST` for a version that created the resource (the first, or
+  the one after a delete) and `PUT` otherwise — a re-create used to say `PUT`.
 - `_summary=true` keeps each type's summary elements as R4 defines them; four types had
   a list, the others a guess (DiagnosticReport lost `issued` and `performer`). Resources
   returned with `_summary` or `_elements` carry the `SUBSETTED` tag.

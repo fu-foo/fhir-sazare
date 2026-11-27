@@ -68,6 +68,11 @@ impl SqliteStore {
             INSERT INTO changes (resource_type, id) VALUES (OLD.resource_type, OLD.id);
         END;
         "#,
+        // v3 — a delete is a version of its own in the history (`deleted`
+        // = 1; its value is the content it deleted, with the new versionId).
+        r#"
+        ALTER TABLE resource_history ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0;
+        "#,
     ];
 
     /// Open the store (create if not exists)
@@ -336,15 +341,27 @@ impl SqliteStore {
         Ok(history > 0)
     }
 
-    /// Delete a resource (current version only, history is preserved)
+    /// Delete a resource: the history gains a version that records the
+    /// delete; `false` when there was nothing to delete.
     pub fn delete(&self, resource_type: &str, id: &str) -> Result<bool> {
         let conn = self.conn();
+        let tx = conn.unchecked_transaction()?;
+        let deleted = delete_in(&tx, resource_type, id)?;
+        tx.commit()?;
+        Ok(deleted)
+    }
 
-        let rows = conn.execute(
-            "DELETE FROM resources WHERE resource_type = ? AND id = ?",
-            params![resource_type, id]
-        )?;
-        Ok(rows > 0)
+    /// A version from the history, and whether it is the record of a delete.
+    pub fn get_history_version(&self, resource_type: &str, id: &str, version_id: &str) -> Result<Option<(Vec<u8>, bool)>> {
+        let conn = self.reader();
+        let row = conn
+            .query_row(
+                "SELECT value, deleted FROM resource_history WHERE resource_type = ? AND id = ? AND version_id = ?",
+                params![resource_type, id, version_id],
+                |r| Ok((r.get::<_, String>(0)?.into_bytes(), r.get::<_, i64>(1)? != 0)),
+            )
+            .optional()?;
+        Ok(row)
     }
 
     /// List version history (list of version_ids)
@@ -568,15 +585,39 @@ impl<'a> TransactionOps<'a> {
         }
     }
 
-    /// Delete a resource (current version only, history is preserved)
+    /// Delete a resource (see [`SqliteStore::delete`]).
     pub fn delete(&self, resource_type: &str, id: &str) -> Result<bool> {
-        let conn = self.tx.deref();
-        let rows = conn.execute(
-            "DELETE FROM resources WHERE resource_type = ? AND id = ?",
-            params![resource_type, id],
-        )?;
-        Ok(rows > 0)
+        delete_in(self.tx.deref(), resource_type, id)
     }
+}
+
+/// Delete `resource_type/id` inside the caller's transaction: record the
+/// delete as the next version (the deleted content, with that versionId and
+/// the time), then remove the current resource.
+fn delete_in(conn: &Connection, resource_type: &str, id: &str) -> Result<bool> {
+    let current: Option<String> = conn
+        .query_row(
+            "SELECT value FROM resources WHERE resource_type = ?1 AND id = ?2",
+            params![resource_type, id],
+            |r| r.get(0),
+        )
+        .optional()?;
+    let Some(current) = current else { return Ok(false) };
+    let version = next_version_in(conn, resource_type, id)?;
+    let mut record: serde_json::Value = serde_json::from_str(&current).unwrap_or_else(|_| serde_json::json!({}));
+    if let Some(obj) = record.as_object_mut() {
+        let meta = obj.entry("meta").or_insert_with(|| serde_json::json!({}));
+        if let Some(meta) = meta.as_object_mut() {
+            meta.insert("versionId".into(), serde_json::json!(version));
+            meta.insert("lastUpdated".into(), serde_json::json!(chrono::Utc::now().to_rfc3339()));
+        }
+    }
+    conn.execute(
+        "INSERT INTO resource_history (resource_type, id, version_id, value, deleted) VALUES (?1, ?2, ?3, ?4, 1)",
+        params![resource_type, id, version, record.to_string()],
+    )?;
+    conn.execute("DELETE FROM resources WHERE resource_type = ?1 AND id = ?2", params![resource_type, id])?;
+    Ok(true)
 }
 
 /// The version a write of an absent resource starts at: one past the highest

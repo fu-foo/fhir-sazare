@@ -1932,12 +1932,14 @@ async fn test_write_paths_keep_fhir_rules() {
     let r = put("/Patient/t1", json!({"resourceType": "Patient", "id": "other"})).await.unwrap();
     assert_eq!(r.status(), 400);
 
-    // Delete, then re-create: the history continues (v1 is not overwritten).
+    // Delete, then re-create: the delete is version 2, the history continues
+    // (v1 is not overwritten).
     assert_eq!(c.delete(format!("{base}/Patient/t1")).send().await.unwrap().status(), 204);
+    assert_eq!(c.get(format!("{base}/Patient/t1/_history/2")).send().await.unwrap().status(), 410, "the delete's version");
     let r = put("/Patient/t1", json!({"resourceType": "Patient", "id": "t1", "name": [{"family": "Again"}]})).await.unwrap();
     assert_eq!(r.status(), 201);
     let p: Value = r.json().await.unwrap();
-    assert_eq!(p["meta"]["versionId"], "2", "{p}");
+    assert_eq!(p["meta"]["versionId"], "3", "{p}");
     let v1: Value = c.get(format!("{base}/Patient/t1/_history/1")).send().await.unwrap().json().await.unwrap();
     assert_eq!(v1["meta"]["tag"][0]["code"], "vip", "version 1 is the original");
 
@@ -1950,7 +1952,7 @@ async fn test_write_paths_keep_fhir_rules() {
     let r = patch(json!([{"op": "remove", "path": "/meta"}])).await.unwrap();
     assert_eq!(r.status(), 200);
     let p: Value = c.get(format!("{base}/Patient/t1")).send().await.unwrap().json().await.unwrap();
-    assert_eq!(p["meta"]["versionId"], "3", "{p}");
+    assert_eq!(p["meta"]["versionId"], "4", "{p}");
 
     // Batch PUT with a mismatched body type is refused for that entry.
     let bundle = json!({"resourceType": "Bundle", "type": "batch", "entry": [
@@ -1962,9 +1964,13 @@ async fn test_write_paths_keep_fhir_rules() {
     assert!(r["entry"][0]["response"]["status"].as_str().unwrap().starts_with("400"), "{r}");
     assert_eq!(c.get(format!("{base}/Patient/t2")).send().await.unwrap().status(), 404);
 
-    // The history lists every version, the re-created ones included.
+    // The history lists every version, the delete and the re-created ones
+    // included, newest first: PUT (patch), POST (the re-create), DELETE, POST.
     let h: Value = c.get(format!("{base}/Patient/t1/_history")).send().await.unwrap().json().await.unwrap();
-    assert_eq!(h["total"], 3, "{h}");
+    assert_eq!(h["total"], 4, "{h}");
+    let methods: Vec<&str> = h["entry"].as_array().unwrap().iter().map(|e| e["request"]["method"].as_str().unwrap()).collect();
+    assert_eq!(methods, ["PUT", "POST", "DELETE", "POST"], "{h}");
+    assert!(h["entry"][2].get("resource").is_none(), "a delete has no resource");
 }
 
 /// Async exports keep a copy of the data on disk, so the number of held jobs is

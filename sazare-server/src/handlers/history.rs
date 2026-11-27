@@ -31,37 +31,50 @@ pub async fn history(
         })?;
 
     let base = base_url_from_headers(&headers);
-    let mut entries = Vec::new();
+    // Newest first; a version is a create when it is the first, or the one
+    // before it was a delete.
+    let mut loaded = Vec::new();
     for ver in versions {
-        if let Ok(Some(data)) = state.store.get_version(&resource_type, &id, &ver)
+        if let Ok(Some((data, deleted))) = state.store.get_history_version(&resource_type, &id, &ver)
             && let Ok(resource) = serde_json::from_slice::<Value>(&data)
         {
-            // Every version is held to the same compartment rule as a read:
-            // a version outside the caller's compartment denies the whole
-            // history (a resource's subject can change between versions).
+            // Every version (a delete records the content it deleted) is held
+            // to the same compartment rule as a read: a version outside the
+            // caller's compartment denies the whole history (a resource's
+            // subject can change between versions).
             check_compartment_access(auth_user.as_ref(), &state.compartment_def, &resource_type, &resource)?;
-            let last_updated = resource
-                .get("meta")
-                .and_then(|m| m.get("lastUpdated"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            // Version "1" was the create (POST); later versions are updates (PUT).
-            // entry.response is mandatory in a history bundle (invariant bdl-4).
-            let method = if ver == "1" { "POST" } else { "PUT" };
-            entries.push(json!({
-                "fullUrl": format!("{base}/{resource_type}/{id}"),
-                "resource": resource,
-                "request": {
-                    "method": method,
-                    "url": format!("{resource_type}/{id}")
-                },
-                "response": {
-                    "status": "200",
-                    "etag": format!("W/\"{ver}\""),
-                    "lastModified": last_updated
-                }
-            }));
+            loaded.push((ver, deleted, resource));
         }
+    }
+    let mut entries = Vec::new();
+    for (i, (ver, deleted, resource)) in loaded.iter().enumerate() {
+        let last_updated = resource
+            .get("meta")
+            .and_then(|m| m.get("lastUpdated"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let url = format!("{resource_type}/{id}");
+        if *deleted {
+            // entry.response is mandatory in a history bundle (bdl-4); a
+            // delete has no resource.
+            entries.push(json!({
+                "fullUrl": format!("{base}/{url}"),
+                "request": {"method": "DELETE", "url": url},
+                "response": {"status": "204", "etag": format!("W/\"{ver}\""), "lastModified": last_updated}
+            }));
+            continue;
+        }
+        let created = loaded.get(i + 1).is_none_or(|(_, before_deleted, _)| *before_deleted);
+        entries.push(json!({
+            "fullUrl": format!("{base}/{url}"),
+            "resource": resource,
+            "request": {"method": if created { "POST" } else { "PUT" }, "url": url},
+            "response": {
+                "status": if created { "201" } else { "200" },
+                "etag": format!("W/\"{ver}\""),
+                "lastModified": last_updated
+            }
+        }));
     }
 
     let mut bundle = json!({
@@ -87,8 +100,8 @@ pub async fn vread(
     auth_user: Option<axum::extract::Extension<AuthUser>>,
 ) -> Result<Response, (StatusCode, Json<Value>)> {
     let auth_user = auth_user.map(|axum::extract::Extension(u)| u);
-    match state.store.get_version(&resource_type, &id, &vid) {
-        Ok(Some(data)) => {
+    match state.store.get_history_version(&resource_type, &id, &vid) {
+        Ok(Some((data, deleted))) => {
             let resource: Value = serde_json::from_slice(&data).map_err(|e| {
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
@@ -96,6 +109,15 @@ pub async fn vread(
                 )
             })?;
             check_compartment_access(auth_user.as_ref(), &state.compartment_def, &resource_type, &resource)?;
+            if deleted {
+                return Err((
+                    StatusCode::GONE,
+                    Json(json!(OperationOutcome::error(
+                        IssueType::Deleted,
+                        format!("{resource_type}/{id}/_history/{vid} is the record of a delete"),
+                    ))),
+                ));
+            }
             Ok(response_with_etag(StatusCode::OK, resource).into_response())
         }
         Ok(None) => Err((
