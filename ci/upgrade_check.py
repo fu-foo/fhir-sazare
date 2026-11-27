@@ -159,6 +159,8 @@ print(f"old release: {len(lines)} resources imported")
 new = start(NEW_BIN, cfg, log)
 state = get("health").get("index", {}).get("state")
 print(f"new release up; index state: {state}")
+# From a release with the same index format there is nothing to rebuild.
+rebuilt = state == "rebuilding"
 during = snapshot()
 compare("during the rebuild", before, during, TRANSIENT)
 
@@ -199,7 +201,7 @@ if status("Observation?value-quantity=gt0") != 200:
 if get("Patient?family=Upgradecheck").get("total") != 1:
     sys.exit("the write made during the rebuild is not searchable")
 files = sorted(os.listdir(os.path.join(work, "data")))
-if "search_index.sqlite" in files:
+if rebuilt and "search_index.sqlite" in files:
     sys.exit(f"old index files still there: {files}")
 stop(new)
 print(f"index files: {[f for f in files if f.startswith('search_index')]}")
