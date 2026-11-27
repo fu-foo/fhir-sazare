@@ -4,6 +4,26 @@ All notable changes to sazare. Versions follow [Semantic Versioning](https://sem
 until 1.0, a minor version (0.x.0) may change behavior — those changes are listed under
 **Behavior changes**. See [UPGRADING.md](UPGRADING.md) for how to upgrade.
 
+## Unreleased
+
+### Fixed
+- **`log.level` in the configuration took no effect**: only `RUST_LOG` set the log level.
+  It does now; `RUST_LOG`, when set, still wins.
+- `docker compose up` failed on a fresh checkout: the compose file mounted a
+  `./config.yaml` that doesn't exist (Docker then mounts an empty directory there). The
+  mount is now commented out — the image has a default configuration; uncomment it after
+  creating the file.
+- Stopping the server waited for every request in flight without limit (a request whose
+  body never came, a large synchronous `$export`): they now get 30 s, then the server
+  stops without them.
+- `sazare-server backup` no longer copies the search index (derived, rebuilt on
+  restore — 6 GB at 10M resources — and without its full-text half anyway).
+- Building needs Rust 1.88 (the README said 1.85); `rust-version` is set, and CI builds
+  with 1.88.
+
+### Tests
+- The upgrade check in CI starts from 0.17.0, and from 0.16.0 and 0.12.0 as before.
+
 ## 0.17.0 — 2026-11-27
 
 ### Fixed

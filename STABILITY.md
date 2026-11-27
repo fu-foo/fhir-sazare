@@ -44,7 +44,7 @@ A change to any of the following requires a **major** version.
   the file; unknown keys are an error.
 - Environment variables: `SAZARE_CONFIG`, `SAZARE_HOST`, `SAZARE_PORT`,
   `SAZARE_DATA_DIR`, `SAZARE_APPS_DIR`, `SAZARE_IG_DIR`, `SAZARE_UI_DIR`,
-  `SAZARE_SEED_ON_EMPTY`.
+  `SAZARE_SEED_ON_EMPTY`, `SAZARE_LOG_FILE`; `RUST_LOG` (overrides `log.level`).
 - A key is never renamed in place: the new name is added, the old one keeps working
   (with a warning in the log) until the next major.
 

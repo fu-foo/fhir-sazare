@@ -106,10 +106,32 @@ fn main() {
     std::process::exit(code);
 }
 
+/// The log filter, set from `log.level` once the configuration is read
+/// (logging starts before that).
+static LOG_FILTER: std::sync::OnceLock<
+    tracing_subscriber::reload::Handle<tracing_subscriber::EnvFilter, tracing_subscriber::Registry>,
+> = std::sync::OnceLock::new();
+
+/// Apply the configuration's `log.level` (`RUST_LOG`, when set, wins).
+fn apply_log_level(level: &str) {
+    if std::env::var_os("RUST_LOG").is_some_and(|v| !v.is_empty()) {
+        return;
+    }
+    let Some(handle) = LOG_FILTER.get() else { return };
+    match tracing_subscriber::EnvFilter::try_new(level) {
+        Ok(filter) => {
+            let _ = handle.reload(filter);
+        }
+        Err(e) => tracing::warn!("log.level '{level}' is not a level (trace, debug, info, warn, error): {e}; using info"),
+    }
+}
+
 fn init_tracing() {
     use std::io::IsTerminal;
     let filter = tracing_subscriber::EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+    let (filter, handle) = tracing_subscriber::reload::Layer::new(filter);
+    let _ = LOG_FILTER.set(handle);
     // A log file the server writes itself, turning it over: set by `start`,
     // or by a service manager that keeps stdout (launchd, Homebrew). `~/` is
     // the home directory (launchd doesn't expand it).
@@ -128,13 +150,13 @@ fn init_tracing() {
     });
     match log_file {
         Some(log) => tracing_subscriber::registry()
-            .with(tracing_subscriber::fmt::layer().with_ansi(false).with_writer(log))
             .with(filter)
+            .with(tracing_subscriber::fmt::layer().with_ansi(false).with_writer(log))
             .init(),
         // Colors only on a terminal.
         None => tracing_subscriber::registry()
-            .with(tracing_subscriber::fmt::layer().with_ansi(std::io::stdout().is_terminal()))
             .with(filter)
+            .with(tracing_subscriber::fmt::layer().with_ansi(std::io::stdout().is_terminal()))
             .init(),
     }
 }
@@ -223,6 +245,7 @@ async fn serve(args: Vec<String>) {
     let want_demo = args.iter().any(|a| a == "--demo");
     let want_open = args.iter().any(|a| a == "--open");
     let config = load_config(&args);
+    apply_log_level(&config.log.level);
 
     // One server per data directory: a second one on the same databases would
     // break the single-writer assumptions. Taken before anything is opened.
@@ -582,7 +605,24 @@ async fn serve(args: Vec<String>) {
         open_browser(&local_url);
     }
 
-    // Start server (HTTPS or HTTP)
+    // Start server (HTTPS or HTTP). On a stop, requests in flight get
+    // `STOP_GRACE` to finish (a large synchronous `$export` could otherwise
+    // hold the process indefinitely); then the server stops without them.
+    let (stopping_tx, stopping) = tokio::sync::watch::channel(false);
+    let shutdown = {
+        let stop_requested = stop_requested.clone();
+        async move {
+            shutdown_signal(stop_requested).await;
+            let _ = stopping_tx.send(true);
+        }
+    };
+    let grace = {
+        let mut stopping = stopping.clone();
+        async move {
+            let _ = stopping.wait_for(|s| *s).await;
+            tokio::time::sleep(STOP_GRACE).await;
+        }
+    };
     if let Some(ref tls_config) = config.server.tls {
         let acceptor = sazare_server::tls::load_tls_acceptor(
             &tls_config.cert_file,
@@ -599,27 +639,27 @@ async fn serve(args: Vec<String>) {
         let app = app.layer(axum::middleware::from_fn(
             sazare_server::tls::propagate_connect_info,
         ));
-        axum::serve(
+        let server = axum::serve(
             tls_listener,
             app.into_make_service_with_connect_info::<sazare_server::tls::TlsConnectInfo>(),
         )
-        .with_graceful_shutdown(shutdown_signal(stop_requested.clone()))
-        .await
-        .unwrap_or_else(|e| {
-            tracing::error!("Server error: {}", e);
-        });
+        .with_graceful_shutdown(shutdown);
+        tokio::select! {
+            r = server => r.unwrap_or_else(|e| tracing::error!("Server error: {}", e)),
+            _ = grace => tracing::warn!("Requests still running {} s after the stop: stopping without them", STOP_GRACE.as_secs()),
+        }
     } else {
         tracing::info!("Listening on http://{}", bind_addr);
 
-        axum::serve(
+        let server = axum::serve(
             listener,
             app.into_make_service_with_connect_info::<SocketAddr>(),
         )
-        .with_graceful_shutdown(shutdown_signal(stop_requested.clone()))
-        .await
-        .unwrap_or_else(|e| {
-            tracing::error!("Server error: {}", e);
-        });
+        .with_graceful_shutdown(shutdown);
+        tokio::select! {
+            r = server => r.unwrap_or_else(|e| tracing::error!("Server error: {}", e)),
+            _ = grace => tracing::warn!("Requests still running {} s after the stop: stopping without them", STOP_GRACE.as_secs()),
+        }
     }
 
     // A background index build would otherwise keep the process alive until
@@ -655,6 +695,9 @@ pub(crate) fn open_browser(url: &str) {
 }
 
 /// Graceful shutdown signal handler
+/// How long requests in flight may run on after a stop.
+const STOP_GRACE: std::time::Duration = std::time::Duration::from_secs(30);
+
 async fn shutdown_signal(stop_requested: Arc<tokio::sync::Notify>) {
     let ctrl_c = async {
         tokio::signal::ctrl_c()
@@ -680,19 +723,16 @@ async fn shutdown_signal(stop_requested: Arc<tokio::sync::Notify>) {
     }
 }
 
-/// Back up every database under `data_dir` into `dir` (created if missing;
-/// existing backup files are never overwritten). Returns the process exit code.
+/// Back up the databases that hold data — resources and audit — into `dir`
+/// (created if missing; existing backup files are never overwritten). The
+/// search index is left out: derived, rebuilt from the resources on restore
+/// (6 GB at 10M resources). Returns the process exit code.
 fn run_backup(config: &ServerConfig, dir: &std::path::Path) -> i32 {
     if let Err(e) = std::fs::create_dir_all(dir) {
         eprintln!("Cannot create backup directory {}: {e}", dir.display());
         return 1;
     }
-    let dbs = [
-        config.resources_db_path(),
-        // The index generation in use (derived data; a restore rebuilds it anyway).
-        index_generation::current(&config.search_index_db_path(), false),
-        config.audit_db_path(),
-    ];
+    let dbs = [config.resources_db_path(), config.audit_db_path()];
     for src in &dbs {
         let Some(name) = src.file_name() else { continue };
         let dest = dir.join(name);

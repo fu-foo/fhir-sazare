@@ -16,6 +16,15 @@ jobs:
       - run: cargo test --all
       - run: cargo clippy --all --all-targets -- -D warnings
 
+  # The oldest Rust that builds it (rust-version in Cargo.toml).
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --all-targets
+
   # Search benchmark on a 60k-resource synthetic dataset. Timings vary between
   # runners, so the gate is deliberately loose (500ms per query): it exists to
   # catch algorithmic regressions (full scans, O(n*m) joins), which show up as
@@ -85,10 +94,19 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release download v0.16.0 -p sazare-server-linux-amd64.tar.gz -D "$RUNNER_TEMP/old"
+          gh release download v0.17.0 -p sazare-server-linux-amd64.tar.gz -D "$RUNNER_TEMP/old"
           tar -xzf "$RUNNER_TEMP/old/sazare-server-linux-amd64.tar.gz" -C "$RUNNER_TEMP/old"
           find "$RUNNER_TEMP/old" -name sazare-server -type f
       - run: python3 ci/upgrade_check.py "$(find "$RUNNER_TEMP/old" -name sazare-server -type f | head -1)" target/release/sazare-server 2000
+      # Index format 3 (no compartments or quantities) and store schema 1.
+      - name: Upgrade from 0.16.0
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PORT: "18092"
+        run: |
+          gh release download v0.16.0 -p sazare-server-linux-amd64.tar.gz -D "$RUNNER_TEMP/old016"
+          tar -xzf "$RUNNER_TEMP/old016/sazare-server-linux-amd64.tar.gz" -C "$RUNNER_TEMP/old016"
+          python3 ci/upgrade_check.py "$RUNNER_TEMP/old016/sazare-server" target/release/sazare-server 2000
       # The oldest data a 1.x release opens (STABILITY.md): 0.12. Its index
       # stored strings lower-cased, so `:exact` differs until the switch.
       - name: Upgrade from 0.12.0

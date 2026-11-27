@@ -241,7 +241,7 @@ taste.)
 
 ### Build from source (optional)
 
-Prefer to build it yourself? You'll need **Rust 1.85+** (2024 edition):
+Prefer to build it yourself? You'll need **Rust 1.88+** (2024 edition):
 
 ```bash
 git clone https://github.com/fu-foo/fhir-sazare.git
@@ -796,8 +796,9 @@ scrape_configs:
 
 ### Backup and restore
 
-`sazare-server backup <dir>` writes a consistent copy of all three databases into `<dir>`
-and exits. It is safe to run while the server is serving the same `data_dir`
+`sazare-server backup <dir>` writes a consistent copy of the databases that hold data —
+`resources.sqlite` and `audit.sqlite` — into `<dir>` and exits (the search index is
+derived and rebuilt on restore, so it isn't copied). It is safe to run while the server is serving the same `data_dir`
 (it uses SQLite `VACUUM INTO`, so the copy includes not-yet-checkpointed WAL
 data and never tears). Existing files in `<dir>` are never overwritten.
 
@@ -806,8 +807,7 @@ sazare-server backup backups/$(date +%Y%m%d-%H%M%S) --config config.yaml
 ```
 
 To restore, stop the server and copy `resources.sqlite` and `audit.sqlite`
-back into `data_dir`. Leave `search_index.sqlite` and `search_index.fts.sqlite`
-out (delete the old ones): they are derived data, and the server rebuilds them
+back into `data_dir`, and delete the old `search_index*` files: they are derived data, and the server rebuilds them
 from the resources on startup, so the index is guaranteed to match the restored resources even if the backup was
 taken mid-write. The server answers at once and rebuilds the index in the background; searches are
 complete once `GET /health` reports `"index": {"state": "ready"}`.

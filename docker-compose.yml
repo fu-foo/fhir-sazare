@@ -7,7 +7,10 @@ services:
       - "8080:8080"
     volumes:
       - sazare-data:/data
-      - ./config.yaml:/etc/sazare/config.yaml:ro
+      # Your own configuration (the image has a default one): create
+      # config.yaml next to this file first — `cp config.example.yaml
+      # config.yaml` — or Docker mounts an empty directory there.
+      # - ./config.yaml:/etc/sazare/config.yaml:ro
     environment:
       - SAZARE_DATA_DIR=/data
       - RUST_LOG=info

@@ -93,3 +93,64 @@ async fn stop_during_a_background_rebuild_exits_promptly() {
         .collect();
     assert!(left.is_empty(), "partial generation left: {left:?}");
 }
+
+/// A request still running at a stop gets 30 s, then the server stops
+/// without it (here: a body announced and never sent).
+#[tokio::test]
+async fn stop_does_not_wait_for_a_request_forever() {
+    use std::io::Write;
+    let dir = tempfile::tempdir().unwrap();
+    let port = free_port();
+    let cfg = dir.path().join("config.yaml");
+    std::fs::write(
+        &cfg,
+        format!(
+            "server:\n  host: 127.0.0.1\n  port: {port}\nauth:\n  enabled: false\nstorage:\n  data_dir: {}\n",
+            dir.path().join("data").display()
+        ),
+    )
+    .unwrap();
+    let mut server = Command::new(BIN)
+        .args(["run", "--config", cfg.to_str().unwrap()])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let base = format!("http://127.0.0.1:{port}");
+    let mut up = false;
+    for _ in 0..200 {
+        if reqwest::get(format!("{base}/health")).await.is_ok() {
+            up = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(up, "server did not start");
+
+    let mut slow = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+    write!(slow, "PUT /Patient/p HTTP/1.1\r\nHost: x\r\nContent-Type: application/fhir+json\r\nContent-Length: 100\r\n\r\n{{").unwrap();
+    std::thread::sleep(Duration::from_millis(300));
+
+    let started = Instant::now();
+    let stop = std::thread::spawn({
+        let cfg = cfg.clone();
+        move || Command::new(BIN).args(["stop", "--config", cfg.to_str().unwrap()]).output().unwrap()
+    });
+    let mut exited = false;
+    for _ in 0..1000 {
+        if server.try_wait().unwrap().is_some() {
+            exited = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    if !exited {
+        let _ = server.kill();
+        let _ = server.wait();
+    }
+    assert!(exited, "the server was still waiting for the request after 50 s");
+    let took = started.elapsed();
+    assert!(took >= Duration::from_secs(25), "the request got its grace period ({took:?})");
+    assert!(stop.join().unwrap().status.success());
+    drop(slow);
+}
