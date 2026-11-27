@@ -61,6 +61,21 @@ impl Phase1Validator {
             return Err(outcome);
         }
 
+        // A FHIR id: 1–64 of A–Z, a–z, 0–9, '-' and '.'.
+        if let Some(id) = resource.get("id") {
+            let ok = id.as_str().is_some_and(|s| {
+                (1..=64).contains(&s.len()) && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'.')
+            });
+            if !ok {
+                let mut outcome = OperationOutcome::error(
+                    IssueType::Invalid,
+                    format!("Invalid id {id}: an id is 1 to 64 letters, digits, '-' or '.'"),
+                );
+                outcome.issue[0].expression = Some(vec![format!("{resource_type}.id")]);
+                return Err(outcome);
+            }
+        }
+
         // Check required fields from registry
         if let Some(fields) = REQUIRED_FIELDS.get(resource_type) {
             for field in *fields {

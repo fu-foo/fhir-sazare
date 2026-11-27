@@ -94,7 +94,7 @@ fn base_params_without_paging(raw_query: &str) -> String {
 }
 
 /// Shared search execution path used by both GET and POST search handlers.
-async fn do_search(
+pub(crate) async fn do_search(
     state: Arc<AppState>,
     resource_type: String,
     raw_query: String,

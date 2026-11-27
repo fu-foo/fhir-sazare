@@ -32,6 +32,8 @@ pub(crate) struct BundleEntry {
     pub id: Option<String>,
     pub full_url: Option<String>,
     pub resource: Option<Value>,
+    /// The query of `request.url` (`Patient?gender=female` → `gender=female`).
+    pub query: Option<String>,
     pub if_none_exist: Option<String>,
     /// `request.ifMatch`: the version the entry expects to replace or delete
     /// (`W/"3"` → `3`).
@@ -116,6 +118,21 @@ fn parse_entries(bundle: &Value) -> Result<Vec<BundleEntry>, OperationOutcome> {
             )
         })?;
 
+        // `Type?query` / `Type/id?query`: the query apart.
+        let (resource_type, query) = match resource_type.split_once('?') {
+            Some((t, q)) => (t.to_string(), Some(q.to_string())),
+            None => (resource_type, None),
+        };
+        let (id, query) = match id.as_deref().and_then(|i| i.split_once('?')) {
+            Some((i, q)) => (Some(i.to_string()).filter(|i| !i.is_empty()), Some(q.to_string())),
+            None => (id, query),
+        };
+        if query.is_some() && method != "GET" {
+            return Err(OperationOutcome::error(
+                IssueType::NotSupported,
+                format!("entry[{i}].request.url '{url}': a conditional {method} inside a Bundle is not supported (use ifNoneExist for a conditional create)"),
+            ));
+        }
         let full_url = entry.get("fullUrl").and_then(|f| f.as_str()).map(|s| s.to_string());
         let resource = entry.get("resource").cloned();
         let if_none_exist = request.get("ifNoneExist").and_then(|v| v.as_str()).map(|s| s.to_string());
@@ -127,6 +144,7 @@ fn parse_entries(bundle: &Value) -> Result<Vec<BundleEntry>, OperationOutcome> {
             id,
             full_url,
             resource,
+            query,
             if_none_exist,
             if_match,
         });
@@ -248,8 +266,10 @@ pub async fn process_bundle(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(state): State<Arc<AppState>>,
     auth_user: Option<axum::extract::Extension<AuthUser>>,
+    headers: axum::http::HeaderMap,
     Json(bundle): Json<Value>,
 ) -> impl IntoResponse {
+    let base_url = crate::handlers::base_url_from_headers(&headers);
     // Index and store writes happen under the write gate (shared), so an index
     // switch never finds a write between its two steps.
     let _write_gate = state.write_gate.read().await;
@@ -295,7 +315,7 @@ pub async fn process_bundle(
     let response = if bundle_type == "transaction" {
         transaction::process_transaction(&state, &audit_ctx, auth_user.as_ref(), entries).await
     } else {
-        batch::process_batch(&state, &audit_ctx, auth_user.as_ref(), entries).await
+        batch::process_batch(&state, &audit_ctx, auth_user.as_ref(), entries, &base_url).await
     };
 
     // Fire the BundleCreated lifecycle webhook on a successful bundle.

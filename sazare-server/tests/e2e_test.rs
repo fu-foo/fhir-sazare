@@ -2352,3 +2352,64 @@ async fn test_json_only_and_invalid_dates() {
     }
     assert_eq!(status(c.get(format!("{base}/Observation?date=ge2020,lt2021-06")).send().await.unwrap()), 200);
 }
+
+/// An id is a FHIR id (1–64 of A–Z a–z 0–9 - .); paths that aren't a type or
+/// the server's own are a 404 that says so, `/_history` included.
+#[tokio::test]
+async fn test_ids_and_paths() {
+    let (base, _dir) = start_test_server().await;
+    let c = reqwest::Client::new();
+    let put = |id: &str| {
+        let url = format!("{base}/Patient/{}", id.replace(' ', "%20"));
+        let body = json!({"resourceType": "Patient", "id": id}).to_string();
+        c.put(url).header("Content-Type", "application/fhir+json").body(body).send()
+    };
+    for bad in ["a b", "a_b", &"a".repeat(65)] {
+        assert_eq!(put(bad).await.unwrap().status(), 400, "{bad:?}");
+    }
+    for good in ["a-b.c", "A1", &"a".repeat(64)] {
+        assert!(put(good).await.unwrap().status().is_success(), "{good:?}");
+    }
+    for path in ["/_history", "/_search", "/nonsense", "/Patient/_history"] {
+        let r = c.get(format!("{base}{path}")).send().await.unwrap();
+        assert_eq!(r.status(), 404, "{path}");
+        let b: Value = r.json().await.unwrap();
+        assert_eq!(b["resourceType"], "OperationOutcome");
+    }
+    assert_eq!(c.get(format!("{base}/Patient/A1/_history")).send().await.unwrap().status(), 200);
+}
+
+/// A search inside a batch answers the searchset Bundle the same search
+/// gives on its own; a conditional PUT inside a Bundle is refused, not
+/// misread as a resource type.
+#[tokio::test]
+async fn test_batch_search_entries() {
+    let (base, _dir) = start_test_server().await;
+    let c = reqwest::Client::new();
+    create(&c, &base, "Patient", &json!({"resourceType": "Patient", "gender": "female"})).await;
+    create(&c, &base, "Patient", &json!({"resourceType": "Patient", "gender": "male"})).await;
+    let post = |entries: Value| {
+        let c = c.clone();
+        let url = format!("{base}/");
+        async move {
+            let r = c.post(url).header("Content-Type", "application/fhir+json")
+                .body(json!({"resourceType": "Bundle", "type": "batch", "entry": entries}).to_string()).send().await.unwrap();
+            (r.status().as_u16(), r.json::<Value>().await.unwrap())
+        }
+    };
+    let (s, b) = post(json!([
+        {"request": {"method": "GET", "url": "Patient?gender=female"}},
+        {"request": {"method": "GET", "url": "Patient?_summary=count"}},
+        {"request": {"method": "GET", "url": "Patient?_filter=x"}}
+    ])).await;
+    assert_eq!(s, 200, "{b}");
+    let e = b["entry"].as_array().unwrap();
+    assert_eq!(e[0]["response"]["status"], "200 OK", "{b}");
+    assert_eq!(e[0]["resource"]["type"], "searchset");
+    assert_eq!(e[0]["resource"]["total"], 1);
+    assert_eq!(e[1]["resource"]["total"], 2);
+    assert!(e[2]["response"]["status"].as_str().unwrap().starts_with("400"), "{b}");
+    let (s, b) = post(json!([{"request": {"method": "PUT", "url": "Patient?identifier=x"}, "resource": {"resourceType": "Patient"}}])).await;
+    assert_eq!(s, 400, "{b}");
+    assert!(b["issue"][0]["diagnostics"].as_str().unwrap().contains("conditional PUT"), "{b}");
+}

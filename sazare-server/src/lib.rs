@@ -484,15 +484,27 @@ async fn json_only(req: axum::extract::Request, next: axum::middleware::Next) ->
 /// `/{Type}/…` names an R4 resource type, or the answer is 404: a made-up
 /// type was stored, and searched as if it existed, with every search empty.
 async fn known_resource_type(req: axum::extract::Request, next: axum::middleware::Next) -> axum::response::Response {
-    let first = req.uri().path().trim_start_matches('/').split('/').next().unwrap_or("");
-    if first.starts_with(|c: char| c.is_ascii_uppercase()) && !sazare_core::r4_types::is_resource_type(first) {
-        return handlers::fhir_json(
+    // The server's own top-level paths; anything else first is a type.
+    const ROUTES: [&str; 9] = ["", "health", "metrics", "metadata", "token", "ws", "ui", "apps", "favicon.ico"];
+    let mut segments = req.uri().path().trim_start_matches('/').split('/');
+    let first = segments.next().unwrap_or("");
+    let not_found = |msg: String| {
+        handlers::fhir_json(
             axum::http::StatusCode::NOT_FOUND,
-            serde_json::json!(sazare_core::OperationOutcome::error(
-                sazare_core::operation_outcome::IssueType::NotSupported,
-                format!("'{first}' is not a FHIR R4 resource type (GET /metadata lists them)")
-            )),
-        );
+            serde_json::json!(sazare_core::OperationOutcome::error(sazare_core::operation_outcome::IssueType::NotSupported, msg)),
+        )
+    };
+    let own = ROUTES.contains(&first) || first.starts_with('$') || first.starts_with('.');
+    if !own && !sazare_core::r4_types::is_resource_type(first) {
+        return not_found(if first == "_history" || first == "_search" {
+            format!("/{first} across all types is not supported; use /{{Type}}/{first}")
+        } else {
+            format!("'{first}' is not a FHIR R4 resource type (GET /metadata lists them)")
+        });
+    }
+    // `/{Type}/_history`: not a resource called _history.
+    if !own && segments.next() == Some("_history") && segments.next().is_none() {
+        return not_found(format!("History of a whole type (/{first}/_history) is not supported; use /{first}/{{id}}/_history"));
     }
     next.run(req).await
 }

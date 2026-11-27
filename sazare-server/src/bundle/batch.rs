@@ -19,10 +19,15 @@ pub(super) async fn process_batch(
     audit_ctx: &AuditContext,
     auth_user: Option<&crate::auth::AuthUser>,
     mut entries: Vec<BundleEntry>,
+    base_url: &str,
 ) -> axum::response::Response {
     let mut response_entries: Vec<Value> = Vec::with_capacity(entries.len());
 
     for (i, entry) in entries.iter_mut().enumerate() {
+        if entry.method == "GET" && entry.id.is_none() {
+            response_entries.push(batch_search(state, audit_ctx, auth_user, entry, base_url).await);
+            continue;
+        }
         let result = process_batch_entry(state, auth_user, entry, i).await;
         response_entries.push(result);
     }
@@ -56,6 +61,40 @@ fn notify_change(state: &Arc<AppState>, resource_type: &str, id: &str, resource:
 }
 
 /// Process a single batch entry independently.
+/// A search inside a batch (`GET Patient?gender=female`): the searchset
+/// Bundle the same search answers on its own, as the entry's resource.
+async fn batch_search(
+    state: &Arc<AppState>,
+    audit_ctx: &AuditContext,
+    auth_user: Option<&crate::auth::AuthUser>,
+    entry: &BundleEntry,
+    base_url: &str,
+) -> Value {
+    let result = crate::handlers::search::do_search(
+        state.clone(),
+        entry.resource_type.clone(),
+        entry.query.clone().unwrap_or_default(),
+        auth_user.cloned(),
+        audit_ctx.clone(),
+        base_url.to_string(),
+    )
+    .await;
+    let (status, body) = match result {
+        Ok(response) => {
+            let status = response.status();
+            let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap_or_default();
+            (status, serde_json::from_slice::<Value>(&bytes).unwrap_or(json!({})))
+        }
+        Err((status, axum::Json(body))) => (status, body),
+    };
+    let line = format!("{} {}", status.as_u16(), status.canonical_reason().unwrap_or(""));
+    if status.is_success() {
+        json!({"resource": body, "response": {"status": line}})
+    } else {
+        json!({"response": {"status": line, "outcome": body}})
+    }
+}
+
 async fn process_batch_entry(
     state: &Arc<AppState>,
     auth_user: Option<&crate::auth::AuthUser>,

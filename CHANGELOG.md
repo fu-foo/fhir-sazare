@@ -65,6 +65,10 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
   with 1.88.
 
 ### Behavior changes
+- **An id is a FHIR id** (1–64 letters, digits, `-`, `.`) on every write; `a b`, `a_b`
+  or a 70-character id were stored. Ids already stored are still read.
+- Paths that are neither a resource type nor the server's own are a 404 that says so:
+  `/_history` answered an empty search, `/Patient/_history` "Patient/_history not found".
 - **Resources are checked against the R4 definitions of their shape.** An element the
   type doesn't define (`"bogusField"`, a misspelled `nmae`, `deceasedString`), a value of
   the wrong JSON type (`"gender": 5`), a list where the element has one value or one
@@ -86,6 +90,9 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
   too. `_format` and `_pretty` are accepted (JSON is the one format).
 
 ### Added
+- **Searches inside a batch** (`GET Patient?gender=female` as an entry) answer the
+  searchset Bundle of that search; they were refused ("must include id"). A conditional
+  `PUT`/`DELETE` inside a Bundle is refused as such (it was taken for a resource type).
 - `audit.retention_days`: audit entries older than that are deleted (at startup and
   hourly, a batch at a time). Unset, every entry is kept, as before.
 
