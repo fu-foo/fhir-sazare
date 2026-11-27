@@ -806,13 +806,13 @@ async fn test_bundle_transaction() {
 }
 
 /// Helper: POST a resource and return its server-assigned id.
+/// Create a resource: POST, or PUT to its id when the body names one (a
+/// POST ignores a body's id).
 async fn create(client: &reqwest::Client, base_url: &str, type_: &str, body: &Value) -> String {
-    let resp = client
-        .post(format!("{}/{}", base_url, type_))
-        .json(body)
-        .send()
-        .await
-        .unwrap();
+    let resp = match body["id"].as_str() {
+        Some(id) => client.put(format!("{base_url}/{type_}/{id}")).json(body).send().await.unwrap(),
+        None => client.post(format!("{}/{}", base_url, type_)).json(body).send().await.unwrap(),
+    };
     assert_eq!(resp.status(), 201, "create {} should 201", type_);
     let created: Value = resp.json().await.unwrap();
     created["id"].as_str().unwrap().to_string()
@@ -899,23 +899,22 @@ async fn test_demo_cohort_loads_and_is_searchable() {
 }
 
 #[tokio::test]
-async fn test_post_with_existing_id_conflicts() {
+async fn test_post_ignores_the_body_id() {
+    // R4: a create's body id is ignored; the server assigns one (PUT chooses).
     let (base_url, _dir) = start_test_server().await;
     let client = reqwest::Client::new();
-
-    // First create with an explicit id succeeds.
-    let body = json!({"resourceType": "Patient", "id": "fixed-1", "name": [{"family": "One"}]});
-    let r = client.post(format!("{base_url}/Patient")).json(&body).send().await.unwrap();
-    assert_eq!(r.status(), 201);
-
-    // A second POST reusing that id must NOT clobber it — expect 409.
-    let body2 = json!({"resourceType": "Patient", "id": "fixed-1", "name": [{"family": "Two"}]});
-    let r2 = client.post(format!("{base_url}/Patient")).json(&body2).send().await.unwrap();
-    assert_eq!(r2.status(), 409, "re-POST of an existing id must conflict, not overwrite");
-
-    // The original survives.
-    let got: Value = client.get(format!("{base_url}/Patient/fixed-1")).send().await.unwrap().json().await.unwrap();
-    assert_eq!(got["name"][0]["family"], "One");
+    let mut ids = std::collections::HashSet::new();
+    for family in ["One", "Two"] {
+        let body = json!({"resourceType": "Patient", "id": "fixed-1", "name": [{"family": family}]});
+        let r = client.post(format!("{base_url}/Patient")).json(&body).send().await.unwrap();
+        assert_eq!(r.status(), 201);
+        let got: Value = r.json().await.unwrap();
+        let id = got["id"].as_str().unwrap().to_string();
+        assert_ne!(id, "fixed-1");
+        ids.insert(id);
+    }
+    assert_eq!(ids.len(), 2, "each create is a new resource");
+    assert_eq!(client.get(format!("{base_url}/Patient/fixed-1")).send().await.unwrap().status(), 404);
 }
 
 #[tokio::test]

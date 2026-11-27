@@ -65,6 +65,10 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
   with 1.88.
 
 ### Behavior changes
+- **A create (`POST /Type`) ignores an id in the body** and assigns one, as R4 specifies
+  (transaction and batch entries always did). It used to keep the body's id, or answer
+  409 when it existed. To choose the id, `PUT /Type/{id}`. `$import` keeps the ids in the
+  file.
 - **An id is a FHIR id** (1–64 letters, digits, `-`, `.`) on every write; `a b`, `a_b`
   or a 70-character id were stored. Ids already stored are still read.
 - Paths that are neither a resource type nor the server's own are a 404 that says so:

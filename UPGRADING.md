@@ -53,6 +53,8 @@ into `data_dir`, delete the two `search_index*` files, start the older binary).
   has its search parameters. As in 0.17, the old index answers until the switch.
 - **`resources.sqlite` moves to schema version 3** (a delete is recorded in the history).
   To go back, restore the backup from step 1.
+- **`POST /Type` ignores an id in the body.** A client that created resources with ids
+  of its own by POST must `PUT /Type/{id}` instead (`$import` keeps ids).
 - **Writes are checked against the R4 definitions**: a resource with an element its type
   doesn't define, or a value of the wrong JSON type, is a 400 (it was stored). Data
   already stored is not checked; an update of it is.

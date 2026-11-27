@@ -130,52 +130,12 @@ pub async fn create(
         ));
     }
 
-    // Assign the resource id. A client-supplied id is honoured (the server also
-    // ingests pre-identified resources via bundles/import), but it must NOT
-    // silently overwrite an existing resource — that destroys the current
-    // version and its history. If the id already exists, reject with 409 and
-    // direct the client to PUT (update) instead.
-    let client_supplied_id = resource.id.clone();
-    let id = client_supplied_id
-        .clone()
-        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-    if client_supplied_id.is_some() {
-        match state.store.get(&resource_type, &id) {
-            Ok(Some(_)) => {
-                return Err((
-                    StatusCode::CONFLICT,
-                    Json(json!(OperationOutcome::error(
-                        IssueType::Conflict,
-                        format!(
-                            "{}/{} already exists; use PUT to update it",
-                            resource_type, id
-                        )
-                    ))),
-                ));
-            }
-            Ok(None) => {}
-            Err(e) => {
-                return Err((
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(json!(OperationOutcome::storage_error(e.to_string()))),
-                ))
-            }
-        }
-    }
+    // The server assigns the id: one in the body is ignored, as R4 specifies
+    // (and as transaction and batch entries always did). To choose the id,
+    // PUT to it.
+    let id = uuid::Uuid::new_v4().to_string();
     resource.id = Some(id.clone());
-
-    // Set metadata — preserve caller-provided fields (profile, source, tag, ...).
-    // A client-chosen id may name a deleted resource: continue its history.
-    let version_id = if client_supplied_id.is_some() {
-        state.store.next_version(&resource_type, &id).map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!(OperationOutcome::storage_error(e.to_string()))),
-            )
-        })?
-    } else {
-        "1".to_string()
-    };
+    let version_id = "1".to_string();
     let now = chrono::Utc::now().to_rfc3339();
     let mut meta = resource.meta.take().unwrap_or_default();
     meta.version_id = Some(version_id.clone());
