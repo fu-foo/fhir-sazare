@@ -23,6 +23,7 @@ Usage: sazare-server <command> [options]
 Commands:
   start     Start the server in the background and return once it is up
   stop      Stop the background server (waits for in-flight writes)
+  restart   Stop it (when running) and start it again, e.g. after changing the configuration
   status    Show whether the server is running, its URL and pid
   run       Run in the foreground (for Docker, systemd, launchd, brew services)
   logs      Print the background server's log (-f to follow, -n <lines>)
@@ -33,7 +34,7 @@ Commands:
   version   Print the version
   help      Show this help
 
-Options (start, run):
+Options (start, restart, run):
   --config <file>   Configuration file (default: ./config.yaml when present)
   --port <n>        Port to listen on (default 8080; also $SAZARE_PORT, server.port)
   --demo            Load the sample dataset
@@ -69,15 +70,13 @@ fn main() {
             runtime.block_on(serve(rest));
             0
         }
-        "start" => {
-            let config = load_config(&rest);
-            let open = rest.iter().any(|a| a == "--open");
-            let forwarded: Vec<String> = rest.into_iter().filter(|a| a != "--open").collect();
-            for note in &config.notes {
-                eprintln!("warning: {note}");
-            }
-            instance::start(&config, &forwarded, open)
-        }
+        "start" => start_command(rest),
+        // Stop (when running) and start with these options: the step after
+        // changing the configuration.
+        "restart" => match instance::stop(&load_config(&rest)) {
+            0 => start_command(rest),
+            failed => failed,
+        },
         "stop" => instance::stop(&load_config(&rest)),
         "logs" => instance::logs(&load_config(&rest), &rest),
         "auth" => auth_command(&rest),
@@ -234,7 +233,7 @@ fn auth_command(args: &[String]) -> i32 {
             println!("    - username: {}", q(&user));
             println!("      password_hash: {}", q(&hash));
             eprintln!();
-            eprintln!("Then restart the server (sazare-server stop && sazare-server start).");
+            eprintln!("Then restart the server (sazare-server restart).");
             0
         }
         Some("new-api-key") => {
@@ -251,7 +250,7 @@ fn auth_command(args: &[String]) -> i32 {
             println!("    - name: {}", q(&name));
             println!("      key_sha256: {}", q(&credentials::sha256_hex(&key)));
             eprintln!();
-            eprintln!("Then restart the server (sazare-server stop && sazare-server start). Clients send");
+            eprintln!("Then restart the server (sazare-server restart). Clients send");
             eprintln!("the key as `Authorization: Bearer <key>`.");
             0
         }
@@ -262,10 +261,21 @@ fn auth_command(args: &[String]) -> i32 {
     }
 }
 
+/// `start`: in the background, returning once the server is up.
+fn start_command(rest: Vec<String>) -> i32 {
+    let config = load_config(&rest);
+    let open = rest.iter().any(|a| a == "--open");
+    let forwarded: Vec<String> = rest.into_iter().filter(|a| a != "--open").collect();
+    for note in &config.notes {
+        eprintln!("warning: {note}");
+    }
+    instance::start(&config, &forwarded, open)
+}
+
 /// The options `command` takes, and whether each takes a value.
 fn command_options(command: &str) -> &'static [(&'static str, bool)] {
     match command {
-        "start" | "run" => &[("--config", true), ("--port", true), ("--demo", false), ("--open", false)],
+        "start" | "restart" | "run" => &[("--config", true), ("--port", true), ("--demo", false), ("--open", false)],
         "stop" | "status" => &[("--config", true)],
         "logs" => &[("--config", true), ("-f", false), ("-n", true)],
         "backup" => &[("--config", true)],

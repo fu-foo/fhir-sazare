@@ -260,9 +260,10 @@ cargo build --release
 ## Running the server
 
 ```bash
-sazare-server start [--config config.yaml] [--demo] [--open]   # in the background; returns once it is up
+sazare-server start [--config config.yaml] [--port N] [--demo] [--open]   # in the background; returns once it is up
 sazare-server status                                          # running? URL, pid, log
 sazare-server stop                                            # clean shutdown (in-flight writes finish)
+sazare-server restart [same options as start]                 # stop and start, e.g. after a configuration change
 sazare-server run [--config config.yaml]                      # in the foreground
 sazare-server logs [-f]                                       # the background server's log
 sazare-server backup <dir> [--config config.yaml]             # consistent copy of the databases

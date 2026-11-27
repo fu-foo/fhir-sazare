@@ -8,6 +8,8 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
 
 ### Added
 - `--port <n>` for `start` and `run` (over `server.port` and `$SAZARE_PORT`).
+- `sazare-server restart`: stop (when running) and start, with `start`'s options — the
+  step after changing the configuration.
 
 ### Fixed
 - A taken port (8080 often is: another server, an editor's port forwarding) made `start`
