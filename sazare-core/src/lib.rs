@@ -1,4 +1,5 @@
 pub mod compartment;
+pub mod date;
 pub mod error;
 pub mod fhirpath;
 pub mod operation_outcome;

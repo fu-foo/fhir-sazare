@@ -2320,3 +2320,35 @@ async fn test_every_r4_type_is_searchable_and_others_are_refused() {
     let b: Value = c.post(&base).header("Content-Type", "application/fhir+json").body(bundle.to_string()).send().await.unwrap().json().await.unwrap();
     assert!(b["entry"][0]["response"]["status"].as_str().unwrap().starts_with("400"), "{b}");
 }
+
+/// JSON only: another format asked for is a 406, a body in another a 415
+/// (OAuth's form-encoded /token and form _search excepted); a date that
+/// isn't one is a 400 instead of matching nothing.
+#[tokio::test]
+async fn test_json_only_and_invalid_dates() {
+    let (base, _dir) = start_test_server().await;
+    let c = reqwest::Client::new();
+    let status = |r: reqwest::Response| r.status().as_u16();
+    assert_eq!(status(c.get(format!("{base}/Patient?_format=xml")).send().await.unwrap()), 406);
+    assert_eq!(status(c.get(format!("{base}/Patient?_format=json")).send().await.unwrap()), 200);
+    assert_eq!(status(c.get(format!("{base}/Patient")).header("Accept", "application/fhir+xml").send().await.unwrap()), 406);
+    for ok in ["application/fhir+json", "application/json", "*/*", "text/html, */*;q=0.8"] {
+        assert_eq!(status(c.get(format!("{base}/Patient")).header("Accept", ok).send().await.unwrap()), 200, "{ok}");
+    }
+    let post = |ct: &str| {
+        c.post(format!("{base}/Patient")).header("Content-Type", ct).body(r#"{"resourceType":"Patient"}"#).send()
+    };
+    assert_eq!(status(post("text/plain").await.unwrap()), 415);
+    assert_eq!(status(post("application/fhir+xml").await.unwrap()), 415);
+    assert_eq!(status(post("application/fhir+json; charset=utf-8").await.unwrap()), 201);
+    let form = c.post(format!("{base}/Patient/_search")).header("Content-Type", "application/x-www-form-urlencoded").body("gender=female").send().await.unwrap();
+    assert_eq!(status(form), 200);
+    // Not a FHIR endpoint: form-encoded OAuth (here refused for its own reasons, not 415).
+    let token = c.post(format!("{base}/token")).header("Content-Type", "application/x-www-form-urlencoded").body("grant_type=x").send().await.unwrap();
+    assert_ne!(status(token), 415);
+
+    for q in ["Observation?date=notadate", "Observation?date=ge2020,lt20x", "Patient?_lastUpdated=gt20xx"] {
+        assert_eq!(status(c.get(format!("{base}/{q}")).send().await.unwrap()), 400, "{q}");
+    }
+    assert_eq!(status(c.get(format!("{base}/Observation?date=ge2020,lt2021-06")).send().await.unwrap()), 200);
+}

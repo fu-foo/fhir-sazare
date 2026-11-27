@@ -384,6 +384,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         // A handler that panics answers 500 (counted by `metrics::track`)
         // instead of dropping the connection.
         .layer(axum::middleware::from_fn(known_resource_type))
+        .layer(axum::middleware::from_fn(json_only))
         .layer(tower_http::catch_panic::CatchPanicLayer::custom(panic_response))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
@@ -417,6 +418,69 @@ fn panic_response(_panic: Box<dyn std::any::Any + Send + 'static>) -> axum::resp
     )
 }
 
+/// Endpoints that aren't FHIR (they keep their own content types).
+const NOT_FHIR: [&str; 9] = [
+    "/health",
+    "/$status",
+    "/$browse/",
+    "/$apps",
+    "/$export-status/",
+    "/.well-known/",
+    "/token",
+    "/ui/",
+    "/apps/",
+];
+
+/// JSON is the one format: a request for another (`_format=xml`, an `Accept`
+/// that takes no JSON) is a 406, and a body in another (`Content-Type:
+/// text/plain`, or XML) a 415 — instead of JSON back, or a body read as JSON
+/// whatever it claimed to be. Forms are accepted for `_search`.
+async fn json_only(req: axum::extract::Request, next: axum::middleware::Next) -> axum::response::Response {
+    use axum::http::{header, Method, StatusCode};
+    let path = req.uri().path();
+    let not_fhir = NOT_FHIR.iter().any(|p| path == p.trim_end_matches('/') || path.starts_with(p));
+    // `GET /` is the dashboard; `POST /` a Bundle.
+    let fhir = !not_fhir && path != "/";
+    let refuse = |status: StatusCode, msg: String| {
+        handlers::fhir_json(
+            status,
+            serde_json::json!(sazare_core::OperationOutcome::error(sazare_core::operation_outcome::IssueType::NotSupported, msg)),
+        )
+    };
+    if fhir {
+        let format = req.uri().query().and_then(|q| {
+            serde_urlencoded::from_str::<Vec<(String, String)>>(q).ok()?.into_iter().find(|(k, _)| k == "_format").map(|(_, v)| v)
+        });
+        if let Some(f) = format
+            && !matches!(f.trim(), "json" | "application/json" | "application/fhir+json" | "application/json+fhir")
+        {
+            return refuse(StatusCode::NOT_ACCEPTABLE, format!("_format={f}: this server answers in JSON only (_format=json)"));
+        }
+        if let Some(accept) = req.headers().get(header::ACCEPT).and_then(|v| v.to_str().ok()) {
+            let takes_json = accept.split(',').map(|m| m.split(';').next().unwrap_or("").trim()).any(|m| {
+                m.is_empty() || m.contains("json") || m == "*/*" || m == "application/*"
+            });
+            if !takes_json {
+                return refuse(StatusCode::NOT_ACCEPTABLE, format!("Accept: {accept}: this server answers in JSON only (application/fhir+json)"));
+            }
+        }
+    }
+    if !not_fhir
+        && matches!(*req.method(), Method::POST | Method::PUT | Method::PATCH)
+        && let Some(ct) = req.headers().get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok())
+    {
+        let media = ct.split(';').next().unwrap_or("").trim().to_ascii_lowercase();
+        let form_search = media == "application/x-www-form-urlencoded" && path.ends_with("/_search");
+        if !media.contains("json") && !form_search {
+            return refuse(
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                format!("Content-Type: {ct}: send JSON (application/fhir+json; JSON Patch for PATCH; NDJSON for $import)"),
+            );
+        }
+    }
+    next.run(req).await
+}
+
 /// `/{Type}/…` names an R4 resource type, or the answer is 404: a made-up
 /// type was stored, and searched as if it existed, with every search empty.
 async fn known_resource_type(req: axum::extract::Request, next: axum::middleware::Next) -> axum::response::Response {
@@ -439,17 +503,6 @@ async fn known_resource_type(req: axum::extract::Request, next: axum::middleware
 /// Bulk Data export manifest (`application/json` by the IG; no
 /// `resourceType`), OAuth / SMART, the dashboard, and static files.
 async fn fhir_content_type(req: axum::extract::Request, next: axum::middleware::Next) -> axum::response::Response {
-    const NOT_FHIR: [&str; 9] = [
-        "/health",
-        "/$status",
-        "/$browse/",
-        "/$apps",
-        "/$export-status/",
-        "/.well-known/",
-        "/token",
-        "/ui/",
-        "/apps/",
-    ];
     let path = req.uri().path();
     let fhir = !NOT_FHIR.iter().any(|p| path == p.trim_end_matches('/') || path.starts_with(p));
     let mut res = next.run(req).await;

@@ -326,7 +326,18 @@ impl SearchQuery {
 
             // Parse date prefix (ge, le, gt, lt, eq)
             let (prefix, actual_value) = if param_type == SearchParamType::Date {
-                parse_date_prefix(&decode_query_value(raw_value, true)?)
+                let (prefix, date) = parse_date_prefix(&decode_query_value(raw_value, true)?);
+                // Each alternative (with its own prefix) must be a date: one
+                // that isn't would match nothing, silently.
+                if modifier.as_deref() != Some("missing") {
+                    let alts = alternatives(&date);
+                    if alts.is_empty() || alts.iter().any(|d| crate::date::fhir_date_range(&parse_date_prefix(d).1).is_none()) {
+                        return Err(format!(
+                            "Invalid date '{date}' for parameter '{param_name}': expected YYYY, YYYY-MM, YYYY-MM-DD or a dateTime"
+                        ));
+                    }
+                }
+                (prefix, date)
             } else if param_type == SearchParamType::Number {
                 let (prefix, number) = parse_number_prefix(&value);
                 // Reject at parse time (a 400), comma-separated alternatives

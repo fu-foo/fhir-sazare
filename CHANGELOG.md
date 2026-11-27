@@ -65,6 +65,12 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
   with 1.88.
 
 ### Behavior changes
+- **JSON only, said so**: a request for another format (`_format=xml`, an `Accept` that
+  takes no JSON) is a 406 — it got JSON back — and a body in another (`Content-Type:
+  text/plain`, XML) a 415 — it was read as JSON whatever it claimed. A form body is
+  accepted for `_search`.
+- A date search value that isn't a date (`date=notadate`, `_lastUpdated=gt20xx`) is a 400;
+  it matched nothing.
 - **Unsupported search syntax is a 400 instead of being ignored.** `_filter`, `_list`,
   `_query`, `_contained`, `_include:iterate`, a malformed or nested `_has`, and unsupported
   modifiers (`:text`, `:below`, `:in`, `:of-type`, `:identifier`, `:exact` on a token, …)

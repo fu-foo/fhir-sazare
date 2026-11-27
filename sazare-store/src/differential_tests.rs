@@ -363,7 +363,9 @@ fn query(rng: &mut Rng, resource_type: &str, patients: usize) -> String {
                 }
             }
             ("Patient", _) => format!("{}:{}={}", rng.pick(&["gender", "birthdate", "family"]), rng.pick(&["missing", "missing", "not"]),
-                                     rng.pick(&["true", "false"])).replace(":not=true", ":not=male").replace(":not=false", ":not=female"),
+                                     rng.pick(&["true", "false"])).replace(":not=true", ":not=male").replace(":not=false", ":not=female")
+                                     // A date's :not takes a date (a word is a 400 now).
+                                     .replace("birthdate:not=male", "birthdate:not=1980").replace("birthdate:not=female", "birthdate:not=1990-05"),
             (_, 0) => format!("status={}", if rng.chance(30) { "final,amended".into() } else { rng.pick(STATUSES).to_string() }),
             (_, 1) => match rng.below(4) {
                 0 => format!("code={LOINC}|{}", rng.pick(CODES)),
