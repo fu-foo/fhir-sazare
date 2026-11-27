@@ -649,9 +649,11 @@ async fn serve(args: Vec<String>) {
         tracing::info!("Listening on https://{}", bind_addr);
 
         let tls_listener = sazare_server::tls::TlsListener::new(listener, acceptor);
-        let app = app.layer(axum::middleware::from_fn(
-            sazare_server::tls::propagate_connect_info,
-        ));
+        let app = app
+            .layer(axum::middleware::from_fn(sazare_server::tls::mark_https))
+            .layer(axum::middleware::from_fn(
+                sazare_server::tls::propagate_connect_info,
+            ));
         let server = axum::serve(
             tls_listener,
             app.into_make_service_with_connect_info::<sazare_server::tls::TlsConnectInfo>(),

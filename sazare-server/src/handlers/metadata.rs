@@ -98,7 +98,11 @@ fn terminology_capabilities() -> Value {
 pub async fn capability_statement(
     State(state): State<Arc<AppState>>,
     Query(query): Query<MetadataQuery>,
+    headers: axum::http::HeaderMap,
 ) -> Json<Value> {
+    // The address clients reach this server at (proxy headers honored; https
+    // under the built-in TLS), not the bind address (0.0.0.0 in Docker).
+    let base = super::base_url_from_headers(&headers);
     if query.mode.as_deref() == Some("terminology") {
         return Json(terminology_capabilities());
     }
@@ -141,7 +145,7 @@ pub async fn capability_statement(
         .collect();
 
     // Build security section
-    let security = build_security_section(&state.config);
+    let security = build_security_section(&state.config, &base);
 
     let mut rest = json!({
         "mode": "server",
@@ -184,38 +188,32 @@ pub async fn capability_statement(
         },
         "implementation": {
             "description": "fhir-sazare - Lightweight FHIR R4 Server",
-            "url": format!("http://{}:{}", state.config.server.host, state.config.server.port),
+            "url": base,
         },
         "rest": [rest]
     }))
 }
 
 /// Build the security section for CapabilityStatement based on auth config
-fn build_security_section(config: &crate::config::ServerConfig) -> Option<Value> {
+fn build_security_section(config: &crate::config::ServerConfig, base_url: &str) -> Option<Value> {
     if !config.auth.enabled {
         return None;
     }
 
     if config.auth.jwt.is_some() {
-        // SMART on FHIR OAuth security
-        let base_url = format!(
-            "http://{}:{}",
-            config.server.host, config.server.port
-        );
-        Some(json!({
-            "extension": [{
-                "url": "http://fhir-registry.smarthealthit.org/StructureDefinition/oauth-uris",
-                "extension": [
-                    {
-                        "url": "authorize",
-                        "valueUri": "(external - configure in IdP)"
-                    },
-                    {
-                        "url": "token",
-                        "valueUri": "(external - configure in IdP)"
-                    }
-                ]
-            }],
+        // SMART on FHIR OAuth security. The OAuth endpoints are the
+        // identity provider's (from its issuer) or, for Backend Services,
+        // this server's /token; one not known isn't listed (a valueUri must
+        // be a URI).
+        let (authorize, token) = oauth_endpoints(config, base_url);
+        let mut uris = Vec::new();
+        if let Some(a) = authorize {
+            uris.push(json!({"url": "authorize", "valueUri": a}));
+        }
+        if let Some(t) = token {
+            uris.push(json!({"url": "token", "valueUri": t}));
+        }
+        let mut section = json!({
             "service": [
                 {
                     "coding": [{
@@ -229,7 +227,14 @@ fn build_security_section(config: &crate::config::ServerConfig) -> Option<Value>
                 "OAuth2/SMART on FHIR with JWT validation. SMART configuration: {}/.well-known/smart-configuration",
                 base_url
             )
-        }))
+        });
+        if !uris.is_empty() {
+            section["extension"] = json!([{
+                "url": "http://fhir-registry.smarthealthit.org/StructureDefinition/oauth-uris",
+                "extension": uris
+            }]);
+        }
+        Some(section)
     } else {
         // Basic/API Key only
         let mut services = vec![];
@@ -260,8 +265,23 @@ fn build_security_section(config: &crate::config::ServerConfig) -> Option<Value>
     }
 }
 
+/// The OAuth authorize and token endpoints: from the identity provider's
+/// issuer, the configured token endpoint, or this server's `/token` when it
+/// issues tokens itself (Backend Services).
+fn oauth_endpoints(config: &crate::config::ServerConfig, base_url: &str) -> (Option<String>, Option<String>) {
+    let jwt = config.auth.jwt.as_ref();
+    let issuer = jwt.and_then(|j| j.issuer.clone());
+    let authorize = issuer.as_ref().map(|i| format!("{i}/authorize"));
+    let token = match config.auth.smart.as_ref() {
+        Some(s) => Some(s.token_endpoint.clone().unwrap_or_else(|| format!("{base_url}/token"))),
+        None => issuer.map(|i| format!("{i}/token")),
+    };
+    (authorize, token)
+}
+
 /// SMART on FHIR configuration endpoint (GET /.well-known/smart-configuration)
-pub async fn smart_configuration(State(state): State<Arc<AppState>>) -> Json<Value> {
+pub async fn smart_configuration(State(state): State<Arc<AppState>>, headers: axum::http::HeaderMap) -> Json<Value> {
+    let base = super::base_url_from_headers(&headers);
     let jwt_settings = state.config.auth.jwt.as_ref();
     let smart = state.config.auth.smart.as_ref();
 
@@ -274,7 +294,7 @@ pub async fn smart_configuration(State(state): State<Arc<AppState>>) -> Json<Val
         s.token_endpoint
             .clone()
             .or_else(|| jwt_settings.and_then(|j| j.issuer.clone()).map(|i| format!("{i}/token")))
-            .unwrap_or_else(|| "/token".to_string())
+            .unwrap_or_else(|| format!("{base}/token"))
     });
 
     let mut capabilities = vec![

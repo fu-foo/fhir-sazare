@@ -23,6 +23,12 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
 - A Bundle entry's `request.ifMatch` was ignored, so a transaction or batch `PUT` /
   `DELETE` replaced whatever version was current. A transaction now fails as a whole
   (412) when an entry's version isn't current; a batch fails that entry (412).
+- URLs the server builds follow the request everywhere: the Bulk Data manifest and status
+  URL ignored `X-Forwarded-Host`; the CapabilityStatement's `implementation.url` and the
+  SMART description used the bind address (`http://0.0.0.0:8080` in Docker), and `http`
+  under the built-in TLS. Under TLS, a request without `X-Forwarded-Proto` is taken as
+  https. The CapabilityStatement's OAuth endpoints are the identity provider's (or this
+  server's `/token`) instead of a placeholder that wasn't a URI.
 - **A delete is a version in the history.** `DELETE` removed the current resource and
   left no trace in `_history`; it now records a version (the store's schema moves to 3),
   listed as a `DELETE` entry, and a vread of it answers 410. A re-create continues after

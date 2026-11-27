@@ -122,6 +122,16 @@ pub async fn propagate_connect_info(
     next.run(req).await
 }
 
+/// Under the built-in TLS, a request without `X-Forwarded-Proto` came over
+/// https: say so, so every URL built from the request (links, Location,
+/// the CapabilityStatement) is https.
+pub async fn mark_https(mut req: axum::extract::Request, next: axum::middleware::Next) -> axum::response::Response {
+    if !req.headers().contains_key("x-forwarded-proto") {
+        req.headers_mut().insert("x-forwarded-proto", axum::http::HeaderValue::from_static("https"));
+    }
+    next.run(req).await
+}
+
 /// Load TLS certificate and private key, returning a `TlsAcceptor`.
 pub fn load_tls_acceptor(
     cert_path: &str,

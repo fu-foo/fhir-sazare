@@ -2231,3 +2231,28 @@ async fn test_bundle_if_match() {
     assert!(b["entry"][0]["response"]["status"].as_str().unwrap().starts_with("412"), "{b}");
     assert_eq!(family("b").await, "B2");
 }
+
+/// Every URL the server builds is the one clients reach it at (proxy headers
+/// honored), not its bind address: the CapabilityStatement and the Bulk
+/// Data manifest included.
+#[tokio::test]
+async fn test_urls_follow_the_request() {
+    let (base, _dir) = start_test_server().await;
+    let c = reqwest::Client::new();
+    let proxied = |url: String| c.get(url).header("X-Forwarded-Proto", "https").header("X-Forwarded-Host", "fhir.example.org");
+    let caps: Value = proxied(format!("{base}/metadata")).send().await.unwrap().json().await.unwrap();
+    assert_eq!(caps["implementation"]["url"], "https://fhir.example.org");
+    let r = proxied(format!("{base}/$export")).header("Prefer", "respond-async").send().await.unwrap();
+    assert_eq!(r.status(), 202);
+    let status = r.headers()["content-location"].to_str().unwrap().to_string();
+    assert!(status.starts_with("https://fhir.example.org/"), "{status}");
+    let path = status.trim_start_matches("https://fhir.example.org");
+    let manifest = loop {
+        let r = proxied(format!("{base}{path}")).send().await.unwrap();
+        if r.status() == 200 {
+            break r.json::<Value>().await.unwrap();
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    };
+    assert!(manifest["request"].as_str().unwrap().starts_with("https://fhir.example.org/"), "{manifest}");
+}

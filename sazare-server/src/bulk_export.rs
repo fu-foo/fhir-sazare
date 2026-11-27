@@ -230,18 +230,6 @@ impl Drop for ExportJobs {
     }
 }
 
-fn base_url(headers: &HeaderMap) -> String {
-    let host = headers
-        .get(header::HOST)
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("localhost:8080");
-    let scheme = headers
-        .get("x-forwarded-proto")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("http");
-    format!("{scheme}://{host}")
-}
-
 fn op_outcome(code: &str, diag: String) -> Value {
     json!({
         "resourceType": "OperationOutcome",
@@ -473,7 +461,7 @@ async fn run_export(
     }
 
     // Async path: register a job, build in the background, return 202 + Content-Location.
-    let base = base_url(&headers);
+    let base = crate::handlers::base_url_from_headers(&headers);
     let job_id = uuid::Uuid::new_v4().to_string();
     let transaction_time = chrono::Utc::now().to_rfc3339();
     let request_url = format!("{base}{request_path}");
@@ -635,7 +623,7 @@ pub async fn export_status(
         )
             .into_response(),
         JobStatus::Complete => {
-            let base = base_url(&headers);
+            let base = crate::handlers::base_url_from_headers(&headers);
             let output: Vec<Value> = job
                 .files
                 .iter()

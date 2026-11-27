@@ -22,32 +22,6 @@ const DEFAULT_COUNT: usize = 100;
 /// Upper bound for `_count`, so one request can't load the whole store.
 const MAX_COUNT: usize = 1000;
 
-/// Reconstruct the externally-visible base URL (scheme + authority).
-/// Honors `X-Forwarded-Proto` and `X-Forwarded-Host` so reverse-proxied deploys
-/// (Fly.io, nginx) emit absolute Bundle.link / entry.fullUrl URLs that clients
-/// can resolve back to the same scheme — preventing http→https 301 redirects
-/// when downstream tooling follows the link.
-fn external_base_url(request: &Request) -> String {
-    let headers = request.headers();
-    let scheme = headers
-        .get("x-forwarded-proto")
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.split(',').next().unwrap_or(s).trim().to_string())
-        .unwrap_or_else(|| {
-            request
-                .uri()
-                .scheme_str()
-                .unwrap_or("http")
-                .to_string()
-        });
-    let host = headers
-        .get("x-forwarded-host")
-        .or_else(|| headers.get("host"))
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("localhost");
-    format!("{}://{}", scheme, host)
-}
-
 /// Search (GET /{resource_type}?...)
 pub async fn search(
     State(state): State<Arc<AppState>>,
@@ -56,7 +30,7 @@ pub async fn search(
 ) -> Result<Response, (StatusCode, Json<Value>)> {
     let audit_ctx = AuditContext::from_request(&request);
     let auth_user = request.extensions().get::<AuthUser>().cloned();
-    let base_url = external_base_url(&request);
+    let base_url = super::base_url_from_headers(request.headers());
     // Use the raw (still percent-encoded) query string so that repeated
     // parameters (AND semantics, e.g. `date=ge..&date=le..`) are preserved and
     // values are decoded exactly once by the parser. Going through a
@@ -75,7 +49,7 @@ pub async fn search_post(
 ) -> Result<Response, (StatusCode, Json<Value>)> {
     let audit_ctx = AuditContext::from_request(&request);
     let auth_user = request.extensions().get::<AuthUser>().cloned();
-    let base_url = external_base_url(&request);
+    let base_url = super::base_url_from_headers(request.headers());
 
     let body = request.into_body();
     let bytes = axum::body::to_bytes(body, 16 * 1024 * 1024).await.map_err(|e| {
