@@ -21,6 +21,12 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
 - Building needs Rust 1.88 (the README said 1.85); `rust-version` is set, and CI builds
   with 1.88.
 
+### Changed
+- **The Linux binaries are static (musl)**: they run on any Linux. They needed glibc 2.39
+  (Ubuntu 24.04 or newer), so RHEL 8/9, Ubuntu 20.04/22.04 and Debian 12 couldn't run
+  them. The static builds (and the Docker image) use mimalloc, as musl's allocator is
+  slow under concurrent load.
+
 ### Tests
 - The upgrade check in CI starts from 0.17.0, and from 0.16.0 and 0.12.0 as before.
 

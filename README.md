@@ -114,7 +114,7 @@ sazare-server start --demo --open
 
 **Otherwise, download the binary for your OS** from the
 [latest release](https://github.com/fu-foo/fhir-sazare/releases/latest)
-(macOS Intel/Apple Silicon, Linux x86-64/ARM64, Windows x86-64), then unpack and
+(macOS Intel/Apple Silicon, Linux x86-64/ARM64 — static, any distribution — Windows x86-64), then unpack and
 run it with sample data:
 
 ```bash

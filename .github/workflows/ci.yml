@@ -25,6 +25,26 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo check --all-targets
 
+  # The Linux release build: static (musl), with the same search benchmark
+  # as below (the allocator matters most there).
+  musl:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: musl
+      - run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - run: cargo build --release --target x86_64-unknown-linux-musl
+      - run: file target/x86_64-unknown-linux-musl/release/sazare-server | grep "statically linked"
+      - name: Search benchmark (musl)
+        run: |
+          SAZARE_BIN=target/x86_64-unknown-linux-musl/release/sazare-server MAX_MS=500 \
+            bench/run.sh 10000 5 | tee -a "$GITHUB_STEP_SUMMARY"
+
   # Search benchmark on a 60k-resource synthetic dataset. Timings vary between
   # runners, so the gate is deliberately loose (500ms per query): it exists to
   # catch algorithmic regressions (full scans, O(n*m) joins), which show up as
