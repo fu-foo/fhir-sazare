@@ -47,6 +47,21 @@ into `data_dir`, delete the two `search_index*` files, start the older binary).
 
 ## Version notes
 
+### To 0.17.0
+
+- **The search index is rebuilt once, in the background** (it now holds each resource's
+  patient compartments and its quantities). The old index answers searches until the
+  switch — except quantity searches (and `_sort` by a quantity), which answer 503 until
+  then; patient-scoped searches are as slow as in 0.16 until then. Plan the time (half an
+  hour to an hour per 10M resources) and the disk space for the new index next to the old.
+- **`resources.sqlite` moves to schema version 2** (a change log that lets the index catch
+  up after a crash). To go back to 0.16, restore the backup from step 1.
+- Clients that insisted on `application/json` for `/metadata` or errors now get
+  `application/fhir+json`, as FHIR specifies.
+- `brew services`: the log (`$(brew --prefix)/var/log/sazare.log`) is turned over at
+  50 MB. For `docker run`, add `--log-opt max-size=50m --log-opt max-file=2` (the bundled
+  `docker-compose.yml` has it).
+
 ### To 0.16.0
 
 - **Index rebuilds no longer block startup.** The server answers immediately and builds the

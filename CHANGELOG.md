@@ -4,7 +4,7 @@ All notable changes to sazare. Versions follow [Semantic Versioning](https://sem
 until 1.0, a minor version (0.x.0) may change behavior — those changes are listed under
 **Behavior changes**. See [UPGRADING.md](UPGRADING.md) for how to upgrade.
 
-## Unreleased
+## 0.17.0 — 2026-11-27
 
 ### Fixed
 - Stopping the server while it rebuilt the search index in the background
@@ -14,7 +14,6 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
 - The `latest` Docker image follows releases only. Every push to `main` used to rebuild
   it, so `latest` (used by `docker-compose.yml`) could be an unreleased build; the newest
   `main` is now the `edge` tag.
-
 - FHIR answers are `application/fhir+json`. `/metadata` and every error (400, 401, 403,
   404, …) were `application/json`, which strict clients refuse. What isn't FHIR keeps
   `application/json`: the Bulk Data export manifest, `/health`, `/token`,
@@ -28,13 +27,11 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
   that reads nothing holds at most 64 queued notifications, more are dropped (a
   notification only says "search again"); the server pings each `/ws` connection every
   30 s and closes one that answered nothing for a minute.
-
 - **`$export` no longer holds the export in memory.** It read every resource of the
   server at once and kept the output in memory for an hour — 300k resources took 400 MB
   more, and a large server could run out of memory. A job now writes its files under
   `<data_dir>/exports/` (deleted with the job, and on the next start), and the
   synchronous response is streamed as it is read, a page of resources at a time.
-
 - **A crash no longer leaves the search index behind the store.** The two are separate
   databases; a crash or power loss between a write's two commits left a stored resource
   the index didn't find (a transaction Bundle or an `$import` stored first), or index
@@ -45,7 +42,6 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
   warning).
 - A database written by a newer sazare is refused at startup (migrations are
   forward-only) instead of being opened.
-
 - A background server (`sazare-server start`) turns its log over at 50 MB while it runs
   (`logs/sazare.log.1` holds the one before). It used to do so only when started, so a
   server that ran for months grew one file without end. `SAZARE_LOG_FILE=<path>` gives
@@ -64,6 +60,15 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
   first start rebuilds the search index once, in the background. On an index still being
   rebuilt from an older version, a quantity search (or `_sort` by a quantity) answers 503
   until the new one is ready.
+
+### Behavior changes
+- `/metadata` and error responses are `application/fhir+json` instead of
+  `application/json` (see Fixed).
+- The resource store's schema moves to version 2 (a change log for the search index).
+  Like every migration it is forward-only: to go back to 0.16, restore the backup taken
+  before upgrading (UPGRADING.md).
+- A `/ws` client that reads nothing gets at most 64 queued notifications; more are
+  dropped.
 
 ### Performance
 - **Writes wait for one disk sync, not three.** The search index no longer syncs each
