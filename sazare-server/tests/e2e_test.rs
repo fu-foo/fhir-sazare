@@ -2480,3 +2480,40 @@ async fn test_concurrent_writes_to_one_resource() {
     assert_eq!(statuses.iter().filter(|s| **s == 200).count(), 1, "{statuses:?}");
     assert!(statuses.iter().all(|s| *s == 200 || *s == 412), "{statuses:?}");
 }
+
+/// A reference to this server by its absolute URL matches like the local
+/// reference (`subject=http://host/Patient/x` = `subject=Patient/x`).
+#[tokio::test]
+async fn test_absolute_reference_to_this_server() {
+    let (base, _dir) = start_test_server().await;
+    let c = reqwest::Client::new();
+    create(&c, &base, "Patient", &json!({"resourceType": "Patient", "id": "x"})).await;
+    create(&c, &base, "Observation", &json!({"resourceType": "Observation", "status": "final", "code": {"text": "t"},
+        "subject": {"reference": "Patient/x"}})).await;
+    for q in [format!("subject={base}/Patient/x"), "subject=Patient/x".into(), format!("subject={base}/Patient/x,Patient/y")] {
+        let b: Value = c.get(format!("{base}/Observation?{q}")).send().await.unwrap().json().await.unwrap();
+        assert_eq!(b["total"], 1, "{q}");
+    }
+    let b: Value = c.get(format!("{base}/Patient?_has:Observation:subject:status=final")).send().await.unwrap().json().await.unwrap();
+    assert_eq!(b["total"], 1);
+}
+
+/// `$export` takes the Bulk Data IG's parameters it supports; anything else,
+/// or a `_type` that isn't an R4 type, is a 400 instead of an export of
+/// something other than what was asked.
+#[tokio::test]
+async fn test_export_parameters_are_checked() {
+    let (base, _dir) = start_test_server().await;
+    let c = reqwest::Client::new();
+    let status = |q: &str| {
+        let c = c.clone();
+        let url = format!("{base}/{q}");
+        async move { c.get(url).send().await.unwrap().status().as_u16() }
+    };
+    for q in ["$export?_type=Foo", "$export?_type=Patient,Foo", "$export?bogus=1", "Patient/$export?patient=x"] {
+        assert_eq!(status(q).await, 400, "{q}");
+    }
+    for q in ["$export?_type=Patient", "$export?_since=2020-01-01T00:00:00Z&_outputFormat=ndjson", "Patient/$export"] {
+        assert_eq!(status(q).await, 200, "{q}");
+    }
+}

@@ -109,6 +109,20 @@ pub(crate) async fn do_search(
         )
     })?;
 
+    // A reference to this server by its absolute URL is the local reference:
+    // `subject=http://host/fhir/Patient/1` is `subject=Patient/1`.
+    let own = format!("{}/", base_url.trim_end_matches('/'));
+    for p in query.parameters.iter_mut().filter(|p| p.param_type == sazare_core::SearchParamType::Reference) {
+        if p.value.contains(&own) {
+            p.value = p.value.split(',').map(|v| v.strip_prefix(&own).unwrap_or(v)).collect::<Vec<_>>().join(",");
+        }
+    }
+    for h in query.has_parameters.iter_mut().filter(|h| h.target_param_type == sazare_core::SearchParamType::Reference) {
+        if h.value.contains(&own) {
+            h.value = h.value.split(',').map(|v| v.strip_prefix(&own).unwrap_or(v)).collect::<Vec<_>>().join(",");
+        }
+    }
+
     // Reject unknown search parameters (FHIR strict handling) rather than
     // silently returning an empty set — but only for resource types we have an
     // explicit parameter registry for, so unmodelled types stay lenient.

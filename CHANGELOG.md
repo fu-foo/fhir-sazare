@@ -7,6 +7,13 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
 ## Unreleased
 
 ### Fixed
+- A reference search by this server's absolute URL (`subject=https://host/fhir/Patient/1`)
+  matches like the local reference; it found nothing.
+- A Subscription whose rest-hook `payload` isn't JSON (`application/fhir+xml`) is
+  refused; it was accepted and then sent empty pings.
+- The CapabilityStatement declares `$validate` on every type and `$everything` on Patient.
+- `$export` refuses parameters it doesn't support (400; they were ignored) and a `_type`
+  that isn't an R4 type (it exported nothing for it, as if there were none).
 - **`log.level` in the configuration took no effect**: only `RUST_LOG` set the log level.
   It does now; `RUST_LOG`, when set, still wins.
 - `docker compose up` failed on a fresh checkout: the compose file mounted a

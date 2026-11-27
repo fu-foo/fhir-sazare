@@ -88,6 +88,14 @@ pub fn validate_subscription(
             if endpoint.is_empty() {
                 return Err("channel.endpoint is required for rest-hook".to_string());
             }
+            // The notification body: none (absent payload) or JSON.
+            if let Some(payload) = channel.get("payload").and_then(|v| v.as_str())
+                && !payload.split(';').next().unwrap_or("").trim().contains("json")
+            {
+                return Err(format!(
+                    "channel.payload '{payload}' is not supported: notifications are sent as application/fhir+json (or leave payload out for an empty ping)"
+                ));
+            }
             match reqwest::Url::parse(endpoint) {
                 Ok(u) if matches!(u.scheme(), "http" | "https") && u.host().is_some() => {}
                 _ => {
@@ -567,6 +575,19 @@ mod tests {
         let mut sub = valid_subscription();
         sub["criteria"] = json!("Observation");
         assert!(validate_subscription(&sub, &registry()).is_ok());
+    }
+
+    #[test]
+    fn test_payload_is_json_or_absent() {
+        // Notifications are JSON (or an empty ping): XML was accepted and
+        // then sent as an empty ping.
+        let mut sub = valid_subscription();
+        for ok in ["application/fhir+json", "application/json; charset=utf-8"] {
+            sub["channel"]["payload"] = json!(ok);
+            assert!(validate_subscription(&sub, &registry()).is_ok(), "{ok}");
+        }
+        sub["channel"]["payload"] = json!("application/fhir+xml");
+        assert!(validate_subscription(&sub, &registry()).unwrap_err().contains("payload"));
     }
 }
 

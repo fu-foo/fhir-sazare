@@ -21,7 +21,7 @@ use std::path::{Path as FsPath, PathBuf};
 use std::sync::Arc;
 
 use axum::{
-    extract::{Extension, Path, Query, State},
+    extract::{Extension, Path, State},
     http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
@@ -80,6 +80,7 @@ fn bulk_forbidden(msg: &str) -> Response {
 /// parameter names (`_type`, `_since`, `_outputFormat`) for serde matching.
 #[derive(Deserialize, Default)]
 #[allow(non_snake_case)]
+#[serde(deny_unknown_fields)]
 pub struct ExportParams {
     /// Comma-separated resource types (e.g. `Patient,Observation`).
     pub _type: Option<String>,
@@ -415,6 +416,30 @@ fn streamed(rx: tokio::sync::mpsc::Receiver<Result<Vec<u8>, std::io::Error>>) ->
     }))
 }
 
+/// The kick-off's parameters: those of the Bulk Data IG this server knows,
+/// anything else (or a `_type` that isn't an R4 type) a 400 rather than an
+/// export of something other than what was asked.
+#[allow(clippy::result_large_err)]
+fn export_params(raw: Option<String>) -> Result<ExportParams, Response> {
+    let params: ExportParams = serde_urlencoded::from_str(raw.as_deref().unwrap_or("")).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(op_outcome("not-supported", format!("$export: {e} (supported: _type, _since, _outputFormat)"))),
+        )
+            .into_response()
+    })?;
+    if let Some(types) = parse_type_filter(&params)
+        && let Some(bad) = types.iter().find(|t| !sazare_core::r4_types::is_resource_type(t))
+    {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(op_outcome("not-supported", format!("_type: '{bad}' is not a FHIR R4 resource type"))),
+        )
+            .into_response());
+    }
+    Ok(params)
+}
+
 fn parse_type_filter(params: &ExportParams) -> Option<Vec<String>> {
     params._type.as_ref().map(|t| {
         t.split(',')
@@ -557,11 +582,15 @@ pub async fn export(
     State(state): State<Arc<AppState>>,
     auth: Option<Extension<AuthUser>>,
     headers: HeaderMap,
-    Query(params): Query<ExportParams>,
+    axum::extract::RawQuery(raw): axum::extract::RawQuery,
 ) -> Response {
     if let Err(resp) = authorize_bulk(&auth, "read") {
         return resp;
     }
+    let params = match export_params(raw) {
+        Ok(p) => p,
+        Err(resp) => return resp,
+    };
     run_export(state, headers, ExportScope::System, "/$export", params).await
 }
 
@@ -570,11 +599,15 @@ pub async fn patient_export(
     State(state): State<Arc<AppState>>,
     auth: Option<Extension<AuthUser>>,
     headers: HeaderMap,
-    Query(params): Query<ExportParams>,
+    axum::extract::RawQuery(raw): axum::extract::RawQuery,
 ) -> Response {
     if let Err(resp) = authorize_bulk(&auth, "read") {
         return resp;
     }
+    let params = match export_params(raw) {
+        Ok(p) => p,
+        Err(resp) => return resp,
+    };
     run_export(
         state,
         headers,
@@ -591,11 +624,15 @@ pub async fn group_export(
     auth: Option<Extension<AuthUser>>,
     Path(group_id): Path<String>,
     headers: HeaderMap,
-    Query(params): Query<ExportParams>,
+    axum::extract::RawQuery(raw): axum::extract::RawQuery,
 ) -> Response {
     if let Err(resp) = authorize_bulk(&auth, "read") {
         return resp;
     }
+    let params = match export_params(raw) {
+        Ok(p) => p,
+        Err(resp) => return resp,
+    };
     // Load the Group and collect its member Patient ids.
     let group = match state.store.get("Group", &group_id) {
         Ok(Some(data)) => match serde_json::from_slice::<Value>(&data) {

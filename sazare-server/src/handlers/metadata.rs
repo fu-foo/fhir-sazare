@@ -103,10 +103,14 @@ pub async fn capability_statement(
             if !profiles.is_empty() {
                 entry["supportedProfile"] = json!(profiles);
             }
-            let ops = bulk_export_operations_for(rt);
-            if !ops.is_empty() {
-                entry["operation"] = json!(ops);
+            // Every type has $validate; Patient $everything; Patient and Group
+            // the Bulk Data exports.
+            let mut ops = vec![json!({"name": "validate", "definition": "http://hl7.org/fhir/OperationDefinition/Resource-validate"})];
+            if rt == "Patient" {
+                ops.push(json!({"name": "everything", "definition": "http://hl7.org/fhir/OperationDefinition/Patient-everything"}));
             }
+            ops.extend(bulk_export_operations_for(rt));
+            entry["operation"] = json!(ops);
             entry
         })
         .collect();
