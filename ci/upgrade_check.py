@@ -173,12 +173,14 @@ def status(path):
         return e.code
 
 
-# A search only the new index can answer (quantity): 503 while the old one serves.
+# Quantities: an old index without them (before 0.17) answers 503 while it
+# serves; one with them (OLD_HAS_QUANTITIES=1) answers.
+want_quantity = 200 if os.environ.get("OLD_HAS_QUANTITIES") == "1" else 503
 if get("health").get("index", {}).get("state") == "rebuilding":
     for q in ("Observation?value-quantity=gt0", "Observation?_sort=-value-quantity"):
         code = status(q)
-        if code != 503 and get("health").get("index", {}).get("state") == "rebuilding":
-            sys.exit(f"{q} during the rebuild answered {code}, not 503")
+        if code != want_quantity and get("health").get("index", {}).get("state") == "rebuilding":
+            sys.exit(f"{q} during the rebuild answered {code}, not {want_quantity}")
         print(f"{q} during the rebuild: {code}")
 # A write while the rebuild runs: replayed into the new index.
 req = urllib.request.Request(f"{BASE}/Patient/upgrade-check", method="PUT",

@@ -116,7 +116,10 @@ jobs:
           gh release download v0.17.0 -p sazare-server-linux-amd64.tar.gz -D "$RUNNER_TEMP/old"
           tar -xzf "$RUNNER_TEMP/old/sazare-server-linux-amd64.tar.gz" -C "$RUNNER_TEMP/old"
           find "$RUNNER_TEMP/old" -name sazare-server -type f
+      # 0.17's index has quantities: they keep answering during a rebuild.
       - run: python3 ci/upgrade_check.py "$(find "$RUNNER_TEMP/old" -name sazare-server -type f | head -1)" target/release/sazare-server 2000
+        env:
+          OLD_HAS_QUANTITIES: "1"
       # Index format 3 (no compartments or quantities) and store schema 1.
       - name: Upgrade from 0.16.0
         env:
