@@ -65,6 +65,13 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
   with 1.88.
 
 ### Behavior changes
+- **Resources are checked against the R4 definitions of their shape.** An element the
+  type doesn't define (`"bogusField"`, a misspelled `nmae`, `deceasedString`), a value of
+  the wrong JSON type (`"gender": 5`), a list where the element has one value or one
+  value where it repeats — all were stored as sent. They are now a 400 naming each (the
+  first 20), on every write: REST, Bundles, `$import`. All 2912 R4 examples pass. Not
+  checked: minimum cardinality, value formats beyond the JSON type, invariants. Writes
+  are about 5% slower.
 - **JSON only, said so**: a request for another format (`_format=xml`, an `Accept` that
   takes no JSON) is a 406 — it got JSON back — and a body in another (`Content-Type:
   text/plain`, XML) a 415 — it was read as JSON whatever it claimed. A form body is

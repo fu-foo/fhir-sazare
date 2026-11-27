@@ -6,6 +6,7 @@
 
 pub mod bindings;
 pub mod phase1;
+pub mod structure;
 pub mod phase2;
 pub mod phase3;
 pub mod registry;
@@ -121,6 +122,8 @@ fn validate_declared(
 ) -> Result<ValidationResult, OperationOutcome> {
     // Phase 1: Required fields, types, cardinality
     phase1::Phase1Validator::validate(resource)?;
+    // The shape the R4 definitions give it: known elements, lists, JSON types.
+    structure::validate(resource)?;
 
     // Phase 2: Extension validation + Profile-based validation
     let phase2_warnings = phase2::Phase2Validator::validate(resource, profile_registry)?;
