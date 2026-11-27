@@ -1,0 +1,146 @@
+Account	id	meta	implicitRules	identifier	status	type	name	subject	servicePeriod	coverage	owner	description
+ActivityDefinition	id	meta	implicitRules	url	identifier	version	name	title	status	experimental	date	publisher	contact	description	useContext	jurisdiction	effectivePeriod	kind	code	doNotPerform
+AdverseEvent	id	meta	implicitRules	identifier	actuality	category	event	subject	encounter	date	detected	recordedDate	resultingCondition	location	seriousness	severity	outcome	recorder	contributor	suspectEntity	subjectMedicalHistory	referenceDocument	study
+AllergyIntolerance	id	meta	implicitRules	identifier	clinicalStatus	verificationStatus	type	category	criticality	code	patient	asserter
+Appointment	id	meta	implicitRules	identifier	status	cancelationReason	serviceCategory	serviceType	specialty	appointmentType	reasonCode	start	end
+AppointmentResponse	id	meta	implicitRules	identifier	appointment	participantType	actor	participantStatus
+AuditEvent	id	meta	implicitRules	type	subtype	action	recorded	outcome	outcomeDesc	purposeOfEvent
+Basic	id	meta	implicitRules	identifier	code	subject	created	author
+Binary	id	meta	implicitRules	contentType	securityContext
+BiologicallyDerivedProduct	id	meta	implicitRules	identifier
+BodyStructure	id	meta	implicitRules	identifier	active	morphology	location	description	patient
+Bundle	id	meta	implicitRules	identifier	type	timestamp	total	link	entry	signature
+CapabilityStatement	id	meta	implicitRules	url	version	name	title	status	experimental	date	publisher	contact	useContext	jurisdiction	kind	instantiates	imports	software	implementation	fhirVersion	format	patchFormat	implementationGuide	rest	messaging	document
+CarePlan	id	meta	implicitRules	identifier	instantiatesCanonical	instantiatesUri	basedOn	replaces	partOf	status	intent	category	title	description	subject	encounter	period	created	author	addresses
+CareTeam	id	meta	implicitRules	identifier	status	category	name	subject	encounter	period	managingOrganization
+CatalogEntry	id	meta	implicitRules	identifier	orderable	referencedItem
+ChargeItem	id	meta	implicitRules	identifier	status	code	subject	context	occurrenceDateTime	occurrencePeriod	occurrenceTiming	quantity	bodysite	enterer	enteredDate	account
+ChargeItemDefinition	id	meta	implicitRules	url	identifier	version	title	derivedFromUri	partOf	replaces	status	experimental	date	publisher	contact	description	useContext	jurisdiction	effectivePeriod	code
+Claim	id	meta	implicitRules	status	type	use	patient	billablePeriod	created	insurer	provider	priority	insurance
+ClaimResponse	id	meta	implicitRules	status	type	use	patient	created	insurer	request	outcome	total
+ClinicalImpression	id	meta	implicitRules	identifier	status	code	description	subject	encounter	effectiveDateTime	effectivePeriod	date	assessor	problem
+CodeSystem	id	meta	implicitRules	url	identifier	version	name	title	status	experimental	date	publisher	contact	useContext	jurisdiction	caseSensitive	valueSet	hierarchyMeaning	compositional	versionNeeded	content	supplements	count	filter	property
+Communication	id	meta	implicitRules	identifier	instantiatesCanonical	instantiatesUri	basedOn	partOf	status	statusReason	priority	subject	encounter	reasonCode	reasonReference
+CommunicationRequest	id	meta	implicitRules	identifier	basedOn	replaces	groupIdentifier	status	priority	doNotPerform	encounter	occurrenceDateTime	occurrencePeriod	authoredOn	requester	sender	reasonCode	reasonReference
+CompartmentDefinition	id	meta	implicitRules	url	version	name	status	experimental	date	publisher	contact	useContext	code	search	resource
+Composition	id	meta	implicitRules	identifier	status	type	category	subject	encounter	date	author	title	confidentiality	custodian	event
+ConceptMap	id	meta	implicitRules	url	identifier	version	name	title	status	experimental	date	publisher	contact	useContext	jurisdiction	sourceUri	sourceCanonical	targetUri	targetCanonical
+Condition	id	meta	implicitRules	identifier	clinicalStatus	verificationStatus	code	bodySite	subject	encounter	onsetDateTime	onsetAge	onsetPeriod	onsetRange	onsetString	recordedDate	recorder	asserter
+Consent	id	meta	implicitRules	identifier	status	scope	category	patient	dateTime	performer	organization	sourceAttachment	sourceReference	policyRule	verification	provision
+Contract	id	meta	implicitRules	identifier	version	status	issued	applies	subject	name	title	type	subType
+Coverage	id	meta	implicitRules	identifier	status	type	policyHolder	subscriber	subscriberId	beneficiary	dependent	period	payor	order	network
+CoverageEligibilityRequest	id	meta	implicitRules	status	purpose	patient	created	insurer
+CoverageEligibilityResponse	id	meta	implicitRules	status	purpose	patient	created	request	outcome	insurer
+DetectedIssue	id	meta	implicitRules	identifier	status	code	severity	patient	identifiedDateTime	identifiedPeriod	author	implicated
+Device	id	meta	implicitRules	udiCarrier	status	safety
+DeviceDefinition	id	meta	implicitRules	safety	parentDevice
+DeviceMetric	id	meta	implicitRules	identifier	type	unit	source	parent	operationalStatus	color	category	measurementPeriod	calibration
+DeviceRequest	id	meta	implicitRules	identifier	instantiatesCanonical	instantiatesUri	basedOn	priorRequest	groupIdentifier	status	intent	priority	codeReference	codeCodeableConcept	subject	encounter	occurrenceDateTime	occurrencePeriod	occurrenceTiming	authoredOn	requester	performerType	performer	reasonCode	reasonReference
+DeviceUseStatement	id	meta	implicitRules	identifier	basedOn	status	subject	derivedFrom	timingTiming	timingPeriod	timingDateTime	recordedOn	source	device	reasonCode	reasonReference	bodySite
+DiagnosticReport	id	meta	implicitRules	identifier	status	category	code	subject	encounter	effectiveDateTime	effectivePeriod	issued	performer	resultsInterpreter	media
+DocumentManifest	id	meta	implicitRules	masterIdentifier	identifier	status	type	subject	author	description	content
+DocumentReference	id	meta	implicitRules	masterIdentifier	identifier	status	docStatus	type	category	subject	date	author	relatesTo	description	securityLabel	content	context
+EffectEvidenceSynthesis	id	meta	implicitRules	url	identifier	version	name	title	status	date	publisher	contact	description	useContext	jurisdiction	effectivePeriod	population	exposure	exposureAlternative	outcome	effectEstimate
+Encounter	id	meta	implicitRules	identifier	status	class	type	serviceType	subject	episodeOfCare	participant	appointment	reasonCode	reasonReference	diagnosis
+Endpoint	id	meta	implicitRules	identifier	status	connectionType	name	managingOrganization	period	payloadType	payloadMimeType	address
+EnrollmentRequest	id	meta	implicitRules	status
+EnrollmentResponse	id	meta	implicitRules	status
+EpisodeOfCare	id	meta	implicitRules	status	type	diagnosis	patient	managingOrganization	period
+EventDefinition	id	meta	implicitRules	url	identifier	version	name	title	status	experimental	date	publisher	contact	useContext	jurisdiction	approvalDate	lastReviewDate	effectivePeriod	trigger
+Evidence	id	meta	implicitRules	url	identifier	version	name	title	status	date	publisher	contact	description	useContext	jurisdiction	effectivePeriod	exposureBackground	exposureVariant	outcome
+EvidenceVariable	id	meta	implicitRules	url	identifier	version	name	title	shortTitle	status	date	publisher	contact	description	useContext	jurisdiction	effectivePeriod	type	characteristic
+ExampleScenario	id	meta	implicitRules	url	identifier	version	name	status	experimental	date	publisher	contact	useContext	jurisdiction
+ExplanationOfBenefit	id	meta	implicitRules	status	type	use	patient	billablePeriod	created	insurer	provider	outcome	insurance	total
+FamilyMemberHistory	id	meta	implicitRules	identifier	instantiatesCanonical	instantiatesUri	status	dataAbsentReason	patient	date	name	relationship	sex	ageAge	ageRange	ageString	estimatedAge	deceasedBoolean	deceasedAge	deceasedRange	deceasedDate	deceasedString	reasonCode	reasonReference
+Flag	id	meta	implicitRules	identifier	status	category	code	subject	period	encounter	author
+Goal	id	meta	implicitRules	lifecycleStatus	achievementStatus	category	priority	description	subject	startDate	startCodeableConcept	statusDate	expressedBy
+GraphDefinition	id	meta	implicitRules	url	version	name	status	experimental	date	publisher	contact	useContext	jurisdiction	start
+Group	id	meta	implicitRules	identifier	active	type	actual	code	name	quantity	managingEntity
+GuidanceResponse	id	meta	implicitRules	requestIdentifier	identifier	moduleUri	moduleCanonical	moduleCodeableConcept	status
+HealthcareService	id	meta	implicitRules	identifier	active	providedBy	category	type	specialty	location	name	comment	photo
+ImagingStudy	id	meta	implicitRules	identifier	status	modality	subject	encounter	started	basedOn	referrer	interpreter	endpoint	numberOfSeries	numberOfInstances	procedureReference	procedureCode	location	reasonCode	reasonReference	note	description	series
+Immunization	id	meta	implicitRules	status	vaccineCode	patient	occurrenceDateTime	occurrenceString	primarySource	performer	note	isSubpotent
+ImmunizationEvaluation	id	meta	implicitRules	status	patient	targetDisease	immunizationEvent	doseStatus
+ImmunizationRecommendation	id	meta	implicitRules	identifier	patient	date	recommendation
+ImplementationGuide	id	meta	implicitRules	url	version	name	title	status	experimental	date	publisher	contact	useContext	jurisdiction	packageId	license	fhirVersion	dependsOn	global
+InsurancePlan	id	meta	implicitRules	identifier	status	type	name	ownedBy	administeredBy	coverageArea
+Invoice	id	meta	implicitRules	identifier	status	type	subject	recipient	date	totalNet	totalGross
+Library	id	meta	implicitRules	url	identifier	version	name	title	status	experimental	type	date	publisher	contact	description	useContext	jurisdiction	effectivePeriod	content
+Linkage	id	meta	implicitRules	active	author	item
+List	id	meta	implicitRules	status	mode	title	code	subject	date	source
+Location	id	meta	implicitRules	identifier	status	operationalStatus	name	description	mode	type	physicalType	managingOrganization
+Measure	id	meta	implicitRules	url	identifier	version	name	title	status	experimental	date	publisher	contact	description	useContext	jurisdiction	effectivePeriod	disclaimer	scoring	compositeScoring	type	riskAdjustment	rateAggregation	rationale	clinicalRecommendationStatement	improvementNotation	definition	guidance
+MeasureReport	id	meta	implicitRules	identifier	status	type	measure	subject	date	reporter	period	improvementNotation
+Media	id	meta	implicitRules	identifier	basedOn	partOf	status	type	modality	view	subject	encounter	createdDateTime	createdPeriod	issued	operator	reasonCode	bodySite	deviceName	device	height	width	frames	duration	content
+Medication	id	meta	implicitRules	identifier	code	status	manufacturer	amount
+MedicationAdministration	id	meta	implicitRules	instantiates	partOf	status	medicationCodeableConcept	medicationReference	subject	effectiveDateTime	effectivePeriod	performer
+MedicationDispense	id	meta	implicitRules	status	medicationCodeableConcept	medicationReference	subject	whenPrepared
+MedicationKnowledge	id	meta	implicitRules	code	status	manufacturer	amount	synonym
+MedicationRequest	id	meta	implicitRules	status	intent	priority	doNotPerform	reportedBoolean	reportedReference	medicationCodeableConcept	medicationReference	subject	authoredOn	requester	performerType	instantiatesCanonical	instantiatesUri	basedOn	groupIdentifier
+MedicationStatement	id	meta	implicitRules	identifier	basedOn	partOf	status	category	medicationCodeableConcept	medicationReference	subject	context	effectiveDateTime	effectivePeriod	dateAsserted
+MedicinalProduct	id	meta	implicitRules	identifier	type	domain	combinedPharmaceuticalDoseForm	legalStatusOfSupply	additionalMonitoringIndicator	specialMeasures	paediatricUseIndicator	productClassification	marketingStatus	pharmaceuticalProduct	packagedMedicinalProduct	attachedDocument	masterFile	contact	clinicalTrial	name	crossReference	manufacturingBusinessOperation	specialDesignation
+MedicinalProductAuthorization	id	meta	implicitRules	identifier	subject	country	jurisdiction	status	statusDate	restoreDate	validityPeriod	dataExclusivityPeriod	dateOfFirstAuthorization	internationalBirthDate	legalBasis	jurisdictionalAuthorization	holder	regulator	procedure
+MedicinalProductContraindication	id	meta	implicitRules	subject	disease	diseaseStatus	comorbidity	therapeuticIndication	otherTherapy	population
+MedicinalProductIndication	id	meta	implicitRules	subject	diseaseSymptomProcedure	diseaseStatus	comorbidity	intendedEffect	duration	otherTherapy	undesirableEffect	population
+MedicinalProductIngredient	id	meta	implicitRules	identifier	role	allergenicIndicator	manufacturer	specifiedSubstance	substance
+MedicinalProductInteraction	id	meta	implicitRules	subject	description	interactant	type	effect	incidence	management
+MedicinalProductManufactured	id	meta	implicitRules	manufacturedDoseForm	unitOfPresentation	quantity	manufacturer	ingredient	physicalCharacteristics	otherCharacteristics
+MedicinalProductPackaged	id	meta	implicitRules	identifier	subject	description	legalStatusOfSupply	marketingStatus	marketingAuthorization	manufacturer	batchIdentifier	packageItem
+MedicinalProductPharmaceutical	id	meta	implicitRules	identifier	administrableDoseForm	unitOfPresentation	ingredient	device	characteristics	routeOfAdministration
+MedicinalProductUndesirableEffect	id	meta	implicitRules	subject	symptomConditionEffect	classification	frequencyOfOccurrence	population
+MessageDefinition	id	meta	implicitRules	url	identifier	version	name	title	replaces	status	experimental	date	publisher	contact	description	useContext	jurisdiction	purpose	base	parent	eventCoding	eventUri	category	focus
+MessageHeader	id	meta	implicitRules	eventCoding	eventUri	destination	sender	enterer	author	source	responsible	reason	response	focus	definition
+MolecularSequence	id	meta	implicitRules	identifier	type	coordinateSystem	patient	specimen	device	performer	quantity	referenceSeq	variant	observedSeq	quality	readCoverage	repository	pointer	structureVariant
+NamingSystem	id	meta	implicitRules	name	status	kind	date	publisher	contact	useContext	jurisdiction	uniqueId
+NutritionOrder	id	meta	implicitRules	instantiatesCanonical	instantiatesUri	status	intent	patient	dateTime	orderer
+Observation	id	meta	implicitRules	identifier	basedOn	partOf	status	code	subject	focus	encounter	effectiveDateTime	effectivePeriod	effectiveTiming	effectiveInstant	issued	performer	valueQuantity	valueCodeableConcept	valueString	valueBoolean	valueInteger	valueRange	valueRatio	valueSampledData	valueTime	valueDateTime	valuePeriod	hasMember	derivedFrom	component
+ObservationDefinition	id	meta	implicitRules	category	code	identifier
+OperationDefinition	id	meta	implicitRules	url	version	name	title	status	kind	experimental	date	publisher	contact	useContext	jurisdiction	affectsState	code	base	resource	system	type	instance
+OperationOutcome	id	meta	implicitRules	issue
+Organization	id	meta	implicitRules	identifier	active	type	name	partOf
+OrganizationAffiliation	id	meta	implicitRules	identifier	active	period	organization	participatingOrganization	network	code	specialty	location	telecom
+Parameters	id	meta	implicitRules	parameter
+Patient	id	meta	implicitRules	identifier	active	name	telecom	gender	birthDate	deceasedBoolean	deceasedDateTime	address	managingOrganization	link
+PaymentNotice	id	meta	implicitRules	status	created	payment	recipient	amount
+PaymentReconciliation	id	meta	implicitRules	status	period	created	paymentIssuer	paymentDate	paymentAmount
+Person	id	meta	implicitRules	name	telecom	gender	birthDate	managingOrganization	active
+PlanDefinition	id	meta	implicitRules	url	identifier	version	name	title	type	status	experimental	date	publisher	contact	description	useContext	jurisdiction	effectivePeriod
+Practitioner	id	meta	implicitRules	identifier	active	name	telecom	address	gender	birthDate
+PractitionerRole	id	meta	implicitRules	identifier	active	period	practitioner	organization	code	specialty	location	telecom
+Procedure	id	meta	implicitRules	identifier	instantiatesCanonical	instantiatesUri	basedOn	partOf	status	statusReason	category	code	subject	encounter	performedDateTime	performedPeriod	performedString	performedAge	performedRange	recorder	asserter	performer	location	reasonCode	reasonReference	bodySite	outcome
+Provenance	id	meta	implicitRules	target	recorded
+Questionnaire	id	meta	implicitRules	url	identifier	version	name	title	status	experimental	subjectType	date	publisher	contact	useContext	jurisdiction	effectivePeriod	code
+QuestionnaireResponse	id	meta	implicitRules	identifier	basedOn	partOf	questionnaire	status	subject	encounter	authored	author	source
+RelatedPerson	id	meta	implicitRules	identifier	active	patient	relationship	name	telecom	gender	birthDate	address
+RequestGroup	id	meta	implicitRules	identifier	instantiatesCanonical	instantiatesUri	groupIdentifier	status	intent	priority	code
+ResearchDefinition	id	meta	implicitRules	url	identifier	version	name	title	status	experimental	date	publisher	contact	description	useContext	jurisdiction	effectivePeriod	population	exposure	exposureAlternative	outcome
+ResearchElementDefinition	id	meta	implicitRules	url	identifier	version	name	title	shortTitle	status	experimental	date	publisher	contact	description	useContext	jurisdiction	effectivePeriod	type	characteristic
+ResearchStudy	id	meta	implicitRules	identifier	title	protocol	partOf	status	primaryPurposeType	phase	category	focus	condition	contact	keyword	location	enrollment	period	sponsor	principalInvestigator	site	reasonStopped
+ResearchSubject	id	meta	implicitRules	identifier	status	period	study	individual
+RiskAssessment	id	meta	implicitRules	identifier	status	method	code	subject	encounter	occurrenceDateTime	occurrencePeriod	condition	performer
+RiskEvidenceSynthesis	id	meta	implicitRules	url	identifier	version	name	title	status	date	publisher	contact	description	useContext	jurisdiction	effectivePeriod	population	exposure	outcome	riskEstimate
+Schedule	id	meta	implicitRules	identifier	active	serviceCategory	serviceType	specialty	actor	planningHorizon
+SearchParameter	id	meta	implicitRules	url	version	name	status	experimental	date	publisher	contact	description	useContext	jurisdiction	code	base	type
+ServiceRequest	id	meta	implicitRules	identifier	instantiatesCanonical	instantiatesUri	basedOn	replaces	requisition	status	intent	category	priority	doNotPerform	code	orderDetail	quantityQuantity	quantityRatio	quantityRange	subject	encounter	occurrenceDateTime	occurrencePeriod	occurrenceTiming	asNeededBoolean	asNeededCodeableConcept	authoredOn	requester	performerType	performer	locationCode	locationReference	reasonCode	reasonReference	specimen	bodySite	patientInstruction
+Slot	id	meta	implicitRules	identifier	serviceCategory	serviceType	specialty	appointmentType	schedule	status	start	end
+Specimen	id	meta	implicitRules	identifier	accessionIdentifier	status	type	subject	receivedTime	condition
+SpecimenDefinition	id	meta	implicitRules	identifier	typeCollected	patientPreparation	timeAspect	collection
+StructureDefinition	id	meta	implicitRules	url	identifier	version	name	title	status	experimental	date	publisher	contact	useContext	jurisdiction	keyword	fhirVersion	kind	abstract	context	contextInvariant	type	baseDefinition	derivation
+StructureMap	id	meta	implicitRules	url	identifier	version	name	title	status	experimental	date	publisher	contact	useContext	jurisdiction	structure	import	group
+Subscription	id	meta	implicitRules	status	contact	end	reason	criteria	error	channel
+Substance	id	meta	implicitRules	identifier	status	category	code	description	instance	ingredient
+SubstanceNucleicAcid	id	meta	implicitRules	sequenceType	numberOfSubunits	areaOfHybridisation	oligoNucleotideType	subunit
+SubstancePolymer	id	meta	implicitRules	class	geometry	copolymerConnectivity	modification	monomerSet	repeat
+SubstanceProtein	id	meta	implicitRules	sequenceType	numberOfSubunits	disulfideLinkage	subunit
+SubstanceReferenceInformation	id	meta	implicitRules	comment	gene	geneElement	classification	target
+SubstanceSourceMaterial	id	meta	implicitRules	sourceMaterialClass	sourceMaterialType	sourceMaterialState	organismId	organismName	parentSubstanceId	parentSubstanceName	countryOfOrigin	geographicalLocation	developmentStage	fractionDescription	organism	partDescription
+SubstanceSpecification	id	meta	implicitRules	identifier	type	status	domain	description	source	comment	moiety	property	referenceInformation	structure	code	name	molecularWeight	relationship	nucleicAcid	polymer	protein	sourceMaterial
+SupplyDelivery	id	meta	implicitRules	basedOn	partOf	status	occurrenceDateTime	occurrencePeriod	occurrenceTiming
+SupplyRequest	id	meta	implicitRules	identifier	status	category	priority	itemCodeableConcept	itemReference	quantity	occurrenceDateTime	occurrencePeriod	occurrenceTiming	authoredOn	requester	supplier
+Task	id	meta	implicitRules	instantiatesCanonical	instantiatesUri	basedOn	groupIdentifier	partOf	status	statusReason	businessStatus	intent	code	description	focus	for	encounter	executionPeriod	lastModified	requester	owner	location
+TerminologyCapabilities	id	meta	implicitRules	url	version	name	title	status	experimental	date	publisher	contact	useContext	jurisdiction	copyright	kind	software	implementation	lockedDate
+TestReport	id	meta	implicitRules	identifier	name	status	testScript	result	score	tester	issued
+TestScript	id	meta	implicitRules	url	identifier	version	name	title	status	experimental	date	publisher	contact	useContext	jurisdiction
+ValueSet	id	meta	implicitRules	url	identifier	version	name	title	status	experimental	date	publisher	contact	useContext	jurisdiction	immutable
+VerificationResult	id	meta	implicitRules	target	targetLocation	need	status	statusDate	validationType	validationProcess	failureAction
+VisionPrescription	id	meta	implicitRules	status	created	patient	dateWritten	prescriber	lensSpecification

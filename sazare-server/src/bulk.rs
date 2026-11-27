@@ -57,6 +57,10 @@ pub async fn import(
                 tracing::warn!("search index update failed for an $import batch: {e}");
             }
         }
+        if !crate::subscription::SubscriptionManager::any(state) {
+            pending.clear();
+            return;
+        }
         for (u, resource) in pending.drain(..) {
             let state = state.clone();
             tokio::spawn(async move {
@@ -221,12 +225,22 @@ pub async fn import(
         "code": "informational",
         "diagnostics": format!("{} resources imported, {} errors", created, errors.len())
     })];
-    for err in &errors {
+    // The first errors in full; a file with millions of bad lines would make a
+    // response as large as the file. The count above is exact.
+    const LISTED: usize = 100;
+    for err in errors.iter().take(LISTED) {
         let diag = serde_json::to_string(err).unwrap_or_else(|_| "import error".to_string());
         issues.push(json!({
             "severity": "error",
             "code": "processing",
             "diagnostics": diag,
+        }));
+    }
+    if errors.len() > LISTED {
+        issues.push(json!({
+            "severity": "error",
+            "code": "too-costly",
+            "diagnostics": format!("{} more errors not listed (the first {LISTED} are)", errors.len() - LISTED),
         }));
     }
     let response = json!({

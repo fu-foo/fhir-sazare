@@ -127,6 +127,10 @@ impl SubscriptionManager {
         resource_id: &str,
         resource: &Value,
     ) {
+        // No Subscription at all (the common case): nothing to read or match.
+        if !Self::any(state) {
+            return;
+        }
         let subscriptions = match Self::get_active_subscriptions(state) {
             Ok(subs) => subs,
             Err(e) => {
@@ -157,6 +161,11 @@ impl SubscriptionManager {
                 Self::update_subscription_status(state, sub, "error").await;
             }
         }
+    }
+
+    /// Whether any Subscription is stored (a cheap check before the work).
+    pub fn any(state: &AppState) -> bool {
+        state.store.has_type("Subscription").unwrap_or(true)
     }
 
     /// Get all active Subscription resources.
@@ -396,9 +405,8 @@ impl SubscriptionManager {
             {
                 let obj = sub.as_object_mut().unwrap();
                 obj.insert("status".to_string(), serde_json::json!(new_status));
-                if let Some(meta) = obj.get_mut("meta").and_then(|m| m.as_object_mut()) {
-                    meta.insert("versionId".to_string(), serde_json::json!(new_ver));
-                }
+                // versionId and lastUpdated, as every write sets them.
+                crate::handlers::merge_version_meta(obj, &new_ver);
             }
             if let Ok(bytes) = serde_json::to_vec(&sub) {
                 // Compare-and-swap so a concurrent user edit of the Subscription

@@ -122,6 +122,9 @@ pub async fn capability_statement(
                 "versioning": "versioned",
                 "readHistory": true,
                 "conditionalCreate": true,
+                "conditionalUpdate": true,
+                "conditionalDelete": "single",
+                "searchInclude": include_values(&state.search_param_registry, rt),
                 "interaction": interactions,
                 "searchParam": get_search_params_from_registry(&state.search_param_registry, rt),
             });
@@ -320,6 +323,19 @@ pub async fn smart_configuration(State(state): State<Arc<AppState>>) -> Json<Val
 }
 
 /// Generate search parameter metadata from the registry
+/// `_include` values for a type: each of its reference parameters.
+fn include_values(registry: &SearchParamRegistry, resource_type: &str) -> Vec<String> {
+    let mut values: Vec<String> = registry
+        .get_definitions(resource_type)
+        .iter()
+        .filter(|d| d.param_type == sazare_core::SearchParamType::Reference)
+        .map(|d| format!("{resource_type}:{}", d.name))
+        .collect();
+    values.sort();
+    values.dedup();
+    values
+}
+
 fn get_search_params_from_registry(registry: &SearchParamRegistry, resource_type: &str) -> Vec<Value> {
     let defs = registry.get_definitions(resource_type);
     let mut params: Vec<Value> = Vec::new();

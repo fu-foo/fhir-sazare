@@ -23,6 +23,18 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
 - A Bundle entry's `request.ifMatch` was ignored, so a transaction or batch `PUT` /
   `DELETE` replaced whatever version was current. A transaction now fails as a whole
   (412) when an entry's version isn't current; a batch fails that entry (412).
+- `_summary=true` keeps each type's summary elements as R4 defines them; four types had
+  a list, the others a guess (DiagnosticReport lost `issued` and `performer`). Resources
+  returned with `_summary` or `_elements` carry the `SUBSETTED` tag.
+- Writes no longer look for Subscriptions when there are none (an `$import` of 10M
+  resources read the Subscription list 10M times). A Subscription set to `error` gets a
+  new `lastUpdated` with its new version.
+- A panic's message is logged (with where it happened) instead of going to stderr only.
+- `$import` lists the first 100 errors (and how many more); a file of bad lines made a
+  response as large as the file.
+- The CapabilityStatement declares conditional update and delete (`single`) and the
+  `_include` values of each type.
+- Docker: a `HEALTHCHECK` on `GET /health`; `docker-compose.yml` gives a stop 45 s.
 - Building needs Rust 1.88 (the README said 1.85); `rust-version` is set, and CI builds
   with 1.88.
 

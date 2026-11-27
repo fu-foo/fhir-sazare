@@ -5,6 +5,9 @@ services:
     # build: .
     ports:
       - "8080:8080"
+    # A stop lets requests in flight finish for up to 30 s; Docker's default
+    # 10 s would cut them (and the index's last sync point) short.
+    stop_grace_period: 45s
     volumes:
       - sazare-data:/data
       # Your own configuration (the image has a default one): create

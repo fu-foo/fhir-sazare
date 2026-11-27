@@ -125,6 +125,16 @@ impl SqliteStore {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
+    /// Whether any current resource of `resource_type` exists.
+    pub fn has_type(&self, resource_type: &str) -> Result<bool> {
+        let conn = self.reader();
+        Ok(conn.query_row(
+            "SELECT EXISTS (SELECT 1 FROM resources WHERE resource_type = ?1)",
+            params![resource_type],
+            |r| r.get(0),
+        )?)
+    }
+
     /// The number of the last change to the current resources (0: none yet).
     /// Read on the write connection: the latest commit.
     pub fn change_seq(&self) -> Result<i64> {

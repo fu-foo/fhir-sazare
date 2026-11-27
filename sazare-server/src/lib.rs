@@ -404,14 +404,9 @@ pub fn build_router(state: Arc<AppState>) -> Router {
 }
 
 /// The 500 for a handler that panicked: an OperationOutcome, the details in
-/// the log only.
-fn panic_response(panic: Box<dyn std::any::Any + Send + 'static>) -> axum::response::Response {
-    let what = panic
-        .downcast_ref::<String>()
-        .map(String::as_str)
-        .or_else(|| panic.downcast_ref::<&str>().copied())
-        .unwrap_or("(no message)");
-    tracing::error!("request handler panicked: {what}");
+/// the log only (the panic hook logs the message and where).
+fn panic_response(_panic: Box<dyn std::any::Any + Send + 'static>) -> axum::response::Response {
+    tracing::error!("request handler panicked; answered 500");
     handlers::fhir_json(
         axum::http::StatusCode::INTERNAL_SERVER_ERROR,
         serde_json::json!(sazare_core::OperationOutcome::error(

@@ -32,6 +32,11 @@ ENV SAZARE_APPS_DIR=/apps
 
 EXPOSE 8080
 
+# Liveness for `docker ps` / orchestrators: GET /health (unauthenticated).
+# Plain HTTP on SAZARE_PORT; with TLS configured in sazare, replace it.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD wget -q -O /dev/null "http://127.0.0.1:${SAZARE_PORT:-8080}/health" || exit 1
+
 VOLUME ["/data"]
 
 WORKDIR /etc/sazare

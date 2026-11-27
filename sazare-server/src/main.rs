@@ -136,6 +136,15 @@ fn init_tracing() {
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
     let (filter, handle) = tracing_subscriber::reload::Layer::new(filter);
     let _ = LOG_FILTER.set(handle);
+    // A panic's message goes to the log (with where it happened): stderr may
+    // point at a log file since turned over, or nowhere a service keeps.
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        tracing::error!("panic: {info}");
+        if std::io::stderr().is_terminal() {
+            default_hook(info);
+        }
+    }));
     // A log file the server writes itself, turning it over: set by `start`,
     // or by a service manager that keeps stdout (launchd, Homebrew). `~/` is
     // the home directory (launchd doesn't expand it).
