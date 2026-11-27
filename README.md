@@ -696,6 +696,10 @@ Supports `_type`, `_since`, and `_outputFormat` (NDJSON).
 
 ### Import
 
+`$import` takes the NDJSON itself as the body (sazare's own operation, not the draft Bulk
+Data Import IG's, which names files to fetch); each line is validated and stored, and the
+answer is an OperationOutcome with the counts and the first 100 errors.
+
 ```bash
 # Import from NDJSON
 curl -X POST http://localhost:8080/\$import \

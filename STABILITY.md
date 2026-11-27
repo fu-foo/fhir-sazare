@@ -22,6 +22,9 @@ A change to any of the following requires a **major** version.
   `_search`, `_history`, `$validate`, `$everything`, `$export` / `$status`, `$import`,
   `$reindex` (202: rebuilds in the background), Bundle transaction/batch, `/metadata`,
   `/health`, `/metrics`, `$apps`, SMART `/.well-known/smart-configuration` and `/token`).
+- `$import` with an NDJSON body is sazare's own operation (not the draft Bulk Data
+  Import IG, whose `$import` takes a `Parameters` body naming files to fetch). If that IG
+  is supported later, it is told apart by its body; the NDJSON form stays.
 - Subscriptions: rest-hook delivery and the `/ws` WebSocket channel.
 - Status codes for a given request — what succeeds stays a success, what is a 4xx stays a
   4xx of the same meaning.
