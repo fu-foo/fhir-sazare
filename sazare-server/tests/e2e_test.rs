@@ -2291,3 +2291,32 @@ async fn test_everything_pages() {
     let r = c.get(format!("{base}/Patient/{pid}/$everything?start=2020-01-01")).send().await.unwrap();
     assert_eq!(r.status(), 400);
 }
+
+/// Every R4 type can be stored and searched (Subscription, Medication, …
+/// had no search parameters: every search of them came back empty); a type
+/// that isn't R4 is refused.
+#[tokio::test]
+async fn test_every_r4_type_is_searchable_and_others_are_refused() {
+    let (base, _dir) = start_test_server().await;
+    let c = reqwest::Client::new();
+    create(&c, &base, "Medication", &json!({"resourceType": "Medication", "status": "active"})).await;
+    let total = |q: &str| {
+        let c = c.clone();
+        let url = format!("{base}/{q}");
+        async move { c.get(url).send().await.unwrap().json::<Value>().await.unwrap()["total"].clone() }
+    };
+    assert_eq!(total("Medication?status=active").await, 1);
+    assert_eq!(total("Medication?status=inactive").await, 0);
+    assert_eq!(c.get(format!("{base}/Medication?bogus=1")).send().await.unwrap().status(), 400);
+    let caps: Value = c.get(format!("{base}/metadata")).send().await.unwrap().json().await.unwrap();
+    assert_eq!(caps["rest"][0]["resource"].as_array().unwrap().len(), 146);
+
+    let r = c.post(format!("{base}/Foo")).header("Content-Type", "application/fhir+json").body(r#"{"resourceType":"Foo"}"#).send().await.unwrap();
+    assert_eq!(r.status(), 404);
+    assert_eq!(c.get(format!("{base}/Foo?x=1")).send().await.unwrap().status(), 404);
+    // In a Bundle too (the body's type is checked like a REST create's).
+    let bundle = json!({"resourceType": "Bundle", "type": "batch", "entry": [
+        {"request": {"method": "POST", "url": "Foo"}, "resource": {"resourceType": "Foo"}}]});
+    let b: Value = c.post(&base).header("Content-Type", "application/fhir+json").body(bundle.to_string()).send().await.unwrap().json().await.unwrap();
+    assert!(b["entry"][0]["response"]["status"].as_str().unwrap().starts_with("400"), "{b}");
+}

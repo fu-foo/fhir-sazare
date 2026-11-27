@@ -383,6 +383,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         // Middleware
         // A handler that panics answers 500 (counted by `metrics::track`)
         // instead of dropping the connection.
+        .layer(axum::middleware::from_fn(known_resource_type))
         .layer(tower_http::catch_panic::CatchPanicLayer::custom(panic_response))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
@@ -414,6 +415,22 @@ fn panic_response(_panic: Box<dyn std::any::Any + Send + 'static>) -> axum::resp
             "Internal server error (the server log has the details)"
         )),
     )
+}
+
+/// `/{Type}/…` names an R4 resource type, or the answer is 404: a made-up
+/// type was stored, and searched as if it existed, with every search empty.
+async fn known_resource_type(req: axum::extract::Request, next: axum::middleware::Next) -> axum::response::Response {
+    let first = req.uri().path().trim_start_matches('/').split('/').next().unwrap_or("");
+    if first.starts_with(|c: char| c.is_ascii_uppercase()) && !sazare_core::r4_types::is_resource_type(first) {
+        return handlers::fhir_json(
+            axum::http::StatusCode::NOT_FOUND,
+            serde_json::json!(sazare_core::OperationOutcome::error(
+                sazare_core::operation_outcome::IssueType::NotSupported,
+                format!("'{first}' is not a FHIR R4 resource type (GET /metadata lists them)")
+            )),
+        );
+    }
+    next.run(req).await
 }
 
 /// FHIR responses are `application/fhir+json`, errors and `/metadata`

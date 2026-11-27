@@ -29,6 +29,14 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
   under the built-in TLS. Under TLS, a request without `X-Forwarded-Proto` is taken as
   https. The CapabilityStatement's OAuth endpoints are the identity provider's (or this
   server's `/token`) instead of a placeholder that wasn't a URI.
+- **Every R4 resource type is searchable.** Only 28 types had search parameters; the
+  others (Subscription, Medication, MedicationStatement, Consent, …) could be stored, but
+  every search of them came back empty — `Medication?status=active` found nothing — and an
+  unknown parameter wasn't a 400. All 146 R4 types now have their R4 parameters and are in
+  the CapabilityStatement. The first start rebuilds the search index once, in the
+  background.
+- A resource type that isn't R4 (`POST /Foo`) is refused — 404 for the URL, 400 for a
+  body (a Bundle entry, `$import`) — instead of being stored where nothing could find it.
 - **`$everything` pages**: it returned a patient's whole compartment in one Bundle (all of
   it in memory), with relative full URLs. It now takes `_count` (100 by default, at most
   1000), `_offset` and `_type`, links the next page, and gives absolute full URLs; other

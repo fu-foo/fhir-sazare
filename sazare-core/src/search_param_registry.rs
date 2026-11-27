@@ -173,6 +173,12 @@ impl SearchParamRegistry {
             }
         }
 
+        // Every R4 resource type is searchable: the types without a
+        // hand-written list get theirs from the R4 definitions below.
+        for rt in crate::r4_types::resource_types() {
+            definitions.entry(rt.to_string()).or_default();
+        }
+
         // Every other R4 parameter of these types (of a type sazare indexes),
         // from the R4 definitions, evaluated as FHIRPath. The hand-written
         // definitions above take precedence.

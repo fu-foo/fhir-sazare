@@ -17,39 +17,6 @@ pub struct MetadataQuery {
 use crate::AppState;
 use sazare_core::SearchParamRegistry;
 
-/// FHIR supported resource types
-pub const SUPPORTED_RESOURCE_TYPES: &[&str] = &[
-    "Patient",
-    "Observation",
-    "Encounter",
-    "Condition",
-    "Task",
-    "Practitioner",
-    "Organization",
-    "AllergyIntolerance",
-    "DiagnosticReport",
-    "Immunization",
-    "MedicationRequest",
-    "Procedure",
-    "Bundle",
-    "Provenance",
-    "CarePlan",
-    "CareTeam",
-    "RelatedPerson",
-    "Location",
-    "PractitionerRole",
-    "Goal",
-    "Coverage",
-    "Device",
-    "MedicationDispense",
-    "DocumentReference",
-    "ServiceRequest",
-    "Specimen",
-    "QuestionnaireResponse",
-    "Appointment",
-    "Group",
-];
-
 /// Bulk Data `$export` operations declared on a resource type's CapabilityStatement
 /// entry, so Inferno's Bulk Data tests see patient/group-level export support.
 fn bulk_export_operations_for(resource_type: &str) -> Vec<Value> {
@@ -118,8 +85,8 @@ pub async fn capability_statement(
         json!({"code": "history-instance"}),
     ];
 
-    let resources: Vec<Value> = SUPPORTED_RESOURCE_TYPES
-        .iter()
+    // Every R4 resource type: each can be stored and searched.
+    let resources: Vec<Value> = sazare_core::r4_types::resource_types()
         .map(|rt| {
             let mut entry = json!({
                 "type": rt,
@@ -384,13 +351,16 @@ fn get_search_params_from_registry(registry: &SearchParamRegistry, resource_type
 
 #[cfg(test)]
 mod capability_tests {
-    /// A type with search parameters is a supported type: the
-    /// CapabilityStatement lists it (Appointment was missing).
+    /// Every type with search parameters is an R4 type, and every R4 type has
+    /// some (Appointment, Subscription, Medication, … included).
     #[test]
-    fn every_searchable_type_is_listed() {
+    fn every_r4_type_is_searchable() {
         let registry = sazare_core::SearchParamRegistry::new();
-        let missing: Vec<&str> =
-            registry.resource_types().filter(|t| !super::SUPPORTED_RESOURCE_TYPES.contains(t)).collect();
-        assert!(missing.is_empty(), "not in SUPPORTED_RESOURCE_TYPES: {missing:?}");
+        let not_r4: Vec<&str> = registry.resource_types().filter(|t| !sazare_core::r4_types::is_resource_type(t)).collect();
+        assert!(not_r4.is_empty(), "{not_r4:?}");
+        for t in ["Appointment", "Subscription", "Medication", "Group"] {
+            assert!(registry.has_resource_type(t), "{t}");
+        }
+        assert!(registry.lookup_param_type("Subscription", "status").is_some());
     }
 }

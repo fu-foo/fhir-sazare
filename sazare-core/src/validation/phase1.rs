@@ -50,6 +50,17 @@ impl Phase1Validator {
             }
         };
 
+        // An R4 resource type, not any string (it would be stored, but
+        // nothing could search it).
+        if !crate::r4_types::is_resource_type(resource_type) {
+            let mut outcome = OperationOutcome::error(
+                IssueType::Invalid,
+                format!("'{resource_type}' is not a FHIR R4 resource type"),
+            );
+            outcome.issue[0].expression = Some(vec!["resourceType".to_string()]);
+            return Err(outcome);
+        }
+
         // Check required fields from registry
         if let Some(fields) = REQUIRED_FIELDS.get(resource_type) {
             for field in *fields {
@@ -197,10 +208,12 @@ mod tests {
     }
 
     #[test]
-    fn test_unknown_resource_passes() {
-        // Unknown resource type — no required fields defined, should pass
+    fn test_non_r4_resource_type_is_refused() {
+        // Not an R4 type: refused (it could be stored, but never searched).
         let custom = json!({"resourceType": "CustomResource"});
-        assert!(Phase1Validator::validate(&custom).is_ok());
+        assert!(Phase1Validator::validate(&custom).is_err());
+        // An R4 type without required fields of its own passes.
+        assert!(Phase1Validator::validate(&json!({"resourceType": "Basic", "code": {"text": "x"}})).is_ok());
     }
 
     #[test]

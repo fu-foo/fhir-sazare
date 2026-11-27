@@ -47,6 +47,15 @@ into `data_dir`, delete the two `search_index*` files, start the older binary).
 
 ## Version notes
 
+### To the next release
+
+- **The search index is rebuilt once, in the background**: every R4 resource type now
+  has its search parameters. As in 0.17, the old index answers until the switch.
+- **`resources.sqlite` moves to schema version 3** (a delete is recorded in the history).
+  To go back, restore the backup from step 1.
+- Searches with syntax sazare doesn't support (`_filter`, `:text`, a nested `_has`, …)
+  answer 400 instead of ignoring it; a resource type that isn't R4 is refused.
+
 ### To 0.17.0
 
 - **The search index is rebuilt once, in the background** (it now holds each resource's

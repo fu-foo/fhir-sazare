@@ -50,7 +50,7 @@ server such as [HAPI FHIR](https://hapifhir.io/).
 | Runtime | Single native binary (~15 MB), or Docker | Java application on the JVM, or Docker |
 | Database | Embedded SQLite, nothing to set up | External RDBMS (e.g. PostgreSQL); H2 for development |
 | FHIR versions | R4 (4.0.1) | DSTU2 – R5 |
-| Search | Every R4 parameter of type string, token, date, reference, number and quantity for the built-in resource types; chain, `_has`, `_include`/`_revinclude`, custom SearchParameters (FHIRPath subset) | Full search, including full FHIRPath and more modifiers |
+| Search | Every R4 parameter of type string, token, date, reference, number and quantity for every R4 resource type; chain, `_has`, `_include`/`_revinclude`, custom SearchParameters (FHIRPath subset) | Full search, including full FHIRPath and more modifiers |
 | Validation | Declared profiles: cardinality, types, extensions, required bindings (built-in value sets, plus an IG's complete code systems from `terminology/`) | Full HL7 validator |
 | Terminology | No `$expand` / `$validate-code` / `$lookup` | Terminology services |
 | Conformance check | Inferno US Core v7/v8 FHIR API suites pass, run in CI | Widely used reference implementation |
@@ -61,7 +61,7 @@ Know these before you rely on sazare:
 
 - **FHIR R4 (4.0.1) only.** No R4B / R5.
 - **Search:** every R4 parameter of type string, token, date, reference, number and
-  quantity for the built-in resource types, with `:exact`, `:contains`, `:missing`,
+  quantity for every R4 resource type, with `:exact`, `:contains`, `:missing`,
   `:not` and a reference's type (`subject:Patient`); chains up to 4 hops; one level of
   `_has`. Quantities match their number with a system and code, or a code or unit, as
   written (no unit conversion). Not supported: `uri`/`composite` parameters, `_filter`,
@@ -463,7 +463,7 @@ profile is validated against that one only.
 ### Basic Search
 
 Every R4 search parameter of type token, string, date, reference, number and quantity
-is supported for the built-in resource types (they are listed in `GET /metadata`), plus
+is supported for every R4 resource type (listed in `GET /metadata`), plus
 `_id`, `_lastUpdated`, `_tag`, `_profile`, `_security`, `_text` and `_content`. A
 quantity is `[prefix]number|system|code` (`value-quantity=gt140|http://unitsofmeasure.org|mm[Hg]`),
 `number||code` for a code or unit in any system, or just the number; units are not
