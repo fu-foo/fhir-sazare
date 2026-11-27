@@ -229,21 +229,30 @@ fn auth_command(args: &[String]) -> i32 {
             };
             // JSON strings are valid YAML scalars: quoting survives any name.
             let q = |s: &str| serde_json::to_string(s).unwrap_or_default();
+            eprintln!("Configuration — under `auth:` in config.yaml:");
             println!("  basic_auth:");
             println!("    - username: {}", q(&user));
             println!("      password_hash: {}", q(&hash));
+            eprintln!();
+            eprintln!("Then restart the server (sazare-server stop && sazare-server start).");
             0
         }
         Some("new-api-key") => {
             let name = args.get(1).cloned().unwrap_or_else(|| "client".into());
             let key = credentials::new_api_key();
+            // The key alone on its line (nothing to trim off when copied);
+            // stdout has only the configuration lines, for scripts.
             eprintln!("API key for {name} (shown once — give it to the client, it is not stored):");
-            eprintln!("  {key}");
+            eprintln!("{key}");
             eprintln!();
+            eprintln!("Configuration (its hash, not the key) — under `auth:` in config.yaml:");
             let q = |s: &str| serde_json::to_string(s).unwrap_or_default();
             println!("  api_keys:");
             println!("    - name: {}", q(&name));
             println!("      key_sha256: {}", q(&credentials::sha256_hex(&key)));
+            eprintln!();
+            eprintln!("Then restart the server (sazare-server stop && sazare-server start). Clients send");
+            eprintln!("the key as `Authorization: Bearer <key>`.");
             0
         }
         _ => {

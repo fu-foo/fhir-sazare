@@ -13,6 +13,9 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
 - A taken port (8080 often is: another server, an editor's port forwarding) made `start`
   print the server's log; it now says plainly that the port is in use and how to choose
   another (`--port`, `SAZARE_PORT`, `server.port`). `run` logs the same.
+- `auth new-api-key` prints the key alone on its line (it was indented, and a copied line
+  carried the spaces), says that config.yaml takes its hash, and both auth helpers end with
+  the next step: restart the server.
 - `auth hash-password` says the rule (at least 12 characters) before the password is typed,
   and asks again when it is too short or the two entries differ (it ended after both
   entries); characters are counted, not bytes.
