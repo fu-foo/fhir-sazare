@@ -82,10 +82,13 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
 - A reference's type modifier is applied: `subject:Patient=123` means
   `subject=Patient/123` (the type used to be dropped). `_tag:not=…` and the other `_`
   search parameters keep their modifier (one used to drop the whole parameter).
-- **The Linux binaries are static (musl)**: they run on any Linux. They needed glibc 2.39
-  (Ubuntu 24.04 or newer), so RHEL 8/9, Ubuntu 20.04/22.04 and Debian 12 couldn't run
-  them. The static builds (and the Docker image) use mimalloc, as musl's allocator is
-  slow under concurrent load.
+- **The Linux binaries run on glibc 2.28 or newer** (RHEL 8, Ubuntu 20.04, Debian 10, …).
+  They needed glibc 2.39 (Ubuntu 24.04 or newer), so RHEL 8/9, Ubuntu 20.04/22.04 and
+  Debian 12 couldn't run them. They are built against glibc 2.28 with zig as the linker —
+  not as static musl binaries, which measured ~1.7x slower on large searches.
+- **The Docker image is Debian (glibc) instead of Alpine (musl)**, for the same reason:
+  large searches ~1.7x faster, imports ~1.3x. It is larger (Debian slim).
+  The data volume and the `sazare` user (uid 10001) are unchanged.
 
 ### Tests
 - The upgrade check in CI starts from 0.17.0, and from 0.16.0 and 0.12.0 as before.

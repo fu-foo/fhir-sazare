@@ -1,18 +1,21 @@
-# ---- Rust build stage ----
-FROM rust:1.88-alpine AS builder
+# glibc (Debian), not musl (Alpine): with musl the bundled SQLite is ~1.7x
+# slower on large counts (measured).
 
-RUN apk add --no-cache musl-dev
+# ---- Rust build stage ----
+FROM rust:1.88-bookworm AS builder
 
 WORKDIR /build
 COPY . .
 RUN cargo build --release --bin sazare-server
 
 # ---- Runtime stage ----
-FROM alpine:3.21
+FROM debian:bookworm-slim
 
-RUN apk add --no-cache ca-certificates su-exec \
-    && addgroup -S -g 10001 sazare \
-    && adduser -S -D -H -u 10001 -G sazare sazare
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --system --gid 10001 sazare \
+    && useradd --system --uid 10001 --gid sazare --no-create-home --shell /usr/sbin/nologin sazare
 
 ARG CONFIG_FILE=config.example.yaml
 
@@ -34,8 +37,9 @@ EXPOSE 8080
 
 # Liveness for `docker ps` / orchestrators: GET /health (unauthenticated).
 # Plain HTTP on SAZARE_PORT; with TLS configured in sazare, replace it.
+# (bash's /dev/tcp: the slim image has no curl or wget.)
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD wget -q -O /dev/null "http://127.0.0.1:${SAZARE_PORT:-8080}/health" || exit 1
+    CMD ["bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/${SAZARE_PORT:-8080} && printf 'GET /health HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && head -1 <&3 | grep -q ' 200 '"]
 
 VOLUME ["/data"]
 

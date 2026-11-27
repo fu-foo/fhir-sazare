@@ -12,7 +12,7 @@ if [ "$(id -u)" = "0" ]; then
     mkdir -p "$data_dir"
     # Only what isn't sazare's yet (cheap on every start; a no-op after the first).
     find "$data_dir" \! -user sazare -exec chown sazare:sazare {} +
-    exec su-exec sazare sazare-server run "$@"
+    exec setpriv --reuid=sazare --regid=sazare --init-groups sazare-server run "$@"
 fi
 
 exec sazare-server run "$@"

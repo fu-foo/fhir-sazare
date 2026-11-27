@@ -11,10 +11,6 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-#[cfg(target_env = "musl")]
-#[global_allocator]
-static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
-
 use sazare_server::{apps, build_router, config::{RebuildMode, ServerConfig}, index_generation, AppState};
 
 mod instance;

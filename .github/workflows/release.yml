@@ -13,13 +13,17 @@ jobs:
     strategy:
       matrix:
         include:
-          # Static (musl): runs on any Linux, whatever its glibc (RHEL 8,
-          # Ubuntu 20.04, …). Each built on its own architecture.
-          - target: x86_64-unknown-linux-musl
+          # glibc 2.28 or newer (RHEL 8, Ubuntu 20.04, Debian 10, …), built
+          # with zig as the linker against that glibc. Not musl: its memcpy
+          # and allocator make the bundled SQLite ~1.7x slower on large
+          # counts (measured).
+          - target: x86_64-unknown-linux-gnu
+            glibc: "2.28"
             os: ubuntu-latest
             artifact: sazare-server-linux-amd64
-          - target: aarch64-unknown-linux-musl
-            os: ubuntu-24.04-arm
+          - target: aarch64-unknown-linux-gnu
+            glibc: "2.28"
+            os: ubuntu-latest
             artifact: sazare-server-linux-arm64
           - target: x86_64-apple-darwin
             os: macos-latest
@@ -44,23 +48,27 @@ jobs:
         with:
           key: ${{ matrix.target }}
 
-      # musl's C compiler wrapper, for the bundled SQLite.
-      - name: Install musl tools
-        if: endsWith(matrix.target, '-linux-musl')
+      - name: Install cargo-zigbuild
+        if: matrix.glibc
         run: |
-          sudo apt-get update
-          sudo apt-get install -y musl-tools
+          pip install ziglang
+          cargo install cargo-zigbuild --locked
 
       - name: Build
+        if: ${{ !matrix.glibc }}
         run: cargo build --release --target ${{ matrix.target }}
 
-      - name: Check the Linux binary is static
-        if: endsWith(matrix.target, '-linux-musl')
+      - name: Build (against glibc ${{ matrix.glibc }})
+        if: matrix.glibc
+        run: cargo zigbuild --release --target ${{ matrix.target }}.${{ matrix.glibc }}
+
+      - name: Check the glibc it needs
+        if: matrix.glibc
         run: |
           bin=target/${{ matrix.target }}/release/sazare-server
-          file "$bin"
-          file "$bin" | grep -qE "statically linked|static-pie linked"
-          "$bin" version
+          need=$(objdump -T "$bin" | grep -o 'GLIBC_[0-9.]*' | sed 's/GLIBC_//' | sort -V | tail -1)
+          echo "needs glibc $need"
+          [ "$(printf '%s\n%s\n' "$need" "${{ matrix.glibc }}" | sort -V | tail -1)" = "${{ matrix.glibc }}" ]
 
       # Package binary
       - name: Package (Unix)
