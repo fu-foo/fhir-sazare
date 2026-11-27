@@ -57,7 +57,7 @@ pub struct InstanceLock {
 /// Take the data directory's instance lock, or `None` if another server holds it.
 pub fn try_lock(path: &Path) -> std::io::Result<Option<InstanceLock>> {
     if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir)?;
+        sazare_server::create_private_dir(dir)?;
     }
     #[cfg(unix)]
     {
@@ -404,7 +404,7 @@ fn detach(cmd: &mut std::process::Command) {
 /// Append to the log, keeping one previous file once it passes 50 MB.
 fn open_log(path: &Path) -> std::io::Result<std::fs::File> {
     if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir)?;
+        sazare_server::create_private_dir(dir)?;
     }
     if std::fs::metadata(path).is_ok_and(|m| m.len() > LOG_MAX) {
         let _ = std::fs::rename(path, path.with_extension("log.1"));

@@ -383,7 +383,7 @@ fn build_export_files(
     since: &Option<String>,
     dir: &FsPath,
 ) -> Result<Vec<(String, PathBuf)>, String> {
-    std::fs::create_dir_all(dir).map_err(|e| format!("Export failed: {}: {e}", dir.display()))?;
+    crate::create_private_dir(dir).map_err(|e| format!("Export failed: {}: {e}", dir.display()))?;
     let mut files: Vec<(String, PathBuf, std::io::BufWriter<std::fs::File>)> = Vec::new();
     write_export(state, scope, type_filter, since, &mut |rtype, json| {
         if files.last().is_none_or(|(t, _, _)| t != rtype) {

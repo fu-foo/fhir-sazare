@@ -17,6 +17,18 @@ pub fn backup_database(src: &Path, dest: &Path) -> Result<()> {
     let dest = dest.to_str().ok_or_else(|| {
         rusqlite::Error::InvalidPath(dest.to_path_buf())
     })?;
+    // Owner-only from the start (0600 on Unix): VACUUM INTO accepts an empty
+    // file, and the copy holds patient data.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(dest)
+            .map_err(|_| rusqlite::Error::InvalidPath(dest.into()))?;
+    }
     conn.execute("VACUUM INTO ?1", [dest])?;
     Ok(())
 }

@@ -423,7 +423,7 @@ async fn serve(args: Vec<String>) {
     }
 
     // Create data directory
-    if let Err(e) = std::fs::create_dir_all(&config.storage.data_dir) {
+    if let Err(e) = sazare_server::create_private_dir(&config.storage.data_dir) {
         tracing::error!("Failed to create data directory: {}", e);
         std::process::exit(1);
     }
@@ -911,7 +911,7 @@ async fn shutdown_signal(stop_requested: Arc<tokio::sync::Notify>) {
 /// search index is left out: derived, rebuilt from the resources on restore
 /// (6 GB at 10M resources). Returns the process exit code.
 fn run_backup(config: &ServerConfig, dir: &std::path::Path) -> i32 {
-    if let Err(e) = std::fs::create_dir_all(dir) {
+    if let Err(e) = sazare_server::create_private_dir(dir) {
         eprintln!("Cannot create backup directory {}: {e}", dir.display());
         return 1;
     }

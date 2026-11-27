@@ -2,6 +2,17 @@
 //!
 //! A portable FHIR R4 server with JP-Core support.
 
+/// Create `path` and its missing parents readable by the owner only (0700 on
+/// Unix): they hold patient data. Existing directories keep their mode — an
+/// operator's choice.
+pub fn create_private_dir(path: &std::path::Path) -> std::io::Result<()> {
+    let mut b = std::fs::DirBuilder::new();
+    b.recursive(true);
+    #[cfg(unix)]
+    std::os::unix::fs::DirBuilderExt::mode(&mut b, 0o700);
+    b.create(path)
+}
+
 pub mod audit;
 pub mod auth;
 pub mod bulk;
