@@ -905,3 +905,5 @@ Licensed under the [Apache License, Version 2.0](LICENSE).
 
 Bundled FHIR profiles (US Core) are third-party artifacts redistributed under
 CC0-1.0 — see [NOTICE.md](NOTICE.md) for provenance and attribution.
+
+Copyright 2026 Kazunari Fukagawa
