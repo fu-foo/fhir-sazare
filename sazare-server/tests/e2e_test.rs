@@ -2454,9 +2454,7 @@ async fn test_concurrent_writes_to_one_resource() {
             if let Some(m) = if_match {
                 r = r.header("If-Match", m);
             }
-            let resp = r.send().await.unwrap();
-            let st = resp.status().as_u16();
-            st
+            r.send().await.unwrap().status().as_u16()
         }
     };
     let statuses = futures_util::future::join_all((0..30).map(|n| put(n, None))).await;
