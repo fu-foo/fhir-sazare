@@ -4,7 +4,7 @@ All notable changes to sazare. Versions follow [Semantic Versioning](https://sem
 until 1.0, a minor version (0.x.0) may change behavior — those changes are listed under
 **Behavior changes**. See [UPGRADING.md](UPGRADING.md) for how to upgrade.
 
-## Unreleased
+## 0.19.0 — 2026-11-29
 
 ### Added
 - CI compares sazare's write checks with the HL7 FHIR validator (7.0.8): the R4 examples
@@ -105,6 +105,9 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
   `GET /{type}?_sort=-_lastUpdated`.
 
 ### Behavior changes
+- `$import`'s result extension and its OperationDefinition are named with `https://`
+  (`https://sazare.dev/StructureDefinition/import-result`, `…/OperationDefinition/import`;
+  they were `http://`): a canonical URL is compared as text, and `.dev` serves HTTPS only.
 - **Writes are checked against more of the R4 definitions** — what was stored before and
   silently misbehaved (an invalid date was left out of the index, so `birthdate=1990-02`
   missed it and `:missing=true` found it):

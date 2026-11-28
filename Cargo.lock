@@ -1430,7 +1430,7 @@ checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
 
 [[package]]
 name = "sazare-core"
-version = "0.18.3"
+version = "0.19.0"
 dependencies = [
  "chrono",
  "regex",
@@ -1447,7 +1447,7 @@ dependencies = [
 
 [[package]]
 name = "sazare-server"
-version = "0.18.3"
+version = "0.19.0"
 dependencies = [
  "argon2",
  "axum",
@@ -1481,7 +1481,7 @@ dependencies = [
 
 [[package]]
 name = "sazare-store"
-version = "0.18.3"
+version = "0.19.0"
 dependencies = [
  "chrono",
  "rusqlite",

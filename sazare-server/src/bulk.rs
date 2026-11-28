@@ -221,7 +221,7 @@ pub async fn import(
         "resourceType": "OperationOutcome",
         "issue": issues,
         "extension": [{
-            "url": "http://sazare.dev/StructureDefinition/import-result",
+            "url": "https://sazare.dev/StructureDefinition/import-result",
             "extension": [
                 {"url": "created", "valueInteger": created},
                 {"url": "errors", "valueInteger": errors.len()}

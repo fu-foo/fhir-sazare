@@ -18,9 +18,9 @@
 - **Search** — Parameter-based search, chain search (`subject:Patient.name=...`), reverse chain (`_has:Observation:subject:code=...`), `_include`, `_revinclude`, `_sort`, full text (`_content`, `_text` — Japanese included)
 - **Conditional operations** — Conditional create (`If-None-Exist`), update, and delete
 - **Resource filtering** — `_summary` (5 modes) and `_elements` support
-- **Validation** — Every write against the R4 definitions (elements, JSON types, required elements, primitive formats, one type per choice, no empty values) and declared profiles (US Core built in). CI compares it with the HL7 FHIR validator on the R4 examples, on copies broken 28 ways and on every pair of narrative elements, through all ten write paths: it refuses nothing the validator accepts, and every broken copy the validator refuses ([`ci/validator_compare.py`](ci/validator_compare.py))
+- **Validation** — Every write against the R4 definitions (elements, JSON types, required elements, primitive formats, one type per choice, no empty values) and declared profiles (US Core built in). CI compares it with the HL7 FHIR validator on the R4 examples, on copies broken 28 ways and on every pair of narrative elements, through all ten write paths: on that corpus it refuses nothing the validator accepts, and every broken copy the validator refuses ([`ci/validator_compare.py`](ci/validator_compare.py); with the pinned validator release, and monthly with the newest)
 - **Any implementation guide** — Load an IG's package (profiles, search parameters, code systems) at startup with one script; tested in CI with JP Core (all 76 package examples validate, all 8 search parameters work) — see [`examples/ig/`](examples/ig/README.md)
-- **US Core conformance** — Passes the Inferno US Core v7 & v8 FHIR API test suites (`examples/us-core-seed.json` for v7, `examples/us-core-v8-seed.json` for v8; the TLS test requires an HTTPS deployment)
+- **US Core conformance** — Tested with US Core v7 and v8: passes their Inferno FHIR API test suites (`examples/us-core-seed.json` for v7, `examples/us-core-v8-seed.json` for v8; the TLS test requires an HTTPS deployment)
 - **Custom search parameters** — Drop FHIR `SearchParameter` resources into a `searchparameters/` directory; their FHIRPath `expression` is compiled by a bounded evaluator (unsupported expressions are rejected at load, never mis-evaluated)
 - **Bulk data** — NDJSON `$import`, and `$export` both synchronous and async (FHIR Bulk Data Access IG: `Prefer: respond-async` kick-off, status poll, manifest, `_type`/`_since`/`_outputFormat`)
 - **Static app hosting** — Serve single-page apps that use the API, same-origin, at `/apps/<name>/`
@@ -52,9 +52,9 @@ server such as [HAPI FHIR](https://hapifhir.io/).
 | Database | Embedded SQLite, nothing to set up | External RDBMS (e.g. PostgreSQL); H2 for development |
 | FHIR versions | R4 (4.0.1) | DSTU2 – R5 |
 | Search | Every R4 parameter of type string, token, date, reference, number and quantity for every R4 resource type; chain, `_has`, `_include`/`_revinclude`, custom SearchParameters (FHIRPath subset) | Full search, including full FHIRPath and more modifiers |
-| Validation | Declared profiles: cardinality, types, extensions, required bindings (built-in value sets, plus an IG's complete code systems from `terminology/`) | Full HL7 validator |
+| Validation | Every write against the R4 definitions (elements, types, required elements, primitive formats, choices, empty values, narratives), compared with the HL7 validator in CI; declared profiles: cardinality, types, extensions, required bindings (built-in value sets, plus an IG's complete code systems from `terminology/`) | Full HL7 validator |
 | Terminology | No `$expand` / `$validate-code` / `$lookup` | Terminology services |
-| Conformance check | Inferno US Core v7/v8 FHIR API suites pass, run in CI | Widely used reference implementation |
+| Conformance check | Inferno US Core v7/v8 FHIR API suites pass, run in CI (later US Core versions not yet tested) | Widely used reference implementation |
 
 ### Limitations
 
@@ -152,12 +152,12 @@ Each release also has `SHA256SUMS` (check a download with `sha256sum -c SHA256SU
 
 ```bash
 docker run -p 8080:8080 -v sazare-data:/data --log-opt max-size=50m --log-opt max-file=2 \
-  ghcr.io/fu-foo/fhir-sazare:0.18
+  ghcr.io/fu-foo/fhir-sazare:0.19
 ```
 
 (The `--log-opt`s cap the log Docker keeps; `docker-compose.yml` sets the same.)
 
-Tags: `latest` is the newest release, `0.18` the newest 0.18.x, `0.18.0` exactly that
+Tags: `latest` is the newest release, `0.19` the newest 0.19.x, `0.19.0` exactly that
 release, and `edge` the newest `main` (unreleased).
 
 `start` runs the server in the background and returns once it is up;

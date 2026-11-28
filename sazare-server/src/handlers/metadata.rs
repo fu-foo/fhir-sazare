@@ -132,7 +132,7 @@ pub async fn capability_statement(
         ],
         "operation": [
             {"name": "export", "definition": "http://hl7.org/fhir/uv/bulkdata/OperationDefinition/export"},
-            {"name": "import", "definition": "http://sazare.dev/OperationDefinition/import"},
+            {"name": "import", "definition": "https://sazare.dev/OperationDefinition/import"},
         ]
     });
     if let Some(sec) = security {
