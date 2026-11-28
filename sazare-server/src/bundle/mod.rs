@@ -195,10 +195,6 @@ pub(crate) fn check_entry_body(
     Ok(())
 }
 
-/// Recursively resolve urn:uuid references in a JSON value.
-/// Apply the per-request authorization rules to each Bundle entry: JWT scopes
-/// (and the patient-token restrictions), then the patient compartment for the
-/// entry's body and for the existing resource it reads, replaces or deletes.
 /// The permission an entry needs on its type.
 fn entry_permission(e: &BundleEntry) -> char {
     match e.method.as_str() {
@@ -212,7 +208,10 @@ fn entry_permission(e: &BundleEntry) -> char {
 }
 
 /// Each entry's type and operation against the token's scopes — nothing of
-/// the bodies (those are judged as stored, after `write::prepare`).
+/// the bodies (those are judged as stored, after `write::prepare`). One entry
+/// out of scope refuses the whole Bundle, a batch too: entries of a batch are
+/// otherwise independent, but a token sending what it may not is answered
+/// as a direct request would be (403), not with a partial result.
 fn authorize_scopes(user: &AuthUser, entries: &[BundleEntry]) -> Result<(), OperationOutcome> {
     for (i, e) in entries.iter().enumerate() {
         let rt = e.resource_type.split('?').next().unwrap_or("");
@@ -229,6 +228,10 @@ fn authorize_scopes(user: &AuthUser, entries: &[BundleEntry]) -> Result<(), Oper
     Ok(())
 }
 
+/// Apply the per-request authorization rules to each Bundle entry: JWT scopes
+/// (and the patient-token restrictions), then the patient compartment for the
+/// entry's body (as `write::prepare` made it) and for the existing resource
+/// it reads, replaces or deletes.
 fn authorize_entries(state: &AppState, user: &AuthUser, entries: &[BundleEntry], transaction: bool) -> Result<(), OperationOutcome> {
     use crate::auth::patient_scope_may;
     use crate::compartment_check::check_compartment_write;
@@ -299,6 +302,7 @@ fn authorize_entries(state: &AppState, user: &AuthUser, entries: &[BundleEntry],
     Ok(())
 }
 
+/// Recursively resolve urn:uuid references in a JSON value.
 pub(crate) fn resolve_references(value: &mut Value, ref_map: &HashMap<String, String>) {
     match value {
         Value::Object(map) => {

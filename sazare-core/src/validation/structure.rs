@@ -382,45 +382,58 @@ const NARRATIVE_ELEMENT_ATTRIBUTES: &[&str] = &[
     "table.summary", "table.width", "table.border", "table.frame", "table.rules", "table.cellspacing",
     "table.cellpadding", "pre.space", "td.nowrap",
 ];
-/// HTML entities a narrative may use (the validator reads them; XML knows
-/// only &amp; &lt; &gt; &quot; &apos;), as their code points.
-const HTML_ENTITIES: &[(&str, u32)] = &[
-    ("nbsp", 160), ("copy", 169), ("reg", 174), ("trade", 8482), ("deg", 176), ("plusmn", 177), ("micro", 181),
-    ("middot", 183), ("times", 215), ("divide", 247), ("ndash", 8211), ("mdash", 8212), ("lsquo", 8216),
-    ("rsquo", 8217), ("ldquo", 8220), ("rdquo", 8221), ("bull", 8226), ("hellip", 8230), ("laquo", 171),
-    ("raquo", 187), ("euro", 8364), ("pound", 163), ("yen", 165), ("sect", 167), ("para", 182), ("frac14", 188),
-    ("frac12", 189), ("frac34", 190), ("sup2", 178), ("sup3", 179), ("le", 8804), ("ge", 8805), ("ne", 8800),
-    ("larr", 8592), ("rarr", 8594), ("uarr", 8593), ("darr", 8595), ("ensp", 8194), ("emsp", 8195), ("thinsp", 8201),
+/// Elements of running text: none may hold a block (`div`, `ul`, `ol`,
+/// `table`, `pre`) at any depth — the HL7 validator's rule, as it applies it
+/// (asked element by element: `h3`, `hr`, `dl` are allowed in them).
+const NARRATIVE_TEXT_ELEMENTS: &[&str] = &[
+    "p", "span", "a", "h1", "h2", "h3", "h4", "h5", "h6", "em", "i", "strong", "b", "small", "big", "tt", "code", "pre",
+    "q", "cite", "sub", "sup", "dfn", "var", "abbr", "acronym", "kbd", "samp", "bdo", "address", "caption", "dt", "dd",
+];
+const NARRATIVE_BLOCKS: &[&str] = &["div", "ul", "ol", "table", "pre"];
+/// In a paragraph, besides those blocks.
+const NARRATIVE_NOT_IN_PARAGRAPH: &[&str] = &["p", "blockquote"];
+/// The only children some elements have (no text either).
+const NARRATIVE_CHILDREN: &[(&str, &[&str])] = &[
+    ("ul", &["li"]),
+    ("ol", &["li"]),
+    ("dl", &["dt", "dd"]),
+    ("table", &["caption", "col", "colgroup", "thead", "tbody", "tfoot", "tr"]),
+    ("thead", &["tr"]),
+    ("tbody", &["tr"]),
+    ("tfoot", &["tr"]),
+    ("tr", &["td", "th"]),
+    ("colgroup", &["col"]),
+    ("map", &["area"]),
+];
+/// The parents some elements must have.
+const NARRATIVE_PARENTS: &[(&str, &[&str])] = &[
+    ("li", &["ul", "ol"]),
+    ("dt", &["dl"]),
+    ("dd", &["dl"]),
+    ("tr", &["table", "thead", "tbody", "tfoot"]),
+    ("td", &["tr", "thead", "tfoot"]),
+    ("th", &["tr", "thead", "tfoot"]),
+    ("caption", &["table"]),
+    ("thead", &["table"]),
+    ("tbody", &["table"]),
+    ("tfoot", &["table"]),
+    ("colgroup", &["table"]),
+    ("col", &["colgroup", "table"]),
 ];
 
 /// A narrative's div (R4 txt-1, txt-2), parsed as XML: one `<div>` in the
 /// XHTML namespace, well-formed, only the elements and attributes txt-1
 /// allows (an allow-list, as the HL7 validator's — a block-list of what can
 /// run was bypassed by `<scriptx>` before `<script>`, `<svg/onload=…>`, a tab
-/// before `onclick`), no `javascript:`/`vbscript:`/`data:` link (a `data:`
-/// image aside), and some content.
+/// before `onclick`), the validator's structure (no block in running text, a
+/// list item in a list, table parts in a table, no link in a link), no
+/// `javascript:`/`vbscript:`/`data:` link (a `data:` image aside), and some
+/// content. Duplicate ids are only a warning there, and are accepted.
 fn narrative(div: &str) -> Result<(), String> {
     const XHTML: &str = "http://www.w3.org/1999/xhtml";
-    // Named HTML entities as numeric ones, for the XML parser.
-    let mut text = String::with_capacity(div.len());
-    let mut rest = div;
-    while let Some(at) = rest.find('&') {
-        text.push_str(&rest[..at]);
-        rest = &rest[at..];
-        let name: String = rest[1..].chars().take_while(|c| c.is_ascii_alphanumeric()).collect();
-        match HTML_ENTITIES.iter().find(|(n, _)| *n == name) {
-            Some((_, code)) if rest[1 + name.len()..].starts_with(';') => {
-                text.push_str(&format!("&#{code};"));
-                rest = &rest[name.len() + 2..];
-            }
-            _ => {
-                text.push('&');
-                rest = &rest[1..];
-            }
-        }
-    }
-    text.push_str(rest);
-    let doc = roxmltree::Document::parse(&text).map_err(|e| format!("not well-formed XHTML ({e})"))?;
+    // Only XML's own entities (&amp; &lt; &gt; &quot; &apos;) and numeric
+    // references: the HL7 validator refuses HTML's named ones (&nbsp; too).
+    let doc = roxmltree::Document::parse(div).map_err(|e| format!("not well-formed XHTML ({e})"))?;
     let root = doc.root_element();
     if root.tag_name().name() != "div" || root.tag_name().namespace() != Some(XHTML) {
         return Err(format!("a narrative is one <div> in the XHTML namespace ({XHTML})"));
@@ -440,10 +453,40 @@ fn narrative(div: &str) -> Result<(), String> {
         if name == "img" {
             content = true;
         }
+        let ancestors = || node.ancestors().skip(1).filter(|a| a.is_element()).map(|a| a.tag_name().name());
+        if let Some((_, parents)) = NARRATIVE_PARENTS.iter().find(|(n, _)| *n == name) {
+            let parent = node.parent_element().map(|p| p.tag_name().name()).unwrap_or("");
+            if !parents.contains(&parent) {
+                return Err(format!("<{name}> belongs in <{}>, not in <{parent}> (txt-1)", parents.join("> or <")));
+            }
+        }
+        if NARRATIVE_BLOCKS.contains(&name)
+            && let Some(text) = ancestors().find(|a| NARRATIVE_TEXT_ELEMENTS.contains(a))
+        {
+            return Err(format!("<{name}> is a block: not inside <{text}> (txt-1)"));
+        }
+        if NARRATIVE_NOT_IN_PARAGRAPH.contains(&name) && ancestors().any(|a| a == "p") {
+            return Err(format!("<{name}> is not allowed inside a paragraph (txt-1)"));
+        }
+        if name == "a" && ancestors().any(|a| a == "a") {
+            return Err("a link inside a link is not allowed (txt-1)".into());
+        }
+        if let Some((_, children)) = NARRATIVE_CHILDREN.iter().find(|(n, _)| *n == name) {
+            for child in node.children() {
+                if child.is_text() && child.text().is_some_and(|t| !t.trim().is_empty()) {
+                    return Err(format!("<{name}> holds no text directly, only <{}> (txt-1)", children.join(">, <")));
+                }
+                if child.is_element() && !children.contains(&child.tag_name().name()) {
+                    return Err(format!("<{name}> holds only <{}>, not <{}> (txt-1)", children.join(">, <"), child.tag_name().name()));
+                }
+            }
+        }
         for attr in node.attributes() {
             let an = attr.name();
-            let xml_lang = an == "lang" && attr.namespace() == Some("http://www.w3.org/XML/1998/namespace");
-            let allowed = xml_lang
+            let xml = attr.namespace() == Some("http://www.w3.org/XML/1998/namespace");
+            // xml:lang anywhere; xml:space on <pre> (the validator's `pre.space`).
+            let xml_attribute = xml && (an == "lang" || (an == "space" && name == "pre"));
+            let allowed = xml_attribute
                 || (attr.namespace().is_none()
                     && (NARRATIVE_ATTRIBUTES.contains(&an) || NARRATIVE_ELEMENT_ATTRIBUTES.contains(&format!("{name}.{an}").as_str())));
             if !allowed {
@@ -642,7 +685,12 @@ mod tests {
         for ok in [
             "<p>Jo <b>Doe</b></p><a href=\"http://x\">x</a>",
             "<table border=\"1\"><tr><td colspan=\"2\">a</td></tr></table>",
-            "<p xml:lang=\"ja\" lang=\"ja\" style=\"color:red\">山田&nbsp;太郎 &amp; one onset; javascript: in prose</p>",
+            "<p xml:lang=\"ja\" lang=\"ja\" style=\"color:red\">山田&#160;太郎 &amp; one onset; javascript: in prose</p>",
+            "<pre xml:space=\"preserve\">a</pre>",
+            "<p id=\"d1\">a</p><p id=\"d1\">b</p>",
+            "<p>a<b>b</b><h3>c</h3><hr/><dl><dt>t</dt><dd>d</dd></dl></p>",
+            "<ul>\n  <li><p>a</p><div>b</div></li>\n</ul><blockquote><p>q</p><div>d</div></blockquote>",
+            "<table><caption>c</caption><colgroup><col/></colgroup><thead><tr><th><div>h</div></th></tr></thead><tbody><tr><td><table><tr><td>n</td></tr></table></td></tr></tbody></table>",
             "<img src=\"data:image/png;base64,iVBORw0KGgo=\" alt=\"x\"/>",
         ] {
             assert!(div(ok).is_empty(), "{ok}: {:?}", div(ok));
@@ -665,6 +713,24 @@ mod tests {
             "<b><i>a</b></i>",
             " ",
             "<p/>",
+            // HTML's named entities: the validator refuses them all.
+            "<p>a&nbsp;b</p>",
+            "<p>a&Tab;b</p>",
+            // The validator's structure.
+            "<p><div>a</div></p>",
+            "<p>a<span>b<p>c</p></span></p>",
+            "<span>a<b>b<div>c</div></b></span>",
+            "<h1>a<ol><li>b</li></ol></h1>",
+            "<li>a</li>",
+            "<dd>a</dd>",
+            "<tr><td>a</td></tr>",
+            "<table><th>a</th></table>",
+            "<table>text<tr><td>a</td></tr></table>",
+            "<ul>a<li>b</li></ul>",
+            "<ul><p>a</p></ul>",
+            "<dl><div>a</div></dl>",
+            "<a href=\"#x\"><span><a href=\"#y\">a</a></span></a>",
+            "<p space=\"preserve\">a</p>",
         ] {
             assert!(!div(bad).is_empty(), "{bad:?} accepted");
         }

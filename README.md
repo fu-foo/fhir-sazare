@@ -18,7 +18,7 @@
 - **Search** — Parameter-based search, chain search (`subject:Patient.name=...`), reverse chain (`_has:Observation:subject:code=...`), `_include`, `_revinclude`, `_sort`, full text (`_content`, `_text` — Japanese included)
 - **Conditional operations** — Conditional create (`If-None-Exist`), update, and delete
 - **Resource filtering** — `_summary` (5 modes) and `_elements` support
-- **Validation** — Every write against the R4 definitions (elements, JSON types, required elements, primitive formats, one type per choice, no empty values) and declared profiles (US Core built in). CI compares it with the HL7 FHIR validator on the R4 examples and on copies broken 13 ways, through every write path: it refuses nothing the validator accepts, and every broken copy the validator refuses ([`ci/validator_compare.py`](ci/validator_compare.py))
+- **Validation** — Every write against the R4 definitions (elements, JSON types, required elements, primitive formats, one type per choice, no empty values) and declared profiles (US Core built in). CI compares it with the HL7 FHIR validator on the R4 examples and on copies broken 24 ways, through all ten write paths: it refuses nothing the validator accepts, and every broken copy the validator refuses ([`ci/validator_compare.py`](ci/validator_compare.py))
 - **Any implementation guide** — Load an IG's package (profiles, search parameters, code systems) at startup with one script; tested in CI with JP Core (all 76 package examples validate, all 8 search parameters work) — see [`examples/ig/`](examples/ig/README.md)
 - **US Core conformance** — Passes the Inferno US Core v7 & v8 FHIR API test suites (`examples/us-core-seed.json` for v7, `examples/us-core-v8-seed.json` for v8; the TLS test requires an HTTPS deployment)
 - **Custom search parameters** — Drop FHIR `SearchParameter` resources into a `searchparameters/` directory; their FHIRPath `expression` is compiled by a bounded evaluator (unsupported expressions are rejected at load, never mis-evaluated)
@@ -80,8 +80,12 @@ Know these before you rely on sazare:
   extensions, not both), txt-1 and txt-2 (a narrative's `<div>` is parsed as XML: one
   XHTML `<div>`, well-formed, with content, only the elements and attributes txt-1 allows —
   the HL7 validator's list — and no `javascript:`, `vbscript:` or `data:` link but `data:`
-  images) are checked; the others are not. A client still escapes or sanitizes a
-  narrative it shows: txt-1 is a list of HTML 4 formatting, not a security policy.
+  images), with the validator's structure (no block inside running text, list items in
+  lists, table parts in tables, no link in a link); the others are not. **A narrative is
+  checked, not sanitized:** txt-1 is a list of HTML 4 formatting, not a security policy —
+  it allows `style` attributes (`background:url(…)`) and images (an `image/svg+xml` one
+  can carry script), as the validator does. A client escapes or sanitizes a narrative
+  before showing it.
   Decimals are stored with the precision they were sent with (`5.40` stays `5.40`); an
   exponent is written with its sign (`1.0e2` comes back as `1.0e+2`). It is not the
   full HL7 validator: no terminology service, no `$expand` / `$validate-code` / `$lookup`.

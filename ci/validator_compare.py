@@ -7,9 +7,9 @@ on the R4 examples and on copies broken on purpose, through every write path.
       and for every 2nd one up to 16 KB copies with one thing broken each
   java -jar validator_cli.jar <dir> -version 4.0.1 -tx n/a -locale en -output validator.json
   python3 ci/validator_compare.py compare <dir> validator.json <sazare base URL> [baseline.json]
-      send every file to sazare by every write path — POST, PUT, conditional
-      create and update, a transaction and a batch (a POST and a PUT entry
-      each), PATCH, $import —; compare; print a report; exit 1 when
+      send every file to sazare by all ten write paths — POST, PUT,
+      conditional create and update, a transaction and a batch (a POST and a
+      PUT entry each), PATCH, $import —; compare; print a report; exit 1 when
 
   - sazare refuses what the validator accepts (KNOWN_SAZARE_ONLY aside);
   - a broken copy is accepted by sazare though the validator refuses it: a
@@ -185,7 +185,16 @@ def mutations(resource):
                         ("narrative-event-attribute", "<p\tonclick=\"x()\">a</p>"),
                         ("narrative-javascript-link", "<a href=\"javascript&#58;alert(1)\">a</a>"),
                         ("narrative-unknown-element", "<video>a</video>"),
-                        ("narrative-not-well-formed", "<p>a</b>")):
+                        ("narrative-not-well-formed", "<p>a</b>"),
+                        # The validator's structural rules, and what it may
+                        # accept that a narrow reading would refuse: which is
+                        # stricter, the comparison decides.
+                        ("narrative-block-in-paragraph", "<p><div>a</div></p>"),
+                        ("narrative-li-outside-list", "<li>a</li>"),
+                        ("narrative-link-in-link", "<a href=\"#x\"><a href=\"#y\">a</a></a>"),
+                        ("narrative-duplicate-id", "<p id=\"d1\">a</p><p id=\"d1\">b</p>"),
+                        ("narrative-pre-xml-space", "<pre xml:space=\"preserve\">a</pre>"),
+                        ("narrative-html-entity", "<p>a&ensp;b&hearts;c&thetasym;</p>")):
         div = resource.get("text", {}).get("div") if isinstance(resource.get("text"), dict) else None
         if isinstance(div, str) and ">" in div:
             r = copy.deepcopy(resource)
@@ -380,7 +389,7 @@ def compare(dirname, vpath, base, baseline_path=None):
                 only_validator_examples += 1
                 for m in set(map(bucket, v[name])):
                     gaps[m] += 1
-    print("Each file was sent by every write path (POST, PUT, conditional create and update, transaction and batch")
+    print("Each file was sent by all ten write paths (POST, PUT, conditional create and update, transaction and batch")
     print("POST and PUT entries, PATCH, $import); they agreed on each verdict below.\n")
     print("| kind | both accept | both refuse | only sazare refuses | only the validator refuses |")
     print("|---|---:|---:|---:|---:|")
