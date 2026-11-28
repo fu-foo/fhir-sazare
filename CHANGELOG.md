@@ -26,6 +26,8 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
   step after changing the configuration.
 
 ### Fixed
+- A configuration block written as a list (`jwt:` then `- secret: …`, easy beside `api_keys`
+  and `basic_auth`, which are lists) or the reverse: the error says to remove or add the `- `.
 - A taken port (8080 often is: another server, an editor's port forwarding) made `start`
   print the server's log; it now says plainly that the port is in use and how to choose
   another (`--port`, `SAZARE_PORT`, `server.port`). `run` logs the same.

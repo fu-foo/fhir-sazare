@@ -310,7 +310,7 @@ impl ServerConfig {
                 let text = std::fs::read_to_string(path)
                     .map_err(|e| format!("{}: {e}", path.display()))?;
                 let config: ServerConfig =
-                    serde_yaml::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?;
+                    serde_yaml::from_str(&text).map_err(|e| format!("{}: {e}{}", path.display(), yaml_hint(&e.to_string())))?;
                 let raw: serde_yaml::Value = serde_yaml::from_str(&text).unwrap_or_default();
                 let in_file = raw.get("storage").and_then(|s| s.get("data_dir")).is_some();
                 (config, in_file)
@@ -530,3 +530,42 @@ mod tests {
         );
     }
 }
+
+/// The next step for the YAML shape mistakes serde only names: a list
+/// (`- secret: …`) where one block goes — easy beside `api_keys` and
+/// `basic_auth`, which are lists — and the reverse.
+fn yaml_hint(message: &str) -> String {
+    let key = message.split(": invalid type").next().filter(|k| *k != message && !k.contains(' '));
+    let name = key.and_then(|k| k.rsplit('.').next()).unwrap_or("setting");
+    let key = key.map(|k| format!("`{k}`")).unwrap_or_else(|| "This setting".into());
+    if message.contains("invalid type: sequence, expected struct") {
+        format!("\n{key} is one block of settings, not a list: remove the `- ` before its first line, e.g.\n  {name}:\n    key: value")
+    } else if message.contains("invalid type: map, expected a sequence") {
+        format!("\n{key} is a list: start each entry with `- `, e.g.\n  {name}:\n    - key: value\n      key: value")
+    } else {
+        String::new()
+    }
+}
+
+#[cfg(test)]
+mod yaml_hint_tests {
+    use super::ServerConfig;
+
+    fn error(yaml: &str) -> String {
+        let e = serde_yaml::from_str::<ServerConfig>(yaml).unwrap_err().to_string();
+        format!("{e}{}", super::yaml_hint(&e))
+    }
+
+    #[test]
+    fn a_list_where_a_block_goes_says_remove_the_dash() {
+        let e = error("auth:\n  enabled: true\n  jwt:\n    - secret: x\n");
+        assert!(e.contains("`auth.jwt` is one block of settings, not a list"), "{e}");
+    }
+
+    #[test]
+    fn a_block_where_a_list_goes_says_add_the_dash() {
+        let e = error("auth:\n  enabled: true\n  api_keys:\n    name: a\n    key_sha256: b\n");
+        assert!(e.contains("`auth.api_keys` is a list"), "{e}");
+    }
+}
+
