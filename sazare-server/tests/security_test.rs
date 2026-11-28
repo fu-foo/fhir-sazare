@@ -810,3 +810,22 @@ async fn conditional_references_resolve_as_the_caller() {
     let (s, o) = c.send(reqwest::Method::POST, "/Observation", &narrow, Some(obs("p1"))).await;
     assert_eq!(s, 403, "{o}");
 }
+
+/// A Bundle's scopes are checked before any body: a token that may not create
+/// Observations is refused the whole batch (403), even when that entry's
+/// body would itself be refused (400/412 inside a 200 before).
+#[tokio::test]
+async fn bundle_scopes_come_before_bodies() {
+    let (c, _t, _d) = two_patients().await;
+    let reader = jwt("user/Patient.read", None);
+    for body in [
+        json!({"resourceType": "Observation", "status": "final", "code": {"text": "x"},
+               "subject": {"reference": "Patient?identifier=urn:mrn|none"}}),
+        json!({"resourceType": "Observation", "code": {"text": "x"}}),
+    ] {
+        let batch = json!({"resourceType": "Bundle", "type": "batch", "entry": [
+            {"resource": body, "request": {"method": "POST", "url": "Observation"}}]});
+        let (s, b) = c.send(reqwest::Method::POST, "/", &reader, Some(batch)).await;
+        assert_eq!(s, 403, "{b}");
+    }
+}

@@ -77,8 +77,13 @@ Know these before you rely on sazare:
   R4 regexes), one type per choice, no empty values — and declared (or default) profiles —
   cardinality, types, fixed values, extensions, required bindings to complete code systems.
   Of the FHIRPath invariants, ele-1 (no empty values), ext-1 (an extension has a value or
-  extensions, not both), txt-2 and part of txt-1 (a narrative's `<div>` is XHTML with
-  content, nothing that runs or submits) are checked; the others are not. It is not the
+  extensions, not both), txt-1 and txt-2 (a narrative's `<div>` is parsed as XML: one
+  XHTML `<div>`, well-formed, with content, only the elements and attributes txt-1 allows —
+  the HL7 validator's list — and no `javascript:`, `vbscript:` or `data:` link but `data:`
+  images) are checked; the others are not. A client still escapes or sanitizes a
+  narrative it shows: txt-1 is a list of HTML 4 formatting, not a security policy.
+  Decimals are stored with the precision they were sent with (`5.40` stays `5.40`); an
+  exponent is written with its sign (`1.0e2` comes back as `1.0e+2`). It is not the
   full HL7 validator: no terminology service, no `$expand` / `$validate-code` / `$lookup`.
 - **Scale:** one process with SQLite; writes go through a single index lock, so it does
   not scale horizontally or for highly concurrent writes. Benchmarked in CI on 60k
@@ -645,6 +650,15 @@ curl -X POST http://localhost:8080/ \
 ```
 
 The `urn:uuid:patient-1` reference in the Observation is automatically resolved to the assigned Patient ID.
+
+**Conditional references** (`"reference": "Patient?identifier=urn:mrn|42"`) resolve to the
+one resource the search finds — in a transaction, a batch, a create, an update, a patch
+or `$import`; none or several is a 412. They are searched as the caller (whose scope must
+allow searching that type), **against what is stored before the Bundle runs**: the
+entries are authorized with their references resolved, so resolution comes first. To
+point at a resource created in the same transaction, use its `urn:uuid:` instead (R4
+lists conditional references last in its processing order; that order is advice, and
+sazare takes the one its authorization needs).
 
 ### Batch (Independent)
 

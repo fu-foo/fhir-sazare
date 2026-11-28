@@ -361,43 +361,106 @@ fn article(ty: &str) -> &'static str {
     if ty.starts_with(['a', 'e', 'i', 'o', 'u', 'A', 'E', 'I', 'O', 'U']) { "an" } else { "a" }
 }
 
-/// A narrative's div, in part (R4 txt-1, txt-2): a `<div>` in the XHTML
-/// namespace with content, and none of what can run or submit — script,
-/// object, embed, iframe, form and its inputs, style elements, `on…`
-/// attributes, `javascript:` URLs. The full rule (only HTML 4 formatting
-/// elements) is the HL7 validator's.
+/// XHTML elements a narrative may hold (R4 txt-1: the basic HTML 4
+/// formatting elements, links and images) — the HL7 validator's list.
+const NARRATIVE_ELEMENTS: &[&str] = &[
+    "p", "br", "div", "h1", "h2", "h3", "h4", "h5", "h6", "a", "span", "b", "em", "i", "strong", "small", "big", "tt",
+    "dfn", "q", "var", "abbr", "acronym", "cite", "blockquote", "hr", "address", "bdo", "kbd", "sub", "sup", "ul", "ol",
+    "li", "dl", "dt", "dd", "pre", "table", "caption", "colgroup", "col", "thead", "tr", "tfoot", "tbody", "th", "td",
+    "code", "samp", "img", "map", "area",
+];
+/// Attributes any of them may have.
+const NARRATIVE_ATTRIBUTES: &[&str] = &[
+    "title", "style", "class", "id", "lang", "dir", "accesskey", "tabindex",
+    "span", "width", "align", "valign", "char", "charoff", "abbr", "axis", "headers", "scope", "rowspan", "colspan",
+];
+/// And `element.attribute` ones.
+const NARRATIVE_ELEMENT_ATTRIBUTES: &[&str] = &[
+    "a.href", "a.name", "a.charset", "a.type", "a.hreflang", "a.rel", "a.rev", "a.shape", "a.coords",
+    "img.src", "img.alt", "img.longdesc", "img.height", "img.width", "img.usemap", "img.ismap", "img.border",
+    "blockquote.cite", "q.cite", "map.name", "area.shape", "area.coords", "area.href", "area.nohref", "area.alt",
+    "table.summary", "table.width", "table.border", "table.frame", "table.rules", "table.cellspacing",
+    "table.cellpadding", "pre.space", "td.nowrap",
+];
+/// HTML entities a narrative may use (the validator reads them; XML knows
+/// only &amp; &lt; &gt; &quot; &apos;), as their code points.
+const HTML_ENTITIES: &[(&str, u32)] = &[
+    ("nbsp", 160), ("copy", 169), ("reg", 174), ("trade", 8482), ("deg", 176), ("plusmn", 177), ("micro", 181),
+    ("middot", 183), ("times", 215), ("divide", 247), ("ndash", 8211), ("mdash", 8212), ("lsquo", 8216),
+    ("rsquo", 8217), ("ldquo", 8220), ("rdquo", 8221), ("bull", 8226), ("hellip", 8230), ("laquo", 171),
+    ("raquo", 187), ("euro", 8364), ("pound", 163), ("yen", 165), ("sect", 167), ("para", 182), ("frac14", 188),
+    ("frac12", 189), ("frac34", 190), ("sup2", 178), ("sup3", 179), ("le", 8804), ("ge", 8805), ("ne", 8800),
+    ("larr", 8592), ("rarr", 8594), ("uarr", 8593), ("darr", 8595), ("ensp", 8194), ("emsp", 8195), ("thinsp", 8201),
+];
+
+/// A narrative's div (R4 txt-1, txt-2), parsed as XML: one `<div>` in the
+/// XHTML namespace, well-formed, only the elements and attributes txt-1
+/// allows (an allow-list, as the HL7 validator's — a block-list of what can
+/// run was bypassed by `<scriptx>` before `<script>`, `<svg/onload=…>`, a tab
+/// before `onclick`), no `javascript:`/`vbscript:`/`data:` link (a `data:`
+/// image aside), and some content.
 fn narrative(div: &str) -> Result<(), String> {
-    let t = div.trim();
-    let lower = t.to_ascii_lowercase();
-    if !lower.starts_with("<div") || !(lower.ends_with("</div>") || lower.ends_with("/>")) {
-        return Err("a narrative is one <div> element".into());
-    }
-    let head = &lower[..lower.find('>').unwrap_or(lower.len())];
-    if !head.contains("xmlns=\"http://www.w3.org/1999/xhtml\"") && !head.contains("xmlns='http://www.w3.org/1999/xhtml'") {
-        return Err("the <div> is in the XHTML namespace: xmlns=\"http://www.w3.org/1999/xhtml\"".into());
-    }
-    for tag in ["script", "object", "embed", "iframe", "frame", "form", "input", "button", "textarea", "select", "style", "link", "meta", "base", "applet"] {
-        if lower.contains(&format!("<{tag}")) && lower[lower.find(&format!("<{tag}")).unwrap() + tag.len() + 1..].starts_with([' ', '>', '/', '\t', '\n', '\r']) {
-            return Err(format!("<{tag}> is not allowed in a narrative (txt-1)"));
+    const XHTML: &str = "http://www.w3.org/1999/xhtml";
+    // Named HTML entities as numeric ones, for the XML parser.
+    let mut text = String::with_capacity(div.len());
+    let mut rest = div;
+    while let Some(at) = rest.find('&') {
+        text.push_str(&rest[..at]);
+        rest = &rest[at..];
+        let name: String = rest[1..].chars().take_while(|c| c.is_ascii_alphanumeric()).collect();
+        match HTML_ENTITIES.iter().find(|(n, _)| *n == name) {
+            Some((_, code)) if rest[1 + name.len()..].starts_with(';') => {
+                text.push_str(&format!("&#{code};"));
+                rest = &rest[name.len() + 2..];
+            }
+            _ => {
+                text.push('&');
+                rest = &rest[1..];
+            }
         }
     }
-    let on_attr = lower.match_indices(" on").any(|(i, _)| {
-        let rest = &lower[i + 3..];
-        let name: String = rest.chars().take_while(|c| c.is_ascii_alphabetic()).collect();
-        !name.is_empty() && rest[name.len()..].trim_start().starts_with('=') && lower[..i].rfind('<') > lower[..i].rfind('>')
-    });
-    if on_attr || lower.contains("javascript:") {
-        return Err("event attributes (on…) and javascript: URLs are not allowed in a narrative (txt-1)".into());
+    text.push_str(rest);
+    let doc = roxmltree::Document::parse(&text).map_err(|e| format!("not well-formed XHTML ({e})"))?;
+    let root = doc.root_element();
+    if root.tag_name().name() != "div" || root.tag_name().namespace() != Some(XHTML) {
+        return Err(format!("a narrative is one <div> in the XHTML namespace ({XHTML})"));
     }
-    let text: String = {
-        let mut inside = false;
-        t.chars().filter(|c| match c {
-            '<' => { inside = true; false }
-            '>' => { inside = false; false }
-            _ => !inside,
-        }).collect()
-    };
-    if text.trim().is_empty() && !lower.contains("<img") {
+    let mut content = false;
+    for node in root.descendants() {
+        if node.is_text() && node.text().is_some_and(|t| !t.trim().is_empty()) {
+            content = true;
+        }
+        if !node.is_element() {
+            continue;
+        }
+        let name = node.tag_name().name();
+        if node.tag_name().namespace() != Some(XHTML) || !NARRATIVE_ELEMENTS.contains(&name) {
+            return Err(format!("<{name}> is not allowed in a narrative (txt-1)"));
+        }
+        if name == "img" {
+            content = true;
+        }
+        for attr in node.attributes() {
+            let an = attr.name();
+            let xml_lang = an == "lang" && attr.namespace() == Some("http://www.w3.org/XML/1998/namespace");
+            let allowed = xml_lang
+                || (attr.namespace().is_none()
+                    && (NARRATIVE_ATTRIBUTES.contains(&an) || NARRATIVE_ELEMENT_ATTRIBUTES.contains(&format!("{name}.{an}").as_str())));
+            if !allowed {
+                return Err(format!("the attribute '{an}' on <{name}> is not allowed in a narrative (txt-1)"));
+            }
+            if matches!(an, "href" | "src" | "longdesc" | "cite") {
+                // The scheme as a browser reads it: whitespace and controls
+                // dropped (`java\tscript:`), references already resolved.
+                let url: String = attr.value().chars().filter(|c| !c.is_whitespace() && !c.is_control()).collect::<String>().to_ascii_lowercase();
+                let image = name == "img" && an == "src" && url.starts_with("data:image/");
+                if !image && ["javascript:", "vbscript:", "data:"].iter().any(|s| url.starts_with(s)) {
+                    return Err(format!("a {} link is not allowed in a narrative (txt-1)", url.split(':').next().unwrap_or("")));
+                }
+            }
+        }
+    }
+    if !content {
         return Err("a narrative has some content (txt-2)".into());
     }
     Ok(())
@@ -568,20 +631,47 @@ mod tests {
         assert!(has("'Patient.extension[0].url' is not a valid uri"), "{p:?}");
         assert!(has("'Patient.extension[1]' has a value and extensions"), "{p:?}");
         assert!(has("'Patient.name[0]._given' is an empty array"), "{p:?}");
-        let div = |d: &str| problems(json!({"resourceType": "Patient", "text": {"status": "generated", "div": d}}));
-        assert!(div(r#"<div xmlns="http://www.w3.org/1999/xhtml"><p>Jo <b>Doe</b></p><a href="http://x">x</a></div>"#).is_empty());
-        for bad in [
-            "plain",
-            "<div>no namespace</div>",
-            r#"<div xmlns="http://www.w3.org/1999/xhtml"><script>x()</script></div>"#,
-            r#"<div xmlns="http://www.w3.org/1999/xhtml"><p onclick="x()">a</p></div>"#,
-            r#"<div xmlns="http://www.w3.org/1999/xhtml"><a href="javascript:x()">a</a></div>"#,
-            r#"<div xmlns="http://www.w3.org/1999/xhtml"> </div>"#,
+    }
+
+    #[test]
+    fn narratives_are_parsed_against_the_txt_1_allow_list() {
+        let div = |inner: &str| {
+            let d = format!(r#"<div xmlns="http://www.w3.org/1999/xhtml">{inner}</div>"#);
+            problems(json!({"resourceType": "Patient", "text": {"status": "generated", "div": d}}))
+        };
+        for ok in [
+            "<p>Jo <b>Doe</b></p><a href=\"http://x\">x</a>",
+            "<table border=\"1\"><tr><td colspan=\"2\">a</td></tr></table>",
+            "<p xml:lang=\"ja\" lang=\"ja\" style=\"color:red\">山田&nbsp;太郎 &amp; one onset; javascript: in prose</p>",
+            "<img src=\"data:image/png;base64,iVBORw0KGgo=\" alt=\"x\"/>",
         ] {
-            assert!(!div(bad).is_empty(), "{bad}");
+            assert!(div(ok).is_empty(), "{ok}: {:?}", div(ok));
         }
-        // Words that merely start with "on" are text, not attributes.
-        assert!(div(r#"<div xmlns="http://www.w3.org/1999/xhtml">one onset only</div>"#).is_empty());
+        // What got through the string search, and the rest of what txt-1 refuses.
+        for bad in [
+            "<scriptx>a</scriptx><script>alert(1)</script>",
+            "<styles>a</styles><style>p{}</style>",
+            "<svg/onload=\"alert(1)\">a</svg>",
+            "<p\tonclick=\"x()\">a</p>",
+            "<p\nonclick=\"x()\">a</p>",
+            "<a href=\"javascript&#58;alert(1)\">a</a>",
+            "<a href=\"java\tscript:alert(1)\">a</a>",
+            "<a href=\"data:text/html,x\">a</a>",
+            "<a href=\"vbscript:x\">a</a>",
+            "<video>a</video>",
+            "<foo>a</foo>",
+            "<p formaction=\"x\">a</p>",
+            "<p>a</div>",
+            "<b><i>a</b></i>",
+            " ",
+            "<p/>",
+        ] {
+            assert!(!div(bad).is_empty(), "{bad:?} accepted");
+        }
+        let plain = problems(json!({"resourceType": "Patient", "text": {"status": "generated", "div": "plain"}}));
+        assert!(!plain.is_empty());
+        let no_ns = problems(json!({"resourceType": "Patient", "text": {"status": "generated", "div": "<div>a</div>"}}));
+        assert!(no_ns.iter().any(|m| m.contains("XHTML namespace")), "{no_ns:?}");
     }
 
     /// Official R4 examples with errors of their own: each still fails (so the

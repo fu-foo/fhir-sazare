@@ -199,6 +199,36 @@ pub(crate) fn check_entry_body(
 /// Apply the per-request authorization rules to each Bundle entry: JWT scopes
 /// (and the patient-token restrictions), then the patient compartment for the
 /// entry's body and for the existing resource it reads, replaces or deletes.
+/// The permission an entry needs on its type.
+fn entry_permission(e: &BundleEntry) -> char {
+    match e.method.as_str() {
+        "GET" | "HEAD" if e.id.is_some() => 'r',
+        "GET" | "HEAD" => 's',
+        "POST" => 'c',
+        "PUT" | "PATCH" => 'u',
+        "DELETE" => 'd',
+        _ => 'c',
+    }
+}
+
+/// Each entry's type and operation against the token's scopes — nothing of
+/// the bodies (those are judged as stored, after `write::prepare`).
+fn authorize_scopes(user: &AuthUser, entries: &[BundleEntry]) -> Result<(), OperationOutcome> {
+    for (i, e) in entries.iter().enumerate() {
+        let rt = e.resource_type.split('?').next().unwrap_or("");
+        let perm = entry_permission(e);
+        if user.grant(rt, perm).is_none() {
+            return Err(OperationOutcome::error(
+                IssueType::Forbidden,
+                format!("entry[{i}]: insufficient scope: {rt} needs the '{perm}' permission"),
+            ));
+        }
+        crate::auth::patient_scope_may(user, rt, perm)
+            .map_err(|m| OperationOutcome::error(IssueType::Forbidden, format!("entry[{i}]: {m}")))?;
+    }
+    Ok(())
+}
+
 fn authorize_entries(state: &AppState, user: &AuthUser, entries: &[BundleEntry], transaction: bool) -> Result<(), OperationOutcome> {
     use crate::auth::patient_scope_may;
     use crate::compartment_check::check_compartment_write;
@@ -224,14 +254,7 @@ fn authorize_entries(state: &AppState, user: &AuthUser, entries: &[BundleEntry],
     for (i, e) in entries.iter().enumerate().filter(|(_, e)| e.refused.is_none()) {
         // `Type?query` (conditional/search URLs) authorizes as `Type`.
         let rt = e.resource_type.split('?').next().unwrap_or("");
-        let perm = match e.method.as_str() {
-            "GET" | "HEAD" if e.id.is_some() => 'r',
-            "GET" | "HEAD" => 's',
-            "POST" => 'c',
-            "PUT" | "PATCH" => 'u',
-            "DELETE" => 'd',
-            _ => 'c',
-        };
+        let perm = entry_permission(e);
         if user.grant(rt, perm).is_none() {
             return Err(deny(i, format!("insufficient scope: {rt} needs the '{perm}' permission")));
         }
@@ -350,6 +373,15 @@ pub async fn process_bundle(
             return (StatusCode::BAD_REQUEST, Json(json!(outcome))).into_response();
         }
     };
+
+    // Scopes first, on every entry: a token that may not write a type is
+    // refused the whole Bundle (403) before any body is looked at — a batch
+    // entry refused by `prepare` must not answer 400 inside a 200 instead.
+    if let Some(user) = auth_user.as_ref()
+        && let Err(outcome) = authorize_scopes(user, &entries)
+    {
+        return (StatusCode::FORBIDDEN, Json(json!(outcome))).into_response();
+    }
 
     // Every body goes the way of any write first — its conditional references
     // resolved (as the caller), then validated — so the authorization below
