@@ -1167,6 +1167,7 @@ async fn test_websocket_subscription_ping() {
         &json!({
             "resourceType": "Subscription",
             "status": "active",
+            "reason": "test",
             "criteria": "Observation?status=final",
             "channel": {"type": "websocket"}
         }),

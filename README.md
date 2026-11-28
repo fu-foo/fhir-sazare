@@ -18,7 +18,7 @@
 - **Search** — Parameter-based search, chain search (`subject:Patient.name=...`), reverse chain (`_has:Observation:subject:code=...`), `_include`, `_revinclude`, `_sort`, full text (`_content`, `_text` — Japanese included)
 - **Conditional operations** — Conditional create (`If-None-Exist`), update, and delete
 - **Resource filtering** — `_summary` (5 modes) and `_elements` support
-- **Validation** — Multi-phase validation against US Core profiles built in
+- **Validation** — Every write against the R4 definitions (elements, JSON types, required elements, primitive formats, one type per choice, no empty values; the R4 examples pass in CI) and declared profiles (US Core built in)
 - **Any implementation guide** — Load an IG's package (profiles, search parameters, code systems) at startup with one script; tested in CI with JP Core (all 76 package examples validate, all 8 search parameters work) — see [`examples/ig/`](examples/ig/README.md)
 - **US Core conformance** — Passes the Inferno US Core v7 & v8 FHIR API test suites (`examples/us-core-seed.json` for v7, `examples/us-core-v8-seed.json` for v8; the TLS test requires an HTTPS deployment)
 - **Custom search parameters** — Drop FHIR `SearchParameter` resources into a `searchparameters/` directory; their FHIRPath `expression` is compiled by a bounded evaluator (unsupported expressions are rejected at load, never mis-evaluated)
@@ -48,7 +48,7 @@ server such as [HAPI FHIR](https://hapifhir.io/).
 
 | | sazare | HAPI FHIR (JPA server) |
 |---|---|---|
-| Runtime | Single native binary (~15 MB), or Docker | Java application on the JVM, or Docker |
+| Runtime | Single native binary (~20 MB), or Docker | Java application on the JVM, or Docker |
 | Database | Embedded SQLite, nothing to set up | External RDBMS (e.g. PostgreSQL); H2 for development |
 | FHIR versions | R4 (4.0.1) | DSTU2 – R5 |
 | Search | Every R4 parameter of type string, token, date, reference, number and quantity for every R4 resource type; chain, `_has`, `_include`/`_revinclude`, custom SearchParameters (FHIRPath subset) | Full search, including full FHIRPath and more modifiers |
@@ -72,10 +72,12 @@ Know these before you rely on sazare:
   (that would answer a broader search than the one asked).
 - **Custom SearchParameters** use a FHIRPath subset (paths, `|`, `ofType`/`as`,
   `extension()`, `where(a = 'x' and ...)`, `resolve() is`, `[n]`); others are rejected at load.
-- **Validation** checks declared (or default) profiles — cardinality, types, fixed values,
-  extensions, required bindings to complete code systems — but is not the full HL7
-  validator (no FHIRPath invariants, no terminology service, no `$expand` /
-  `$validate-code` / `$lookup`).
+- **Validation** checks every write against the R4 definitions — known elements, JSON
+  types, lists, required elements, primitive formats (dates that exist, integer ranges, the
+  R4 regexes), one type per choice, no empty values — and declared (or default) profiles —
+  cardinality, types, fixed values, extensions, required bindings to complete code systems.
+  It is not the full HL7 validator: no FHIRPath invariants beyond those, no terminology
+  service, no `$expand` / `$validate-code` / `$lookup`.
 - **Scale:** one process with SQLite; writes go through a single index lock, so it does
   not scale horizontally or for highly concurrent writes. Benchmarked in CI on 60k
   resources (every search well under 100 ms) and measured on 10M: pages and
@@ -875,7 +877,8 @@ see the [design document](design/search-index-v2.md) for the numbers.
 - Done: long-running operation — the index catches up with the store after a crash,
   `$export` streams, logs turn over
 - Done: R4 conformance — every R4 resource type searchable, writes checked against the R4
-  element definitions, unsupported search syntax refused; security review
+  definitions (elements, types, required elements, primitive formats, choices, empty
+  values), unsupported search syntax refused; security review
 - Stability policy: what 1.0 promises
 - End-to-end and security review before the release
 

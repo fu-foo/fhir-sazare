@@ -43,6 +43,22 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
   `GET /{type}?_sort=-_lastUpdated`.
 
 ### Behavior changes
+- **Writes are checked against more of the R4 definitions** — what was stored before and
+  silently misbehaved (an invalid date was left out of the index, so `birthdate=1990-02`
+  missed it and `:missing=true` found it):
+  - **Required elements** (min 1) of every type, nested ones included
+    (`Observation.component.code`, `Extension.url`): from the definitions, instead of a
+    hand-written list of 17 types. A value or `_name` with an extension
+    (a data-absent-reason) meets it.
+  - **Primitive formats**: the R4 regex of each type (`date`, `dateTime` — a time needs a
+    time zone —, `instant`, `time`, `uri`, `code`, `id`, `oid`, `uuid`, `base64Binary`,
+    `integer`, `decimal`, …), a date that exists (`1990-02-30` is refused), and the
+    32-bit range of `integer`, `positiveInt` (≥ 1) and `unsignedInt` (≥ 0).
+  - **No empty values** (ele-1): `""`, `{}`, `[{}]`; `_name` holds an Element (id,
+    extension) and is checked as one.
+  - **One type per choice**: `valueString` with `valueBoolean` is refused.
+  The R4 examples pass (`r4_examples_fit`, 11 official examples with errors of their own
+  listed). Data already stored is read as before; updating it applies the rules.
 - `resources.sqlite` moves to schema version 5: the per-type counts (taken once on the first
   start, a scan of the store), two unused indexes dropped (smaller files, cheaper writes),
   and the method of each history version.

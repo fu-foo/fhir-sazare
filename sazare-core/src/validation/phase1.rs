@@ -1,33 +1,5 @@
 use crate::operation_outcome::{IssueSeverity, IssueType, OperationOutcome, OperationOutcomeIssue};
 use serde_json::Value;
-use std::collections::HashMap;
-use std::sync::LazyLock;
-
-/// Registry of required fields per resource type (FHIR R4 base spec, min=1).
-///
-/// Data-driven — no hardcoded match. New resource types are added here.
-static REQUIRED_FIELDS: LazyLock<HashMap<&str, &[&str]>> = LazyLock::new(|| {
-    let mut m = HashMap::new();
-    // Patient: no required fields in base spec
-    m.insert("Observation", ["status", "code"].as_slice());
-    m.insert("Encounter", ["status", "class"].as_slice());
-    m.insert("Condition", ["subject"].as_slice());
-    m.insert("Task", ["status", "intent"].as_slice());
-    m.insert("MedicationRequest", ["status", "intent", "subject"].as_slice());
-    m.insert("Procedure", ["status", "subject"].as_slice());
-    m.insert("AllergyIntolerance", ["patient"].as_slice());
-    m.insert("DiagnosticReport", ["status", "code"].as_slice());
-    m.insert("Immunization", ["status", "vaccineCode", "patient"].as_slice());
-    m.insert("Bundle", ["type"].as_slice());
-    m.insert("Subscription", ["status", "criteria", "channel"].as_slice());
-    m.insert("Composition", ["status", "type", "date", "author", "title"].as_slice());
-    m.insert("CarePlan", ["status", "intent", "subject"].as_slice());
-    m.insert("Claim", ["status", "type", "use", "patient", "provider", "priority", "insurance"].as_slice());
-    m.insert("Coverage", ["status", "beneficiary", "payor"].as_slice());
-    m.insert("DocumentReference", ["status", "content"].as_slice());
-    m.insert("ServiceRequest", ["status", "intent", "subject"].as_slice());
-    m
-});
 
 /// Phase 1: Basic validation (required fields, types, cardinality)
 pub struct Phase1Validator;
@@ -74,20 +46,7 @@ impl Phase1Validator {
             }
         }
 
-        // Check required fields from registry
-        if let Some(fields) = REQUIRED_FIELDS.get(resource_type) {
-            for field in *fields {
-                if resource.get(*field).is_none() {
-                    issues.push(OperationOutcomeIssue {
-                        severity: IssueSeverity::Error,
-                        code: IssueType::Required,
-                        diagnostics: Some(format!("Missing required field: {}", field)),
-                        details: None,
-                        expression: Some(vec![format!("{}.{}", resource_type, field)]),
-                    });
-                }
-            }
-        }
+        // Required elements: every R4 one, from the definitions (structure.rs).
 
         // Data quality warnings (non-blocking)
         check_identifier_quality(resource, resource_type, &mut issues);
@@ -155,23 +114,6 @@ mod tests {
     }
 
     #[test]
-    fn test_observation_missing_status() {
-        let observation = json!({
-            "resourceType": "Observation",
-            "code": {"coding": [{"code": "test"}]}
-        });
-
-        let result = Phase1Validator::validate(&observation);
-        assert!(result.is_err());
-        let outcome = result.unwrap_err();
-        assert!(outcome.issue.iter().any(|i| i
-            .expression
-            .as_ref()
-            .unwrap()
-            .contains(&"Observation.status".to_string())));
-    }
-
-    #[test]
     fn test_valid_observation() {
         let observation = json!({
             "resourceType": "Observation",
@@ -180,44 +122,6 @@ mod tests {
         });
 
         assert!(Phase1Validator::validate(&observation).is_ok());
-    }
-
-    #[test]
-    fn test_medication_request_required_fields() {
-        // Missing all required fields
-        let med = json!({"resourceType": "MedicationRequest"});
-        let result = Phase1Validator::validate(&med);
-        assert!(result.is_err());
-        let outcome = result.unwrap_err();
-        assert!(outcome.issue.len() >= 3); // status, intent, subject
-    }
-
-    #[test]
-    fn test_procedure_required_fields() {
-        let proc = json!({"resourceType": "Procedure"});
-        let result = Phase1Validator::validate(&proc);
-        assert!(result.is_err());
-        let outcome = result.unwrap_err();
-        assert!(outcome.issue.iter().any(|i| i
-            .expression.as_ref().unwrap()
-            .contains(&"Procedure.status".to_string())));
-        assert!(outcome.issue.iter().any(|i| i
-            .expression.as_ref().unwrap()
-            .contains(&"Procedure.subject".to_string())));
-    }
-
-    #[test]
-    fn test_diagnostic_report_required_fields() {
-        let report = json!({"resourceType": "DiagnosticReport"});
-        let result = Phase1Validator::validate(&report);
-        assert!(result.is_err());
-        let outcome = result.unwrap_err();
-        assert!(outcome.issue.iter().any(|i| i
-            .expression.as_ref().unwrap()
-            .contains(&"DiagnosticReport.status".to_string())));
-        assert!(outcome.issue.iter().any(|i| i
-            .expression.as_ref().unwrap()
-            .contains(&"DiagnosticReport.code".to_string())));
     }
 
     #[test]

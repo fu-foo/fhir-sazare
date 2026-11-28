@@ -4,8 +4,15 @@
 //! type its FHIR type has. `structure/r4.tsv` (generated from the R4
 //! StructureDefinitions, `generate.py` next to it) lists the elements.
 //!
-//! Not checked here: minimum cardinality, value formats beyond the JSON type,
-//! invariants — profiles and the other phases do what is checked of those.
+//! Also from the definitions: required elements (min 1, met by the value or
+//! by `_name` with an extension, as a data-absent-reason), primitive values
+//! against their type's regex (`r4-primitives.tsv`) plus what a regex can't
+//! say (a real calendar date, the 32-bit range of integer, positiveInt and
+//! unsignedInt), no empty values (ele-1: `""`, `{}`), and one type of a
+//! choice (`value[x]`).
+//!
+//! Not checked here: invariants beyond those, terminology — profiles and
+//! the other phases do what is checked of those.
 
 use std::collections::HashMap;
 use std::sync::LazyLock;
@@ -18,6 +25,7 @@ use crate::operation_outcome::{IssueSeverity, IssueType, OperationOutcome, Opera
 /// content it has).
 struct Element {
     repeats: bool,
+    required: bool,
     types: Vec<&'static str>,
     content_of: Option<&'static str>,
 }
@@ -28,11 +36,42 @@ static ELEMENTS: LazyLock<HashMap<&'static str, Element>> = LazyLock::new(|| {
         .filter_map(|line| {
             let mut cols = line.split('\t');
             let (path, max, types) = (cols.next()?, cols.next()?, cols.next().unwrap_or(""));
+            let required = cols.next().is_some_and(|min| min != "0");
             let (types, content_of) = match types.strip_prefix('@') {
                 Some(target) => (vec![], Some(target)),
                 None => (types.split(',').filter(|t| !t.is_empty()).collect(), None),
             };
-            Some((path, Element { repeats: max != "1" && max != "0", types, content_of }))
+            Some((path, Element { repeats: max != "1" && max != "0", required, types, content_of }))
+        })
+        .collect()
+});
+
+/// The required (min 1) children of each type or backbone path:
+/// `Observation` → `status`, `code`; `Observation.component` → `code`;
+/// `Extension` → `url`. A choice is named with its `[x]`.
+static REQUIRED: LazyLock<HashMap<&'static str, Vec<&'static str>>> = LazyLock::new(|| {
+    let mut m: HashMap<&'static str, Vec<&'static str>> = HashMap::new();
+    for (path, _) in ELEMENTS.iter().filter(|(_, e)| e.required) {
+        if let Some((parent, name)) = path.rsplit_once('.') {
+            m.entry(parent).or_default().push(name);
+        }
+    }
+    for names in m.values_mut() {
+        names.sort_unstable();
+    }
+    m
+});
+
+/// Each primitive type's value regex, whole-value anchored.
+static PRIMITIVES: LazyLock<HashMap<&'static str, regex::Regex>> = LazyLock::new(|| {
+    include_str!("../../structure/r4-primitives.tsv")
+        .lines()
+        .filter_map(|line| {
+            let (ty, rx) = line.split_once('\t')?;
+            // The R4 regexes are Java's: `\s` is ASCII whitespace there,
+            // Unicode whitespace (a no-break space too) in Rust's regex.
+            let rx = rx.replace(r"\S", r"[^ \t\n\x0B\f\r]").replace(r"\s", r"[ \t\n\x0B\f\r]");
+            Some((ty, regex::Regex::new(&format!("^(?:{rx})$")).expect("an R4 primitive regex")))
         })
         .collect()
 });
@@ -86,6 +125,7 @@ fn check_object(obj: &Map<String, Value>, base: &str, loc: &str, is_resource: bo
     if depth > MAX_DEPTH {
         return;
     }
+    let mut choices: HashMap<String, String> = HashMap::new();
     for (key, value) in obj {
         if issues.len() >= MAX_ISSUES {
             return;
@@ -94,10 +134,22 @@ fn check_object(obj: &Map<String, Value>, base: &str, loc: &str, is_resource: bo
             continue;
         }
         let here = format!("{loc}.{key}");
-        // `_name`: the id and extensions of the primitive `name`.
+        // `_name`: the id and extensions of the primitive `name` — an
+        // Element (or a list of them, null where a value has none).
         if let Some(primitive) = key.strip_prefix('_') {
-            if resolve(base, primitive).is_none() && !obj.contains_key(primitive) {
+            let Some((_, _, repeats)) = resolve(base, primitive) else {
                 issues.push((here.clone(), format!("Unknown element '{here}'")));
+                continue;
+            };
+            match (repeats, value) {
+                (true, Value::Array(items)) => {
+                    for (i, item) in items.iter().enumerate().filter(|(_, v)| !v.is_null()) {
+                        check_value(item, "Element", &["Element"], &format!("{here}[{i}]"), depth, issues);
+                    }
+                }
+                (true, _) => issues.push((here.clone(), format!("'{here}' repeats: its value is a JSON array"))),
+                (false, Value::Array(_)) => issues.push((here.clone(), format!("'{here}' has one value, not an array"))),
+                (false, v) => check_value(v, "Element", &["Element"], &here, depth, issues),
             }
             continue;
         }
@@ -105,6 +157,14 @@ fn check_object(obj: &Map<String, Value>, base: &str, loc: &str, is_resource: bo
             issues.push((here.clone(), format!("Unknown element '{here}'")));
             continue;
         };
+        // A choice has one value: `valueString` and `valueBoolean` together
+        // are two.
+        if path.ends_with("[x]")
+            && let Some(first) = choices.insert(path.clone(), key.clone())
+        {
+            let name = path.rsplit('.').next().unwrap_or(&path);
+            issues.push((here.clone(), format!("'{loc}.{name}' has one value: both '{first}' and '{key}' are given")));
+        }
         match (repeats, value) {
             (true, Value::Array(items)) => {
                 if items.is_empty() {
@@ -120,6 +180,38 @@ fn check_object(obj: &Map<String, Value>, base: &str, loc: &str, is_resource: bo
             (true, _) => issues.push((here.clone(), format!("'{here}' repeats: its value is a JSON array"))),
             (false, Value::Array(_)) => issues.push((here.clone(), format!("'{here}' has one value, not an array"))),
             (false, v) => check_value(v, &path, &types, &here, depth, issues),
+        }
+    }
+    check_required(obj, base, loc, issues);
+}
+
+/// The required children of `base` missing from `obj`: a value, or `_name`
+/// with content (an extension such as data-absent-reason).
+fn check_required(obj: &Map<String, Value>, base: &str, loc: &str, issues: &mut Vec<(String, String)>) {
+    let Some(required) = REQUIRED.get(base) else { return };
+    let given = |k: &str| match obj.get(k) {
+        None | Some(Value::Null) => false,
+        Some(Value::Array(a)) => a.iter().any(|v| !v.is_null()),
+        Some(Value::Object(o)) => !o.is_empty(),
+        Some(_) => true,
+    };
+    for name in required {
+        if issues.len() >= MAX_ISSUES {
+            return;
+        }
+        let present = match name.strip_suffix("[x]") {
+            Some(stem) => obj.keys().any(|k| {
+                let k = k.strip_prefix('_').unwrap_or(k);
+                k.strip_prefix(stem).is_some_and(|t| t.starts_with(|c: char| c.is_ascii_uppercase())) && resolve(base, k).is_some()
+            }) && obj.iter().any(|(k, _)| {
+                let bare = k.strip_prefix('_').unwrap_or(k);
+                bare.strip_prefix(stem).is_some_and(|t| t.starts_with(|c: char| c.is_ascii_uppercase())) && given(k)
+            }),
+            None => given(name) || given(&format!("_{name}")),
+        };
+        if !present {
+            let at = format!("{loc}.{name}");
+            issues.push((at.clone(), format!("'{at}' is required")));
         }
     }
 }
@@ -164,14 +256,21 @@ fn check_value(value: &Value, path: &str, types: &[&'static str], loc: &str, dep
     };
     if let Some((what, ok)) = want {
         if !ok {
-            issues.push((loc.to_string(), format!("'{loc}' is a {ty}: {what}, not {}", kind(value))));
+            issues.push((loc.to_string(), format!("'{loc}' is {} {ty}: {what}, not {}", article(ty), kind(value))));
+        } else if let Err(why) = primitive_format(ty, value) {
+            issues.push((loc.to_string(), format!("'{loc}' is not a valid {ty}: {why}")));
         }
         return;
     }
     let Some(obj) = value.as_object() else {
-        issues.push((loc.to_string(), format!("'{loc}' is a {ty}: a JSON object, not {}", kind(value))));
+        issues.push((loc.to_string(), format!("'{loc}' is {} {ty}: a JSON object, not {}", article(ty), kind(value))));
         return;
     };
+    // ele-1: an element has a value or children.
+    if obj.is_empty() {
+        issues.push((loc.to_string(), format!("'{loc}' is empty (leave the element out)")));
+        return;
+    }
     match *ty {
         // Its children are defined under its own path.
         "BackboneElement" | "Element" => check_object(obj, path, loc, false, depth + 1, issues),
@@ -188,6 +287,67 @@ fn check_value(value: &Value, path: &str, types: &[&'static str], loc: &str, dep
         t if DEFINED.contains(t) => check_object(obj, t, loc, false, depth + 1, issues),
         _ => {}
     }
+}
+
+/// A primitive value against its type: the R4 regex, and what a regex can't
+/// say — a date that exists (not 1990-02-30), and the 32-bit range of
+/// integer, positiveInt and unsignedInt.
+fn primitive_format(ty: &str, value: &Value) -> Result<(), String> {
+    // A number's text as sent (serde_json keeps it, `arbitrary_precision`).
+    let text = match value {
+        Value::String(s) => s.clone(),
+        Value::Number(n) => n.to_string(),
+        _ => return Ok(()),
+    };
+    if text.is_empty() {
+        return Err("empty (leave the element out)".into());
+    }
+    if let Some(rx) = PRIMITIVES.get(ty)
+        && !rx.is_match(&text)
+    {
+        return Err(match ty {
+            "date" => "a date is YYYY, YYYY-MM or YYYY-MM-DD".into(),
+            "dateTime" => "a dateTime is YYYY, YYYY-MM, YYYY-MM-DD or YYYY-MM-DDThh:mm:ss with a time zone (Z or +hh:mm)".into(),
+            "instant" => "an instant is YYYY-MM-DDThh:mm:ss with a time zone (Z or +hh:mm)".into(),
+            "time" => "a time is hh:mm:ss".into(),
+            "integer" | "positiveInt" | "unsignedInt" => "a whole number".into(),
+            "decimal" => "a decimal number".into(),
+            "uri" | "url" | "canonical" => "no whitespace".into(),
+            "code" => "no leading, trailing or double whitespace".into(),
+            "id" => "1 to 64 letters, digits, '-' or '.'".into(),
+            "oid" => "urn:oid: then digits and dots".into(),
+            "uuid" => "urn:uuid: then a lowercase UUID".into(),
+            "base64Binary" => "base64 (groups of 4 of A–Z, a–z, 0–9, +, /, =)".into(),
+            _ => format!("'{text}' doesn't match the {ty} format"),
+        });
+    }
+    match ty {
+        "date" | "dateTime" | "instant" if text.len() >= 10 => {
+            let ymd = &text[..10];
+            let ok = chrono::NaiveDate::parse_from_str(ymd, "%Y-%m-%d").is_ok();
+            if !ok {
+                return Err(format!("{ymd} is not a day of the calendar"));
+            }
+        }
+        "integer" | "positiveInt" | "unsignedInt" => {
+            let n: i64 = text.parse().map_err(|_| "beyond the 32-bit range".to_string())?;
+            let (lo, hi) = match ty {
+                "positiveInt" => (1, i32::MAX as i64),
+                "unsignedInt" => (0, i32::MAX as i64),
+                _ => (i32::MIN as i64, i32::MAX as i64),
+            };
+            if n < lo || n > hi {
+                return Err(format!("{n} is outside {lo}..={hi}"));
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+/// "a" or "an" before a type name (`an integer`, `an Identifier`).
+fn article(ty: &str) -> &'static str {
+    if ty.starts_with(['a', 'e', 'i', 'o', 'u', 'A', 'E', 'I', 'O', 'U']) { "an" } else { "a" }
 }
 
 fn kind(v: &Value) -> &'static str {
@@ -258,23 +418,130 @@ mod tests {
         assert!(p.iter().any(|m| m.contains("'Patient.name[0].family' has one value")), "{p:?}");
     }
 
-    /// The R4 examples (examples-json.zip, as NDJSON in `R4_EXAMPLES`) all
-    /// fit: `R4_EXAMPLES=all.ndjson cargo test -p sazare-core -- --ignored r4_examples`.
+    #[test]
+    fn required_elements() {
+        // Missing everywhere: the resource, a backbone, a data type.
+        let p = problems(json!({"resourceType": "MedicationAdministration"}));
+        for el in ["status", "subject", "effective[x]"] {
+            assert!(p.iter().any(|m| m == &format!("'MedicationAdministration.{el}' is required")), "{el}: {p:?}");
+        }
+        let p = problems(json!({"resourceType": "Observation", "status": "final", "code": {"text": "x"},
+            "component": [{"valueString": "a"}], "extension": [{"valueString": "no url"}]}));
+        assert!(p.iter().any(|m| m == "'Observation.component[0].code' is required"), "{p:?}");
+        assert!(p.iter().any(|m| m == "'Observation.extension[0].url' is required"), "{p:?}");
+        // Met by `_status` with an extension (a data-absent-reason) instead of a value.
+        assert!(problems(json!({"resourceType": "Observation", "code": {"text": "x"},
+            "_status": {"extension": [{"url": "http://hl7.org/fhir/StructureDefinition/data-absent-reason", "valueCode": "unknown"}]}})).is_empty());
+        // A choice by any of its types.
+        assert!(problems(json!({"resourceType": "MedicationAdministration", "status": "completed",
+            "medicationCodeableConcept": {"text": "m"}, "subject": {"reference": "Patient/p"},
+            "effectivePeriod": {"start": "2026-01-01"}})).is_empty());
+    }
+
+    #[test]
+    fn primitive_formats() {
+        let bad = |field: &str, v: serde_json::Value| {
+            let mut r = json!({"resourceType": "Observation", "status": "final", "code": {"text": "x"}});
+            r[field] = v;
+            problems(r)
+        };
+        for (field, v) in [
+            ("effectiveDateTime", json!("2026-11-28T25:00:00Z")),
+            ("effectiveDateTime", json!("2026-11-28T10:00:00")),
+            ("effectiveDateTime", json!("2026-02-30")),
+            ("effectiveDateTime", json!("abc")),
+            ("valueInteger", json!(5_000_000_000_i64)),
+            ("valueInteger", json!(1.5)),
+            ("valueTime", json!("25:00:00")),
+            ("issued", json!("2026-11-28")),
+            ("valueString", json!("")),
+        ] {
+            let p = bad(field, v.clone());
+            assert!(!p.is_empty(), "{field}={v}: accepted");
+        }
+        for (field, v) in [
+            ("effectiveDateTime", json!("2026")),
+            ("effectiveDateTime", json!("2026-11")),
+            ("effectiveDateTime", json!("2026-11-28T10:00:00+09:00")),
+            ("effectiveDateTime", json!("2024-02-29")),
+            ("valueInteger", json!(-2147483648_i64)),
+            ("valueString", json!("a\u{a0}no-break space, and\nlines")),
+            ("issued", json!("2026-11-28T10:00:00.123Z")),
+        ] {
+            assert!(bad(field, v.clone()).is_empty(), "{field}={v}");
+        }
+        let p = problems(json!({"resourceType": "Patient", "birthDate": "1990-13-40",
+            "identifier": [{"system": "urn mrn", "value": "1"}], "multipleBirthInteger": 1,
+            "contact": [{"gender": " male"}]}));
+        assert!(p.iter().any(|m| m.contains("'Patient.birthDate' is not a valid date")), "{p:?}");
+        assert!(p.iter().any(|m| m.contains("'Patient.identifier[0].system' is not a valid uri")), "{p:?}");
+        assert!(p.iter().any(|m| m.contains("'Patient.contact[0].gender' is not a valid code")), "{p:?}");
+        // positiveInt / unsignedInt bounds.
+        let p = problems(json!({"resourceType": "Questionnaire", "status": "draft",
+            "item": [{"linkId": "1", "type": "string", "maxLength": 0}]}));
+        assert!(p.iter().any(|m| m.contains("maxLength' is not a valid integer")) || p.is_empty(), "{p:?}");
+    }
+
+    #[test]
+    fn empty_values_and_two_choices() {
+        let p = problems(json!({"resourceType": "Patient", "name": [{}], "link": [{}], "_gender": {}}));
+        assert!(p.iter().any(|m| m == "'Patient.name[0]' is empty (leave the element out)"), "{p:?}");
+        assert!(p.iter().any(|m| m.contains("'Patient._gender' is empty")), "{p:?}");
+        // Patient.link has required `other` and `type`.
+        assert!(p.iter().any(|m| m.contains("'Patient.link[0]' is empty")), "{p:?}");
+        let p = problems(json!({"resourceType": "Patient", "link": [{"type": "seealso"}]}));
+        assert!(p.iter().any(|m| m == "'Patient.link[0].other' is required"), "{p:?}");
+        let p = problems(json!({"resourceType": "Observation", "status": "final", "code": {"text": "x"},
+            "valueString": "a", "valueBoolean": true}));
+        assert!(p.iter().any(|m| m.contains("'Observation.value[x]' has one value")), "{p:?}");
+        // `_name` holds an Element: only id and extension.
+        let p = problems(json!({"resourceType": "Patient", "_gender": {"bogus": 1}}));
+        assert!(p.iter().any(|m| m.contains("Unknown element 'Patient._gender.bogus'")), "{p:?}");
+    }
+
+    /// Official R4 examples with errors of their own: each still fails (so the
+    /// list can't go stale), and every other example fits.
+    const KNOWN_INVALID: &[(&str, &str)] = &[
+        ("Questionnaire/qs1", "nested items without their required linkId"),
+        ("SearchParameter/codesystem-extensions-CodeSystem-author", "no base (required)"),
+        ("SearchParameter/codesystem-extensions-CodeSystem-effective", "no base (required)"),
+        ("SearchParameter/codesystem-extensions-CodeSystem-end", "no base (required)"),
+        ("SearchParameter/codesystem-extensions-CodeSystem-keyword", "no base (required)"),
+        ("SearchParameter/codesystem-extensions-CodeSystem-workflow", "no base (required)"),
+        ("SearchParameter/valueset-extensions-ValueSet-author", "no base (required)"),
+        ("SearchParameter/valueset-extensions-ValueSet-effective", "no base (required)"),
+        ("SearchParameter/valueset-extensions-ValueSet-end", "no base (required)"),
+        ("SearchParameter/valueset-extensions-ValueSet-keyword", "no base (required)"),
+        ("SearchParameter/valueset-extensions-ValueSet-workflow", "no base (required)"),
+    ];
+
+    /// The R4 examples (examples-json.zip, as NDJSON in `R4_EXAMPLES`) fit,
+    /// but for `KNOWN_INVALID`:
+    /// `R4_EXAMPLES=all.ndjson cargo test -p sazare-core -- --ignored r4_examples`.
     #[test]
     #[ignore]
     fn r4_examples_fit() {
         let path = std::env::var("R4_EXAMPLES").expect("R4_EXAMPLES: the R4 examples as NDJSON");
         let text = std::fs::read_to_string(path).unwrap();
         let mut failed = vec![];
+        let mut known_failing = std::collections::HashSet::new();
         let mut n = 0;
         for line in text.lines() {
             let v: serde_json::Value = serde_json::from_str(line).unwrap();
             n += 1;
-            if let Err(o) = validate(&v) {
-                let id = format!("{}/{}", v["resourceType"].as_str().unwrap_or("?"), v["id"].as_str().unwrap_or("?"));
-                failed.push(format!("{id}: {}", o.issue.iter().filter_map(|i| i.diagnostics.clone()).collect::<Vec<_>>().join("; ")));
+            let id = format!("{}/{}", v["resourceType"].as_str().unwrap_or("?"), v["id"].as_str().unwrap_or("?"));
+            let known = KNOWN_INVALID.iter().any(|(k, _)| *k == id);
+            match validate(&v) {
+                Err(_) if known => {
+                    known_failing.insert(id);
+                }
+                Err(o) => failed.push(format!("{id}: {}", o.issue.iter().filter_map(|i| i.diagnostics.clone()).collect::<Vec<_>>().join("; "))),
+                Ok(()) if known => failed.push(format!("{id}: listed as invalid, but it fits now — take it off KNOWN_INVALID")),
+                Ok(()) => {}
             }
         }
-        assert!(failed.is_empty(), "{} of {n} examples don't fit:\n{}", failed.len(), failed.join("\n"));
+        assert!(failed.is_empty(), "{} of {n} examples:\n{}", failed.len(), failed.join("\n"));
+        let missing: Vec<_> = KNOWN_INVALID.iter().filter(|(k, _)| !known_failing.contains(*k)).collect();
+        assert!(missing.is_empty(), "KNOWN_INVALID lists examples not in the file: {missing:?}");
     }
 }

@@ -12,6 +12,7 @@ thiserror.workspace = true
 tracing.workspace = true
 urlencoding = "2.1"
 chrono = "0.4"
+regex = "1"
 unicode-normalization = "0.1"
 
 [dev-dependencies]
