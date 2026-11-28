@@ -44,3 +44,7 @@ memo.txt
 # OS files
 .DS_Store
 Thumbs.db
+
+# Python bytecode (ci/ scripts)
+__pycache__/
+*.pyc
