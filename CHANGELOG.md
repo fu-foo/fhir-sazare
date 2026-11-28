@@ -13,6 +13,17 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
   index already was: 200k resources in 43 s instead of about 20 minutes. A line that
   fails is still reported and the others kept; the response still comes after everything
   is committed.
+- **The dashboard and `/metrics` no longer count the whole store.** Resources per type were
+  counted with a scan of every resource on each dashboard refresh (every 5 s) and each
+  metrics scrape — seconds at 100M. They are kept in a small table, updated with each write.
+- **The dashboard's resource list reads a page, not the whole type.** It sorted every
+  resource of the type by the `lastUpdated` inside its JSON for each page (minutes at
+  100M); it now walks the search index's `_lastUpdated` order like
+  `GET /{type}?_sort=-_lastUpdated`.
+
+### Behavior changes
+- `resources.sqlite` moves to schema version 4: the per-type counts (taken once on the first
+  start, a scan of the store) and two unused indexes dropped (smaller files, cheaper writes).
 
 ## 0.18.3 — 2026-11-28
 

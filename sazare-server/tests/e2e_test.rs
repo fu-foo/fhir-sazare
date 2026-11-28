@@ -2687,3 +2687,30 @@ async fn test_import_batches_keep_versions() {
     let n: Value = c.get(format!("{base}/Patient?gender=male&_summary=count")).send().await.unwrap().json().await.unwrap();
     assert_eq!(n["total"], 2499, "{n}");
 }
+
+/// The dashboard's list: the newest first, paged, with the kept count as the
+/// total; `$status` counts follow creates, updates and deletes.
+#[tokio::test]
+async fn test_dashboard_lists_newest_first_with_kept_counts() {
+    let (base, _dir) = start_test_server().await;
+    let c = reqwest::Client::new();
+    for id in ["a", "b", "c"] {
+        create(&c, &base, "Patient", &json!({"resourceType": "Patient", "id": id})).await;
+    }
+    // Updating `a` makes it the newest; it is still one Patient.
+    let r = c.put(format!("{base}/Patient/a")).json(&json!({"resourceType": "Patient", "id": "a", "gender": "male"}))
+        .send().await.unwrap();
+    assert_eq!(r.status(), 200);
+    let page: Value = c.get(format!("{base}/$browse/Patient?_count=2")).send().await.unwrap().json().await.unwrap();
+    assert_eq!(page["total"], 3, "{page}");
+    let ids: Vec<&str> = page["entries"].as_array().unwrap().iter().map(|e| e["id"].as_str().unwrap()).collect();
+    assert_eq!(ids, ["a", "c"], "{page}");
+    let next: Value = c.get(format!("{base}/$browse/Patient?_count=2&_offset=2")).send().await.unwrap().json().await.unwrap();
+    assert_eq!(next["entries"][0]["id"], "b", "{next}");
+
+    assert_eq!(c.delete(format!("{base}/Patient/b")).send().await.unwrap().status(), 204);
+    let status: Value = c.get(format!("{base}/$status")).send().await.unwrap().json().await.unwrap();
+    let patients = status["resourceCounts"].as_array().unwrap().iter().find(|t| t["type"] == "Patient").unwrap();
+    assert_eq!(patients["count"], 2, "{status}");
+    assert_eq!(status["totalResources"], 2, "{status}");
+}

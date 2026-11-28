@@ -73,6 +73,32 @@ impl SqliteStore {
         r#"
         ALTER TABLE resource_history ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0;
         "#,
+        // v4 — resources per type, kept by triggers: the dashboard (every 5 s)
+        // and /metrics (every scrape) counted the whole table, seconds at
+        // 100M. Counted once here. Writes are INSERT OR REPLACE, whose
+        // replaced row fires no DELETE trigger: an insert counts only when
+        // the id is new (checked before the insert).
+        r#"
+        CREATE TABLE resource_counts (
+            resource_type TEXT PRIMARY KEY,
+            n INTEGER NOT NULL
+        ) WITHOUT ROWID;
+        INSERT INTO resource_counts (resource_type, n)
+            SELECT resource_type, COUNT(*) FROM resources GROUP BY resource_type;
+        CREATE TRIGGER counts_insert BEFORE INSERT ON resources
+            WHEN NOT EXISTS (SELECT 1 FROM resources WHERE resource_type = NEW.resource_type AND id = NEW.id)
+        BEGIN
+            INSERT INTO resource_counts (resource_type, n) VALUES (NEW.resource_type, 1)
+                ON CONFLICT (resource_type) DO UPDATE SET n = n + 1;
+        END;
+        CREATE TRIGGER counts_delete AFTER DELETE ON resources BEGIN
+            UPDATE resource_counts SET n = n - 1 WHERE resource_type = OLD.resource_type;
+        END;
+        -- The primary keys start with resource_type: these two served nothing
+        -- and cost GBs and a write each at 100M.
+        DROP INDEX IF EXISTS idx_resources_type;
+        DROP INDEX IF EXISTS idx_history_type;
+        "#,
     ];
 
     /// Open the store (create if not exists)
@@ -449,11 +475,12 @@ impl SqliteStore {
         Ok(exists)
     }
 
-    /// Get resource counts by type
+    /// Resources per type (from `resource_counts`: a read of a few rows, not
+    /// a count of the table)
     pub fn count_by_type(&self) -> Result<Vec<(String, i64)>> {
         let conn = self.reader();
         let mut stmt = conn.prepare(
-            "SELECT resource_type, COUNT(*) FROM resources GROUP BY resource_type ORDER BY resource_type",
+            "SELECT resource_type, n FROM resource_counts WHERE n > 0 ORDER BY resource_type",
         )?;
         let rows = stmt.query_map([], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
@@ -540,43 +567,6 @@ impl SqliteStore {
             ids.push(id?);
         }
         Ok(ids)
-    }
-
-    /// List resources sorted by meta.lastUpdated descending with pagination.
-    /// Returns (entries as (id, value), total_count).
-    #[allow(clippy::type_complexity)]
-    pub fn list_by_last_updated(
-        &self,
-        resource_type: &str,
-        count: usize,
-        offset: usize,
-    ) -> Result<(Vec<(String, Vec<u8>)>, usize)> {
-        let conn = self.reader();
-
-        // Total count
-        let total: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM resources WHERE resource_type = ?",
-            params![resource_type],
-            |row| row.get(0),
-        )?;
-        let total = total as usize;
-
-        let mut stmt = conn.prepare(
-            "SELECT id, value FROM resources WHERE resource_type = ? \
-             ORDER BY json_extract(value, '$.meta.lastUpdated') DESC \
-             LIMIT ? OFFSET ?",
-        )?;
-        let rows = stmt.query_map(params![resource_type, count as i64, offset as i64], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-        })?;
-
-        let mut entries = Vec::new();
-        for row in rows {
-            let (id, val) = row?;
-            entries.push((id, val.into_bytes()));
-        }
-
-        Ok((entries, total))
     }
 
     /// Execute multiple operations atomically within an SQLite transaction
@@ -702,6 +692,55 @@ mod tests {
 
         let retrieved = store.get("Patient", "123").unwrap();
         assert_eq!(retrieved, Some(data.to_vec()));
+    }
+
+    /// The kept counts match a count of the table through creates, updates
+    /// (INSERT OR REPLACE), deletes and re-creates.
+    #[test]
+    fn counts_follow_writes() {
+        let store = SqliteStore::open(":memory:").unwrap();
+        let counted = |store: &SqliteStore| -> Vec<(String, i64)> {
+            let conn = store.conn();
+            let mut st = conn
+                .prepare("SELECT resource_type, COUNT(*) FROM resources GROUP BY resource_type ORDER BY resource_type")
+                .unwrap();
+            st.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))
+                .unwrap()
+                .map(|r| r.unwrap())
+                .collect()
+        };
+        let p = |id: &str| format!(r#"{{"resourceType":"Patient","id":"{id}"}}"#);
+        for id in ["1", "2", "3"] {
+            store.put("Patient", id, p(id).as_bytes()).unwrap();
+        }
+        store.put("Patient", "2", p("2").as_bytes()).unwrap(); // update
+        store.put("Observation", "o", br#"{"resourceType":"Observation","id":"o"}"#).unwrap();
+        assert!(store.delete("Patient", "1").unwrap());
+        assert!(!store.delete("Patient", "1").unwrap()); // already gone
+        store.put("Patient", "1", p("1").as_bytes()).unwrap(); // re-create
+        assert!(store.delete("Observation", "o").unwrap());
+        assert_eq!(store.count_by_type().unwrap(), counted(&store));
+        assert_eq!(store.count_by_type().unwrap(), vec![("Patient".to_string(), 3)]);
+    }
+
+    /// A store from before v4 gets its counts on upgrade.
+    #[test]
+    fn counts_are_taken_on_upgrade() {
+        let path = std::env::temp_dir().join(format!("sazare-counts-{}.sqlite", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        {
+            let mut conn = Connection::open(&path).unwrap();
+            crate::migrate::run_migrations(&mut conn, &SqliteStore::MIGRATIONS[..3]).unwrap();
+            for id in ["a", "b"] {
+                conn.execute("INSERT INTO resources VALUES ('Patient', ?1, '{}')", [id]).unwrap();
+            }
+        }
+        let store = SqliteStore::open(&path).unwrap();
+        assert_eq!(store.count_by_type().unwrap(), vec![("Patient".to_string(), 2)]);
+        drop(store);
+        for ext in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{ext}", path.display()));
+        }
     }
 
     #[test]

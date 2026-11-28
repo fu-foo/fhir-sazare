@@ -86,10 +86,38 @@ pub async fn browse_list(
     let count = params._count.unwrap_or(20).min(100);
     let offset = params._offset.unwrap_or(0);
 
-    let (raw_entries, total) = match state.store.list_by_last_updated(&resource_type, count, offset) {
-        Ok(r) => r,
-        Err(e) => return Json(json!({"error": e.to_string()})).into_response(),
+    // The newest first, through the search index: it walks `_lastUpdated` in
+    // order and reads a page. (Sorting the table by the JSON's lastUpdated
+    // read every resource of the type: minutes at 100M.) The total is the
+    // kept count, not a count.
+    let query = match sazare_core::SearchQuery::parse_with_registry(
+        &format!("_sort=-_lastUpdated&_count={count}&_offset={offset}&_total=none"),
+        Some(&resource_type),
+        &state.search_param_registry,
+    ) {
+        Ok(q) => q,
+        Err(e) => return Json(json!({"error": e})).into_response(),
     };
+    let rt = resource_type.clone();
+    let page = crate::with_index_reader(&state, move |st, index| {
+        sazare_store::SearchExecutor::new(&st.store, index).search(&rt, &query)
+    })
+    .await;
+    let ids = match page {
+        Ok(ids) => ids,
+        Err(e) => return Json(json!({"error": e})).into_response(),
+    };
+    let raw_entries: Vec<(String, Vec<u8>)> = ids
+        .into_iter()
+        .filter_map(|id| state.store.get(&resource_type, &id).ok().flatten().map(|d| (id, d)))
+        .collect();
+    let total = state
+        .store
+        .count_by_type()
+        .unwrap_or_default()
+        .into_iter()
+        .find(|(t, _)| *t == resource_type)
+        .map_or(0, |(_, n)| n);
 
     let entries: Vec<Value> = raw_entries
         .into_iter()
