@@ -15,6 +15,13 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --all
       - run: cargo clippy --all --all-targets -- -D warnings
+      # Every official R4 example fits the R4 rules writes are checked with
+      # (but for the ones listed with errors of their own).
+      - name: R4 examples
+        run: |
+          curl -sfL --retry 3 -o "$RUNNER_TEMP/examples-json.zip" https://hl7.org/fhir/R4/examples-json.zip
+          python3 ci/r4_examples.py "$RUNNER_TEMP/examples-json.zip" > "$RUNNER_TEMP/r4-examples.ndjson"
+          R4_EXAMPLES="$RUNNER_TEMP/r4-examples.ndjson" cargo test -p sazare-core -- --ignored r4_examples
 
   # Known vulnerabilities in the dependencies (RustSec). Fails on an advisory;
   # "unmaintained" notices are shown, not failed on.
