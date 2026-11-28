@@ -4,7 +4,7 @@ All notable changes to sazare. Versions follow [Semantic Versioning](https://sem
 until 1.0, a minor version (0.x.0) may change behavior — those changes are listed under
 **Behavior changes**. See [UPGRADING.md](UPGRADING.md) for how to upgrade.
 
-## Unreleased
+## 0.18.3 — 2026-11-28
 
 ### Added
 - A tab icon for the dashboard (`/favicon.svg`, also at `/favicon.ico`): さざれ石 grown into
@@ -14,10 +14,6 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
   parameter; only `subject:Patient.name` worked. A hop without a type takes the one type
   it may refer to (R4's targets) that has the next parameter; when several do, the 400
   says which to name.
-- **Backups and new data directories are owner-only**: `backup` wrote `resources.sqlite`
-  and `audit.sqlite` readable by every local user (the umask's 644); they are 0600 now,
-  and directories sazare creates (data, logs, backup, export) 0700. Existing directories
-  keep their mode.
 - `$import` errors read as sentences (`line 3 (Patient): …`, not JSON inside a string); a
   line holding a JSON array says that NDJSON is one resource per line; plurals fixed.
 - `$export` with an unknown parameter names it in sazare's words (it listed `_typeFilter`,
@@ -26,6 +22,10 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
   step after changing the configuration.
 
 ### Fixed
+- **Backups and new data directories are owner-only**: `backup` wrote `resources.sqlite`
+  and `audit.sqlite` readable by every local user (the umask's 644); they are 0600 now,
+  and directories sazare creates (data, logs, backup, export) 0700. Existing directories
+  keep their mode.
 - **A request with two `Authorization` headers is refused** (400). The first was used and the
   rest ignored, so a proxy in front checking another one than sazare could be misled.
 - A configuration block written as a list (`jwt:` then `- secret: …`, easy beside `api_keys`
