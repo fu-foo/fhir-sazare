@@ -2740,7 +2740,8 @@ async fn test_chain_modifiers_and_missing_history() {
     }
     assert_eq!(c.get(format!("{base}/Observation?subject:Patient._bogus=1")).send().await.unwrap().status(), 400);
     assert_eq!(c.get(format!("{base}/Observation/no-such/_history")).send().await.unwrap().status(), 404);
-=======
+}
+
 /// `Prefer: return=minimal | OperationOutcome` on writes; the history records
 /// a create by PUT as a PUT; conditional references resolve (or fail).
 #[tokio::test]
