@@ -7,8 +7,9 @@ on the R4 examples and on copies broken on purpose, through every write path.
       and for every 2nd one up to 16 KB copies with one thing broken each
   java -jar validator_cli.jar <dir> -version 4.0.1 -tx n/a -locale en -output validator.json
   python3 ci/validator_compare.py compare <dir> validator.json <sazare base URL> [baseline.json]
-      send every file to sazare by POST, PUT, a transaction, a batch and PATCH;
-      compare; print a report; exit 1 when
+      send every file to sazare by every write path — POST, PUT, conditional
+      create and update, a transaction and a batch (a POST and a PUT entry
+      each), PATCH, $import —; compare; print a report; exit 1 when
 
   - sazare refuses what the validator accepts (KNOWN_SAZARE_ONLY aside);
   - a broken copy is accepted by sazare though the validator refuses it: a
@@ -20,7 +21,13 @@ on the R4 examples and on copies broken on purpose, through every write path.
 
 Where to break and what type an element has come from the R4
 StructureDefinitions, read here — not from sazare's own table, whose mistakes
-would otherwise never be tried.
+would otherwise never be tried. The one judgment shared with sazare's
+generator: a resource's `id` is an `id` (the R4 snapshots say `string`, the
+spec says id).
+
+What the validator can't judge is guarded by sazare's own tests instead:
+conditional references (resolved on write; the validator sees one file) and
+decimals kept as written (a round trip, not a verdict).
 """
 import collections
 import copy
@@ -172,6 +179,19 @@ def mutations(resource):
           lambda h, k, i: put(h, k, i, 5000000000))
     apply("code-double-space", lambda v, p, t: t == "code" and s(v) and v,
           lambda h, k, i: put(h, k, i, get(h, k, i) + "  x"))
+    # A narrative's div: what txt-1 refuses, as written to slip past a
+    # string search.
+    for kind, inner in (("narrative-script", "<scriptx>a</scriptx><script>alert(1)</script>"),
+                        ("narrative-event-attribute", "<p\tonclick=\"x()\">a</p>"),
+                        ("narrative-javascript-link", "<a href=\"javascript&#58;alert(1)\">a</a>"),
+                        ("narrative-unknown-element", "<video>a</video>"),
+                        ("narrative-not-well-formed", "<p>a</b>")):
+        div = resource.get("text", {}).get("div") if isinstance(resource.get("text"), dict) else None
+        if isinstance(div, str) and ">" in div:
+            r = copy.deepcopy(resource)
+            at = div.index(">") + 1
+            r["text"]["div"] = div[:at] + inner + div[at:]
+            out.append((kind, r))
     apply("extension-value-and-extensions",
           lambda v, p, t: t == "Extension" and isinstance(v, dict) and any(k.startswith("value") for k in v),
           lambda h, k, i: get(h, k, i).setdefault("extension", []).append({"url": "http://example.org/x", "valueString": "y"}))
@@ -249,9 +269,10 @@ def validator_results(path):
     return out
 
 
-def request(base, method, path, body, content_type="application/fhir+json"):
-    req = urllib.request.Request(f"{base}{path}", data=json.dumps(body).encode(), method=method,
-                                 headers={"Content-Type": content_type})
+def request(base, method, path, body, content_type="application/fhir+json", extra=None, raw=None):
+    data = raw.encode() if raw is not None else json.dumps(body).encode()
+    req = urllib.request.Request(f"{base}{path}", data=data, method=method,
+                                 headers={"Content-Type": content_type, **(extra or {})})
     try:
         with urllib.request.urlopen(req) as resp:
             return resp.status, json.loads(resp.read() or b"null")
@@ -279,28 +300,44 @@ def write_paths(base, resource, original, tag):
         r["id"] = f"{tag}-{suffix}"[:64]
         return r
 
-    s, b = request(base, "POST", f"/{rt}", resource)
-    out["POST"] = (200 <= s < 300, f"{s} {message(b)}")
+    def verdict(s, b):
+        return (200 <= s < 300, f"{s} {message(b)}")
+
+    out["POST"] = verdict(*request(base, "POST", f"/{rt}", resource))
     r = with_id(resource, "pu")
-    s, b = request(base, "PUT", f"/{rt}/{r['id']}", r)
-    out["PUT"] = (200 <= s < 300, f"{s} {message(b)}")
-    for kind, suffix in (("transaction", "tx"), ("batch", "ba")):
-        r = with_id(resource, suffix)
-        bundle = {"resourceType": "Bundle", "type": kind,
-                  "entry": [{"resource": r, "request": {"method": "PUT", "url": f"{rt}/{r['id']}"}}]}
-        s, b = request(base, "POST", "", bundle)
-        if kind == "batch" and s == 200:
-            response = b["entry"][0]["response"]
-            out[kind] = (response["status"].startswith("2"), f"{response['status']} {message(response.get('outcome'))}")
-        else:
-            out[kind] = (200 <= s < 300, f"{s} {message(b)}")
+    out["PUT"] = verdict(*request(base, "PUT", f"/{rt}/{r['id']}", r))
+    # Conditional create (nothing matches) and conditional update (creates).
+    r = with_id(resource, "cc")
+    out["conditional create"] = verdict(*request(base, "POST", f"/{rt}", r, extra={"If-None-Exist": f"_id={r['id']}"}))
+    r = with_id(resource, "cu")
+    out["conditional update"] = verdict(*request(base, "PUT", f"/{rt}?_id={r['id']}", r))
+    for kind, short in (("transaction", "tx"), ("batch", "ba")):
+        for method in ("POST", "PUT"):
+            r = with_id(resource, f"{short}{method[1].lower()}")
+            url = rt if method == "POST" else f"{rt}/{r['id']}"
+            bundle = {"resourceType": "Bundle", "type": kind, "entry": [{"resource": r, "request": {"method": method, "url": url}}]}
+            s, b = request(base, "POST", "", bundle)
+            if kind == "batch" and s == 200:
+                response = b["entry"][0]["response"]
+                out[f"batch {method}"] = (response["status"].startswith("2"), f"{response['status']} {message(response.get('outcome'))}")
+            else:
+                out[f"{kind} {method}"] = verdict(s, b)
     # PATCH: the original stored, then replaced by this content.
     r = with_id(resource, "pa")
-    s0, b0 = request(base, "PUT", f"/{rt}/{r['id']}", with_id(original, "pa"))
+    s0, _ = request(base, "PUT", f"/{rt}/{r['id']}", with_id(original, "pa"))
     if 200 <= s0 < 300:
-        s, b = request(base, "PATCH", f"/{rt}/{r['id']}", [{"op": "replace", "path": "", "value": r}],
-                       "application/json-patch+json")
-        out["PATCH"] = (200 <= s < 300, f"{s} {message(b)}")
+        out["PATCH"] = verdict(*request(base, "PATCH", f"/{rt}/{r['id']}", [{"op": "replace", "path": "", "value": r}],
+                                        "application/json-patch+json"))
+    # $import: one line; its outcome counts what was imported.
+    r = with_id(resource, "im")
+    s, b = request(base, "POST", "/$import", None, "application/fhir+ndjson", raw=json.dumps(r) + "\n")
+    imported = 0
+    if isinstance(b, dict):
+        for ext in b.get("extension", []):
+            for x in ext.get("extension", []):
+                if x.get("url") == "created":
+                    imported = x.get("valueInteger", 0)
+    out["$import"] = (s == 200 and imported == 1, f"{s} {next((i.get('diagnostics') for i in (b or {}).get('issue', [])[1:2]), '')}")
     return out
 
 
@@ -343,7 +380,8 @@ def compare(dirname, vpath, base, baseline_path=None):
                 only_validator_examples += 1
                 for m in set(map(bucket, v[name])):
                     gaps[m] += 1
-    print("Each file was sent by POST, PUT, a transaction, a batch and PATCH; they agreed on each verdict below.\n")
+    print("Each file was sent by every write path (POST, PUT, conditional create and update, transaction and batch")
+    print("POST and PUT entries, PATCH, $import); they agreed on each verdict below.\n")
     print("| kind | both accept | both refuse | only sazare refuses | only the validator refuses |")
     print("|---|---:|---:|---:|---:|")
     for kind in sorted({k for k, _, _ in tally}):
