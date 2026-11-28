@@ -88,40 +88,9 @@ jobs:
   # write paths disagree, or the validator alone refuses more examples than
   # ci/validator_baseline.json.
   validator:
-    runs-on: ubuntu-latest
-    env:
-      VALIDATOR_VERSION: "7.0.8"
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "21"
-      - run: cargo build --release
-      - name: Corpus
-        run: |
-          for f in examples-json.zip profiles-resources.json profiles-types.json; do
-            curl -sfL --retry 3 -o "$RUNNER_TEMP/$f" "https://hl7.org/fhir/R4/$f"
-          done
-          python3 ci/r4_examples.py "$RUNNER_TEMP/examples-json.zip" > "$RUNNER_TEMP/r4-examples.ndjson"
-          python3 ci/validator_compare.py corpus "$RUNNER_TEMP/r4-examples.ndjson" \
-            "$RUNNER_TEMP/profiles-resources.json" "$RUNNER_TEMP/profiles-types.json" "$RUNNER_TEMP/corpus"
-      - name: HL7 validator
-        run: |
-          curl -sfL --retry 3 -o "$RUNNER_TEMP/validator_cli.jar" \
-            "https://github.com/hapifhir/org.hl7.fhir.core/releases/download/$VALIDATOR_VERSION/validator_cli.jar"
-          java -Xmx8g -jar "$RUNNER_TEMP/validator_cli.jar" "$RUNNER_TEMP/corpus" -version 4.0.1 -tx n/a -locale en \
-            -output "$RUNNER_TEMP/validator.json" > "$RUNNER_TEMP/validator.log" 2>&1 || (tail -40 "$RUNNER_TEMP/validator.log"; exit 1)
-          tail -1 "$RUNNER_TEMP/validator.log"
-      - name: Compare with sazare
-        run: |
-          printf 'server:\n  port: 18080\nauth:\n  enabled: false\nstorage:\n  data_dir: "%s/data"\nlog:\n  level: "warn"\n' "$RUNNER_TEMP" > "$RUNNER_TEMP/config.yaml"
-          target/release/sazare-server start --config "$RUNNER_TEMP/config.yaml"
-          set -o pipefail
-          python3 ci/validator_compare.py compare "$RUNNER_TEMP/corpus" "$RUNNER_TEMP/validator.json" http://127.0.0.1:18080 \
-            ci/validator_baseline.json | tee -a "$GITHUB_STEP_SUMMARY"
+    uses: ./.github/workflows/validator.yml
+    with:
+      version: "7.0.8"
 
   # An implementation guide end to end, with JP Core: fetch the package and its
   # terminology with the generic IG script, start sazare on them, load the

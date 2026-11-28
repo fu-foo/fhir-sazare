@@ -1,0 +1,30 @@
+# The validator comparison with the newest HL7 validator, monthly and on
+# demand. CI pins a version (ci.yml), so a change in the validator's rules
+# wouldn't otherwise be noticed. A failure lists what differs now (by
+# breakage kind and element pair); decide there whether sazare follows, then
+# raise the pinned version in ci.yml.
+name: Validator comparison (latest)
+
+on:
+  schedule:
+    - cron: "17 3 1 * *"
+  workflow_dispatch:
+
+jobs:
+  latest:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - id: v
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v=$(gh api repos/hapifhir/org.hl7.fhir.core/releases/latest -q .tag_name)
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "Newest validator: $v (CI pins the one in ci.yml)" >> "$GITHUB_STEP_SUMMARY"
+  compare:
+    needs: latest
+    uses: ./.github/workflows/validator.yml
+    with:
+      version: ${{ needs.latest.outputs.version }}

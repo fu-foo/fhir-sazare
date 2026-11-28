@@ -54,5 +54,7 @@ rule is in the change that taught it (CHANGELOG, the PR named).
 ## Releases and compatibility
 
 `STABILITY.md` is the promise; `UPGRADING.md` says what each version changes on disk. A
-store schema change is a minor version. A behaviour change is listed under
+store schema change is a minor version. Before a release, the comparison with the newest
+HL7 validator (`validator-latest.yml`, also monthly) passes, or what differs is decided:
+the agreement is with the version CI pins, and the validator's rules change. A behaviour change is listed under
 **Behavior changes** in the CHANGELOG. Docs and release notes are in English.
