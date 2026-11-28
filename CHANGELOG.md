@@ -26,6 +26,8 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
   step after changing the configuration.
 
 ### Fixed
+- **A request with two `Authorization` headers is refused** (400). The first was used and the
+  rest ignored, so a proxy in front checking another one than sazare could be misled.
 - A configuration block written as a list (`jwt:` then `- secret: …`, easy beside `api_keys`
   and `basic_auth`, which are lists) or the reverse: the error says to remove or add the `- `.
 - A taken port (8080 often is: another server, an editor's port forwarding) made `start`

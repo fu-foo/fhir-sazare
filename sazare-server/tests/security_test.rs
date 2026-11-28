@@ -759,3 +759,22 @@ async fn another_patients_deleted_resource_stays_theirs() {
     assert_eq!(c.send(reqwest::Method::DELETE, "/Observation/o-p1", ADMIN_KEY, None).await.0, 204);
     assert_eq!(c.get("/Observation/o-p1", &t).await.0, 410);
 }
+
+/// Two Authorization headers are refused, whichever comes first: a proxy in
+/// front could check one and this server the other.
+#[tokio::test]
+async fn two_authorization_headers_are_refused() {
+    let (base, _d) = start(secured_config()).await;
+    let c = reqwest::Client::new();
+    let get = |headers: &[&str]| {
+        let mut r = c.get(format!("{base}/Patient"));
+        for h in headers {
+            r = r.header("Authorization", *h);
+        }
+        r.send()
+    };
+    let good = format!("Bearer {ADMIN_KEY}");
+    assert_eq!(get(&[&good]).await.unwrap().status(), 200);
+    assert_eq!(get(&[&good, "Bearer forged"]).await.unwrap().status(), 400);
+    assert_eq!(get(&["Bearer forged", &good]).await.unwrap().status(), 400);
+}

@@ -312,6 +312,16 @@ pub async fn auth_middleware(
         resp
     };
 
+    // One Authorization header: with two, a proxy in front might check one
+    // credential and this server another.
+    if request.headers().get_all(header::AUTHORIZATION).iter().nth(1).is_some() {
+        let outcome = OperationOutcome::error(
+            sazare_core::operation_outcome::IssueType::Invalid,
+            "More than one Authorization header; send one",
+        );
+        return Err(fail((StatusCode::BAD_REQUEST, axum::Json(outcome)).into_response()));
+    }
+
     // Extract authorization header
     let auth_header = request
         .headers()
