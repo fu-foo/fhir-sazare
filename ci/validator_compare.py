@@ -259,26 +259,84 @@ NARRATIVE_ELEMENTS = [
 ]
 
 
+ATTRS = {"img": ' src="x.png" alt="x"', "area": ' alt="x"', "map": ' name="m"', "a": ' name="n"'}
+EMPTY = {"br", "hr", "img", "area", "col"}
+
+
 def element(name, inner=""):
-    attrs = {"img": ' src="x.png" alt="x"', "area": ' alt="x"', "map": ' name="m"', "a": ' name="n"'}.get(name, "")
-    return f"<{name}{attrs}>{inner}</{name}>"
+    if name in EMPTY and inner == "":
+        return f"<{name}{ATTRS.get(name, '')}/>"
+    return f"<{name}{ATTRS.get(name, '')}>{inner}</{name}>"
+
+
+def valid_inner(name):
+    """`name` in its smallest form that is valid on its own, so a pair is
+    judged on the pair: an empty element empty, a container with the one
+    child it needs."""
+    if name in EMPTY:
+        return element(name)
+    return {
+        "ul": "<ul><li>b</li></ul>", "ol": "<ol><li>b</li></ol>", "dl": "<dl><dt>b</dt></dl>",
+        "table": "<table><tr><td>b</td></tr></table>", "tr": "<tr><td>b</td></tr>",
+        "thead": "<thead><tr><td>b</td></tr></thead>", "tbody": "<tbody><tr><td>b</td></tr></tbody>",
+        "tfoot": "<tfoot><tr><td>b</td></tr></tfoot>", "colgroup": "<colgroup><col/></colgroup>",
+        "map": '<map name="m"><area alt="x"/></map>',
+    }.get(name, element(name, "b"))
+
+
+def wrap_outer(name, content):
+    """`name` holding `content`, inside the parent it needs (a list item in a
+    list, a cell in a row in a table, an area in a map), so the outer element
+    is never what is refused."""
+    el = element(name, content) if not (name in EMPTY and content == "") else element(name)
+    return {
+        "li": f"<ul>{el}</ul>", "dt": f"<dl>{el}</dl>", "dd": f"<dl>{el}</dl>",
+        "td": f"<table><tr>{el}</tr></table>", "th": f"<table><tr>{el}</tr></table>",
+        "tr": f"<table>{el}</table>",
+        "caption": f"<table>{el}<tr><td>x</td></tr></table>",
+        "thead": f"<table>{el}<tr><td>x</td></tr></table>",
+        "tbody": f"<table>{el}</table>", "tfoot": f"<table>{el}<tr><td>x</td></tr></table>",
+        "colgroup": f"<table>{el}<tr><td>x</td></tr></table>",
+        "col": f"<table>{el}<tr><td>x</td></tr></table>",
+        "area": f'<map name="m">{el}</map>',
+    }.get(name, el)
+
+
+def narrative_file(dst, name, n, body):
+    div = f'<div xmlns="http://www.w3.org/1999/xhtml"><p>text</p>{body}</div>'
+    r = {"resourceType": "Basic", "id": f"pair{n}", "code": {"text": "x"}, "text": {"status": "generated", "div": div}}
+    json.dump(r, open(os.path.join(dst, f"pairs-{name}.json"), "w"))
+
+
+def own_content(name):
+    """The smallest content `name` is valid with, for its control."""
+    if name in EMPTY:
+        return ""
+    return {"ul": "<li>b</li>", "ol": "<li>b</li>", "dl": "<dt>b</dt>", "table": "<tr><td>b</td></tr>",
+            "tr": "<td>b</td>", "thead": "<tr><td>b</td></tr>", "tbody": "<tr><td>b</td></tr>",
+            "tfoot": "<tr><td>b</td></tr>", "colgroup": "<col/>", "map": '<area alt="x"/>'}.get(name, "b")
 
 
 def element_pairs(dst, start):
-    """A Basic for each (outer, inner) pair of narrative elements."""
+    """For each (outer, inner) pair of narrative elements: inner in its
+    smallest valid form directly in outer, outer in the parent it needs.
+    Each outer has a control — itself with its own smallest content, no
+    inner: a pair is counted only when both accept its control, so a refusal
+    can only be the pair's. Then each element alone, empty and holding text
+    (an outer inside a div covers the parent rules)."""
     n = start
     for outer in NARRATIVE_ELEMENTS:
+        n += 1
+        # "!" sorts before the inner names: the control is sent first.
+        narrative_file(dst, f"{outer}-!control", n, wrap_outer(outer, own_content(outer)))
         for inner in NARRATIVE_ELEMENTS:
             n += 1
-            div = f'<div xmlns="http://www.w3.org/1999/xhtml"><p>text</p>{element(outer, "a" + element(inner, "b"))}</div>'
-            r = {"resourceType": "Basic", "id": f"pair{n}", "code": {"text": "x"}, "text": {"status": "generated", "div": div}}
-            json.dump(r, open(os.path.join(dst, f"pairs-{outer}-{inner}.json"), "w"))
-    # And each one empty (`<ul></ul>`, `<table></table>`, `<br/>`).
+            narrative_file(dst, f"{outer}-{inner}", n, wrap_outer(outer, valid_inner(inner)))
     for name in NARRATIVE_ELEMENTS:
         n += 1
-        div = f'<div xmlns="http://www.w3.org/1999/xhtml"><p>text</p>{element(name)}</div>'
-        r = {"resourceType": "Basic", "id": f"pair{n}", "code": {"text": "x"}, "text": {"status": "generated", "div": div}}
-        json.dump(r, open(os.path.join(dst, f"pairs-{name}-empty.json"), "w"))
+        narrative_file(dst, f"{name}-empty", n, wrap_outer(name, ""))
+        n += 1
+        narrative_file(dst, f"{name}-text", n, wrap_outer(name, "x"))
     return n - start
 
 
@@ -345,7 +403,9 @@ def write_paths(base, resource, original, tag):
 
     def with_id(r, suffix):
         r = copy.deepcopy(r)
-        r["id"] = f"{tag}-{suffix}"[:64]
+        # A FHIR id: the tag comes from a file name ("!control") — keep only
+        # what an id may hold.
+        r["id"] = re.sub(r"[^A-Za-z0-9.-]", "-", f"{tag}-{suffix}")[:64]
         return r
 
     def verdict(s, b):
@@ -403,8 +463,13 @@ def compare(dirname, vpath, base, baseline_path=None):
     for name in sorted(os.listdir(dirname)):
         if not name.endswith(".json") or name not in v:
             continue
-        pair = name.startswith("pairs-")
+        pair = name.startswith("pairs-") and not name.endswith("-!control.json")
+        control = name.endswith("-!control.json")
         broken = "~" in name
+        if pair and name.count("-") >= 2:
+            outer = name.split("-")[1]
+            if f"pairs-{outer}-!control.json" in v and f"pairs-{outer}-!control.json" not in accepted:
+                continue  # its outer is refused on its own: the pair can't be judged
         original_name = name.split("~")[0] + ".json"
         if broken and original_name not in accepted:
             continue  # refused already as it was: nothing to learn from breaking it
@@ -417,13 +482,14 @@ def compare(dirname, vpath, base, baseline_path=None):
         s_ok, v_ok = verdicts.pop(), not v[name]
         refusal = next((m for ok, m in paths.values() if not ok), "")
         if not broken and not pair and s_ok and v_ok:
-            accepted[name] = resource
-        kind = "element pairs" if pair else name.split("~")[1][:-5] if broken else "example"
+            accepted[name] = resource  # examples and controls
+        kind = ("element pairs" if pair else "element controls" if control
+                else name.split("~")[1][:-5] if broken else "example")
         tally[(kind, s_ok, v_ok)] += 1
         if v_ok and not s_ok and name not in KNOWN_SAZARE_ONLY:
             sazare_only.append(f"{name} ({resource['resourceType']}): {refusal}")
         elif not v_ok and s_ok:
-            if broken or pair:
+            if broken or pair or control:
                 missed.append(f"{name}: validator: {v[name][0]}")
             else:
                 only_validator_examples += 1

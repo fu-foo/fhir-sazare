@@ -22,11 +22,14 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
   entries, PATCH, `$import`), which must agree. It fails when sazare refuses what the
   validator accepts, accepts a broken copy the validator refuses, its write paths
   disagree, or the validator alone refuses more examples than `ci/validator_baseline.json`
-  (203). Besides, every pair of the 53 narrative elements, one inside the other, and each
-  one empty (2,862 narratives), so the structure rules are compared for every pair, not
-  the ones someone thought of. Now: 0 refused by sazare alone; 4,776 broken copies
-  refused by both and 729 accepted by both; of the element pairs 1,879 refused and 983
-  accepted by both; 0 disagreements.
+  (203). Besides, every pair of the 53 narrative elements, one inside the other — the
+  inner one in its smallest valid form, the outer one in the parent it needs, each pair
+  counted only when its outer element's control (itself with its own smallest content)
+  passes — and each element empty and holding text (2,968 narratives), so the structure
+  rules are compared for every pair, each in a context where only it decides. Now: 0
+  refused by sazare alone; 4,776 broken copies refused by both and 729 accepted by both;
+  all 53 controls accepted, and of the 2,915 pairs 1,351 refused and 1,564 accepted by
+  both; 0 disagreements.
 - `sazare-server check`: lists stored resources that don't meet the R4 rules writes are
   checked with (exit 1 when any). Read-only — safe while the server runs, and before an
   upgrade (no migration).
