@@ -1,0 +1,121 @@
+{
+  "resourceType": "StructureDefinition",
+  "id": "import-result",
+  "text": {
+    "status": "generated",
+    "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>The counts of a sazare <code>$import</code>: <b>created</b> (resources stored) and <b>errors</b> (lines refused), on the OperationOutcome that answers it.</p></div>"
+  },
+  "url": "https://sazare.dev/StructureDefinition/import-result",
+  "version": "0.19.0",
+  "name": "ImportResult",
+  "title": "sazare $import result",
+  "status": "active",
+  "publisher": "sazare",
+  "description": "The counts of an $import: resources created and lines refused. sazare puts it on the OperationOutcome that answers POST /$import.",
+  "fhirVersion": "4.0.1",
+  "kind": "complex-type",
+  "abstract": false,
+  "context": [
+    {
+      "type": "element",
+      "expression": "OperationOutcome"
+    }
+  ],
+  "type": "Extension",
+  "baseDefinition": "http://hl7.org/fhir/StructureDefinition/Extension",
+  "derivation": "constraint",
+  "differential": {
+    "element": [
+      {
+        "id": "Extension",
+        "path": "Extension",
+        "short": "Counts of an $import",
+        "definition": "The counts of an $import: resources created and lines refused.",
+        "min": 0,
+        "max": "1"
+      },
+      {
+        "id": "Extension.extension",
+        "path": "Extension.extension",
+        "slicing": {
+          "discriminator": [
+            {
+              "type": "value",
+              "path": "url"
+            }
+          ],
+          "rules": "closed"
+        },
+        "min": 2
+      },
+      {
+        "id": "Extension.extension:created",
+        "path": "Extension.extension",
+        "sliceName": "created",
+        "short": "Resources created",
+        "definition": "How many resources the $import stored.",
+        "min": 1,
+        "max": "1"
+      },
+      {
+        "id": "Extension.extension:created.extension",
+        "path": "Extension.extension.extension",
+        "max": "0"
+      },
+      {
+        "id": "Extension.extension:created.url",
+        "path": "Extension.extension.url",
+        "fixedUri": "created"
+      },
+      {
+        "id": "Extension.extension:created.value[x]",
+        "path": "Extension.extension.value[x]",
+        "min": 1,
+        "type": [
+          {
+            "code": "integer"
+          }
+        ]
+      },
+      {
+        "id": "Extension.extension:errors",
+        "path": "Extension.extension",
+        "sliceName": "errors",
+        "short": "Lines refused",
+        "definition": "How many lines of the $import were refused; the first ones are listed as issues of the OperationOutcome.",
+        "min": 1,
+        "max": "1"
+      },
+      {
+        "id": "Extension.extension:errors.extension",
+        "path": "Extension.extension.extension",
+        "max": "0"
+      },
+      {
+        "id": "Extension.extension:errors.url",
+        "path": "Extension.extension.url",
+        "fixedUri": "errors"
+      },
+      {
+        "id": "Extension.extension:errors.value[x]",
+        "path": "Extension.extension.value[x]",
+        "min": 1,
+        "type": [
+          {
+            "code": "integer"
+          }
+        ]
+      },
+      {
+        "id": "Extension.url",
+        "path": "Extension.url",
+        "fixedUri": "https://sazare.dev/StructureDefinition/import-result"
+      },
+      {
+        "id": "Extension.value[x]",
+        "path": "Extension.value[x]",
+        "max": "0"
+      }
+    ]
+  }
+}

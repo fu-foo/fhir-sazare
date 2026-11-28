@@ -1,0 +1,31 @@
+{
+  "resourceType": "OperationDefinition",
+  "id": "import",
+  "text": {
+    "status": "generated",
+    "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p><code>POST /$import</code> with an NDJSON body: each line stored as a write would be, ids kept; the answer is an OperationOutcome with the counts and the first refused lines.</p></div>"
+  },
+  "url": "https://sazare.dev/OperationDefinition/import",
+  "version": "0.19.0",
+  "name": "Import",
+  "title": "sazare $import",
+  "status": "active",
+  "kind": "operation",
+  "publisher": "sazare",
+  "description": "Store the resources of an NDJSON body (Content-Type: application/fhir+ndjson), one per line, each checked as any write is; the ids in the lines are kept. Lines that can't be stored are reported, the others stored. The answer is an OperationOutcome with the counts (the import-result extension) and the first refused lines as issues; 400 when none was stored.",
+  "affectsState": true,
+  "code": "import",
+  "system": true,
+  "type": false,
+  "instance": false,
+  "parameter": [
+    {
+      "name": "return",
+      "use": "out",
+      "min": 1,
+      "max": "1",
+      "documentation": "The outcome: counts in the import-result extension, refused lines as issues.",
+      "type": "OperationOutcome"
+    }
+  ]
+}

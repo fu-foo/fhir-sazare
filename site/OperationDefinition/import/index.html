@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>$import</title>
+<meta name="description" content="POST /$import: resources from an NDJSON body, each checked as any write is.">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono&family=Space+Grotesk:wght@600&display=swap">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<main>
+<header>
+  <a href="/"><img src="/favicon.svg" alt="sazare"></a>
+  <div>
+    <h1>$import</h1>
+    <p class="tagline">POST /$import: resources from an NDJSON body, each checked as any write is.</p>
+  </div>
+</header>
+
+<dl>
+  <dt>Canonical URL</dt><dd><code>https://sazare.dev/OperationDefinition/import</code></dd>
+  <dt>Level</dt><dd>System (<code>POST /$import</code>)</dd>
+  <dt>FHIR</dt><dd>R4 (4.0.1)</dd>
+  <dt>Definition</dt><dd><a href="/OperationDefinition/import.json">import.json</a> (OperationDefinition)</dd>
+</dl>
+
+<h2>Request</h2>
+<p>The body is NDJSON (<code>Content-Type: application/fhir+ndjson</code>): one resource per line.
+Each line is stored as a write would be — validated, conditional references resolved — and keeps
+its id. A line that can't be stored is reported; the others are stored.</p>
+<pre><code>curl -X POST -H 'Content-Type: application/fhir+ndjson' \
+  --data-binary @resources.ndjson https://your-server/$import</code></pre>
+
+<h2>Response</h2>
+<p>An OperationOutcome: a summary issue, the first refused lines as issues (each with its line
+number), and the counts in the <a href="/StructureDefinition/import-result/">import-result</a>
+extension. 200 when something was stored, 400 when nothing was. Operators only when auth is on
+(a system-level write scope).</p>
+
+<footer><a href="/">sazare.dev</a> · <a href="https://github.com/fu-foo/fhir-sazare">github.com/fu-foo/fhir-sazare</a></footer>
+</main>
+</body>
+</html>

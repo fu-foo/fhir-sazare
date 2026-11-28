@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ImportResult</title>
+<meta name="description" content="The counts of an $import, on the OperationOutcome that answers it.">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono&family=Space+Grotesk:wght@600&display=swap">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<main>
+<header>
+  <a href="/"><img src="/favicon.svg" alt="sazare"></a>
+  <div>
+    <h1>ImportResult</h1>
+    <p class="tagline">The counts of an $import, on the OperationOutcome that answers it.</p>
+  </div>
+</header>
+
+<dl>
+  <dt>Canonical URL</dt><dd><code>https://sazare.dev/StructureDefinition/import-result</code></dd>
+  <dt>Kind</dt><dd>Extension (complex), on <code>OperationOutcome</code></dd>
+  <dt>FHIR</dt><dd>R4 (4.0.1)</dd>
+  <dt>Definition</dt><dd><a href="/StructureDefinition/import-result.json">import-result.json</a> (StructureDefinition)</dd>
+</dl>
+
+<h2>Content</h2>
+<dl>
+  <dt>created</dt><dd><code>valueInteger</code>, required — resources the <code>$import</code> stored.</dd>
+  <dt>errors</dt><dd><code>valueInteger</code>, required — lines it refused. The first ones are listed as issues of the OperationOutcome, each with its line number.</dd>
+</dl>
+
+<h2>Example</h2>
+<pre><code>{
+  "resourceType": "OperationOutcome",
+  "issue": [
+    {"severity": "warning", "code": "informational", "diagnostics": "2 resources imported, 1 error"},
+    {"severity": "error", "code": "processing",
+     "diagnostics": "line 3 (Patient): 'Patient.gender' is a code: a string, not a number"}
+  ],
+  "extension": [{
+    "url": "https://sazare.dev/StructureDefinition/import-result",
+    "extension": [
+      {"url": "created", "valueInteger": 2},
+      {"url": "errors", "valueInteger": 1}
+    ]
+  }]
+}</code></pre>
+<p>Before 0.19.0 the extension's URL was <code>http://sazare.dev/…</code>; read both if you keep older answers.</p>
+
+<footer><a href="/">sazare.dev</a> · <a href="https://github.com/fu-foo/fhir-sazare">github.com/fu-foo/fhir-sazare</a></footer>
+</main>
+</body>
+</html>

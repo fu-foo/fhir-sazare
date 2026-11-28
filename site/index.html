@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>sazare</title>
+<meta name="description" content="A FHIR R4 server in one binary: SQLite inside, every write checked against the R4 definitions and compared with the HL7 validator in CI.">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono&family=Space+Grotesk:wght@600&display=swap">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<main>
+<header>
+  <img src="/favicon.svg" alt="">
+  <div>
+    <h1>sazare</h1>
+    <p class="tagline">A FHIR R4 server in one binary.</p>
+  </div>
+</header>
+
+<p>SQLite inside, nothing else to set up. Every write is checked against the R4 definitions,
+and CI compares those checks with the HL7 FHIR validator — on the R4 examples, on copies
+broken on purpose, through every write path. It passes the Inferno US Core v7 and v8 API suites.</p>
+
+<h2>Start</h2>
+<p>macOS or Linux:</p>
+<pre><code>brew install fu-foo/tap/sazare
+sazare-server start --demo --open</code></pre>
+<p>Windows:</p>
+<pre><code>scoop bucket add fu-foo https://github.com/fu-foo/scoop-bucket
+scoop install sazare
+sazare-server start --demo --open</code></pre>
+<p>Docker: <code>ghcr.io/fu-foo/fhir-sazare</code>. Everything else — configuration, search,
+limits, upgrades — is in the <a href="https://github.com/fu-foo/fhir-sazare#readme">README</a>.</p>
+
+<h2>Definitions</h2>
+<p>The canonical URLs sazare uses resolve here.</p>
+<dl>
+  <dt><a href="/StructureDefinition/import-result/">StructureDefinition/import-result</a></dt>
+  <dd>The counts of an <code>$import</code>, on its OperationOutcome.</dd>
+  <dt><a href="/OperationDefinition/import/">OperationDefinition/import</a></dt>
+  <dd><code>POST /$import</code>: resources from an NDJSON body.</dd>
+</dl>
+
+<footer>
+  <a href="https://github.com/fu-foo/fhir-sazare">github.com/fu-foo/fhir-sazare</a> ·
+  Apache-2.0 · Copyright 2026 Kazunari Fukagawa
+</footer>
+</main>
+</body>
+</html>
