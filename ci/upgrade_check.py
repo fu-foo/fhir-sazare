@@ -11,9 +11,15 @@
    must match step 1; a resource written meanwhile must be searchable after
    the switch; after the switch every search must still match, and the old
    index files must be gone.
+3. Before NEW_BIN starts: its `check` reads the old store without moving its
+   schema (read-only, no migration). After: the per-type counts it keeps
+   (store v4) match the old searches' totals, and the history shows a version
+   the old release made by PUT as inferred (POST) and one this release makes
+   by PUT as recorded (PUT).
 """
 import atexit
 import json
+import sqlite3
 import os
 import subprocess
 import sys
@@ -152,9 +158,30 @@ for i in range(0, len(lines), 5000):
     req = urllib.request.Request(f"{BASE}/$import", data=b"".join(lines[i:i + 5000]), method="POST",
                                  headers={"Content-Type": "application/fhir+ndjson"})
     urllib.request.urlopen(req, timeout=600).read()
+# A resource the old release creates by PUT: its history names no method.
+put_req = urllib.request.Request(f"{BASE}/Patient/old-put", method="PUT",
+                                 data=json.dumps({"resourceType": "Patient", "id": "old-put"}).encode(),
+                                 headers={"Content-Type": "application/fhir+json"})
+urllib.request.urlopen(put_req, timeout=60).read()
 before = snapshot()
 stop(old)
 print(f"old release: {len(lines)} resources imported")
+
+
+def store_schema():
+    db = sqlite3.connect(f"file:{work}/data/resources.sqlite?mode=ro", uri=True)
+    try:
+        return db.execute("PRAGMA user_version").fetchone()[0]
+    finally:
+        db.close()
+
+
+# `check` with the new binary on the old store: read-only, no migration.
+schema_before = store_schema()
+checked = subprocess.run([NEW_BIN, "check", "--config", cfg], capture_output=True, text=True)
+print(f"check on the old store: exit {checked.returncode}; {checked.stderr.strip().splitlines()[-1:]}")
+if store_schema() != schema_before:
+    sys.exit(f"check moved the store schema: {schema_before} -> {store_schema()}")
 
 new = start(NEW_BIN, cfg, log)
 state = get("health").get("index", {}).get("state")
@@ -202,6 +229,25 @@ if status("Observation?value-quantity=gt0") != 200:
     sys.exit("a quantity search after the switch failed")
 if get("Patient?family=Upgradecheck").get("total") != 1:
     sys.exit("the write made during the rebuild is not searchable")
+# The counts kept per type (store v4) against the old release's totals (the
+# two resources written around the upgrade are Patients).
+counts = {c["type"]: c["count"] for c in get("$status")["resourceCounts"]}
+want_patients = before["Patient"][0] + 1  # upgrade-check
+if counts.get("Patient") != want_patients:
+    sys.exit(f"kept Patient count {counts.get('Patient')}, searched {want_patients}")
+observations = get("Observation?_summary=count").get("total")
+if counts.get("Observation") != observations:
+    sys.exit(f"kept Observation count {counts.get('Observation')}, searched {observations}")
+print(f"kept counts match the searches: {counts}")
+# History methods: inferred for the old release's PUT, recorded for this one's.
+old_method = get("Patient/old-put/_history")["entry"][-1]["request"]["method"]
+urllib.request.urlopen(urllib.request.Request(f"{BASE}/Patient/new-put", method="PUT",
+                       data=json.dumps({"resourceType": "Patient", "id": "new-put"}).encode(),
+                       headers={"Content-Type": "application/fhir+json"}), timeout=60).read()
+new_method = get("Patient/new-put/_history")["entry"][-1]["request"]["method"]
+if (old_method, new_method) != ("POST", "PUT"):
+    sys.exit(f"history methods: old release's PUT shows {old_method} (want POST, inferred), this one's {new_method} (want PUT)")
+print("history: the old release's PUT inferred as POST, this release's recorded as PUT")
 files = sorted(os.listdir(os.path.join(work, "data")))
 if rebuilt and "search_index.sqlite" in files:
     sys.exit(f"old index files still there: {files}")

@@ -50,11 +50,14 @@ into `data_dir`, delete every `search_index*` file — the index generations
 
 ### To 0.19.0
 
+- **From 0.18.x the search index is not rebuilt**: its format is unchanged, so the server
+  is ready at once — no background rebuild, no room for a second index.
 - **Writes are checked against more of the R4 definitions** (required elements, primitive
-  formats, empty values, one type per choice — see the CHANGELOG). Data already stored
-  reads as before, but an update of a resource that doesn't meet them is refused until it
-  is fixed. Before upgrading, list them with the new binary — read-only, no migration, safe
-  while the old server runs:
+  formats, empty values, one type per choice, narratives — see the CHANGELOG). Data
+  already stored reads as before, but an update of a resource that doesn't meet them is
+  refused until it is fixed. Before upgrading, list them with the new binary — read-only,
+  no migration, safe while the old server runs. It also lists conditional references
+  (`Patient?identifier=…`) stored unresolved by a batch, PATCH or `$import` before:
   ```bash
   sazare-server check --config config.yaml
   ```
@@ -64,8 +67,8 @@ into `data_dir`, delete every `search_index*` file — the index generations
   `PUT` before the upgrade still shows `POST` there.
 - **`resources.sqlite` moves to schema version 5.** The first start counts the resources
   per type once (a scan of the store before the server answers: 0.2 s for 200k
-  resources on an SSD, so a few seconds per 10M) drops two indexes that served nothing, and records each new version's HTTP method. To go back, restore the
-  backup from step 1.
+  resources on an SSD, so a few seconds per 10M), drops two indexes that served nothing,
+  and records each new version's HTTP method. To go back, restore the backup from step 1.
 
 ### To 0.18.0
 

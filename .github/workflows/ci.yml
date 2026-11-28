@@ -154,6 +154,17 @@ jobs:
       - run: python3 ci/upgrade_check.py "$(find "$RUNNER_TEMP/old" -name sazare-server -type f | head -1)" target/release/sazare-server 2000
         env:
           OLD_HAS_QUANTITIES: "1"
+      # The release before: the same index format (nothing rebuilt), store
+      # schema 3 -> 5 (kept counts, history methods).
+      - name: Upgrade from 0.18.3
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OLD_HAS_QUANTITIES: "1"
+          PORT: "18093"
+        run: |
+          gh release download v0.18.3 -p sazare-server-linux-amd64.tar.gz -D "$RUNNER_TEMP/old0183"
+          tar -xzf "$RUNNER_TEMP/old0183/sazare-server-linux-amd64.tar.gz" -C "$RUNNER_TEMP/old0183"
+          python3 ci/upgrade_check.py "$RUNNER_TEMP/old0183/sazare-server" target/release/sazare-server 2000
       # Index format 3 (no compartments or quantities) and store schema 1.
       - name: Upgrade from 0.16.0
         env:
