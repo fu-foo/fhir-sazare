@@ -40,34 +40,14 @@ pub async fn import(
 
     let mut created: usize = 0;
     let mut errors: Vec<Value> = Vec::new();
-    // Index writes are batched: one transaction per BATCH resources instead
-    // of one per resource.
+    // Writes are batched: the store and the index each take one transaction
+    // per BATCH resources instead of one per resource (a store commit waits
+    // for the disk: one per resource held $import to ~170/s on an SSD).
     const BATCH: usize = 1000;
-    // Subscription criteria are evaluated by searching, so notifications go
-    // out only after their batch is indexed.
-    let mut pending: Vec<(sazare_store::IndexUpdate, Value)> = Vec::new();
-    async fn flush(state: &Arc<AppState>, pending: &mut Vec<(sazare_store::IndexUpdate, Value)>) {
-        if pending.is_empty() {
-            return;
-        }
-        {
-            let updates: Vec<sazare_store::IndexUpdate> = pending.iter().map(|(u, _)| u.clone()).collect();
-            let index = state.index.lock().await;
-            if let Err(e) = index.replace_many(&updates) {
-                tracing::warn!("search index update failed for an $import batch: {e}");
-            }
-        }
-        if !crate::subscription::SubscriptionManager::any(state) {
-            pending.clear();
-            return;
-        }
-        for (u, resource) in pending.drain(..) {
-            let state = state.clone();
-            tokio::spawn(async move {
-                crate::subscription::SubscriptionManager::notify(&state, &u.resource_type, &u.resource_id, &resource).await;
-            });
-        }
-    }
+    let mut staged: Vec<Staged> = Vec::new();
+    // Versions given in the batch not yet written: the same id twice in a
+    // file gets 1, then 2.
+    let mut staged_versions: std::collections::HashMap<(String, String), i64> = std::collections::HashMap::new();
 
     for (line_num, line) in body.lines().enumerate() {
         let line = line.trim();
@@ -144,8 +124,12 @@ pub async fn import(
             .map(|s| s.to_string())
             .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
-        // Determine version: check if resource already exists
-        let version_id = match state.store.get(&resource_type, &id) {
+        // Determine version: one past a version given earlier in this batch,
+        // or past the stored one.
+        let staged_key = (resource_type.clone(), id.clone());
+        let version_id = match staged_versions.get(&staged_key) {
+            Some(v) => (v + 1).to_string(),
+            None => match state.store.get(&resource_type, &id) {
             Ok(Some(existing)) => {
                 let existing: Value = serde_json::from_slice(&existing).unwrap_or(json!({}));
                 let current: i64 = existing
@@ -163,6 +147,7 @@ pub async fn import(
                                        "error": format!("Storage error: {}", e)}));
                     continue;
                 }
+            },
             },
         };
 
@@ -184,41 +169,19 @@ pub async fn import(
                 continue;
             }
         };
-        match state
-            .store
-            .put_with_version(&resource_type, &id, &version_id, &data)
-        {
-            Ok(()) => {
-                // Fire webhooks for imported resources too; subscriptions
-                // are notified once the batch is indexed (see `flush`).
-                state.webhook.maybe_task_completed(&resource);
-                // Index (batched)
-                let update = crate::handlers::index_update(
-                    &state.search_param_registry,
-                    &resource_type,
-                    &id,
-                    &resource,
-                );
-                pending.push((update, resource));
-                if pending.len() >= BATCH {
-                    flush(&state, &mut pending).await;
-                    drop(write_gate);
-                    write_gate = state.write_gate.read().await;
-                }
-                created += 1;
-            }
-            Err(e) => {
-                errors.push(json!({
-                    "line": line_num + 1,
-                    "resourceType": resource_type,
-                    "id": id,
-                    "error": format!("Storage error: {}", e)
-                }));
-            }
+        staged_versions.insert(staged_key, version_id.parse().unwrap_or(1));
+        staged.push(Staged { line: line_num + 1, resource_type, id, version_id, data, resource });
+        if staged.len() >= BATCH {
+            flush(&state, &mut staged, &mut created, &mut errors).await;
+            staged_versions.clear();
+            drop(write_gate);
+            write_gate = state.write_gate.read().await;
         }
     }
-    flush(&state, &mut pending).await;
+    flush(&state, &mut staged, &mut created, &mut errors).await;
     drop(write_gate);
+    // Storage errors are found when their batch is written: back in line order.
+    errors.sort_by_key(|e| e.get("line").and_then(|v| v.as_u64()).unwrap_or(0));
 
     audit::log_operation_success(
         &audit_ctx,
@@ -289,3 +252,65 @@ pub async fn import(
 
     (status, axum::Json(response)).into_response()
 }
+
+/// A resource ready to be written by [`flush`].
+struct Staged {
+    line: usize,
+    resource_type: String,
+    id: String,
+    version_id: String,
+    data: Vec<u8>,
+    resource: Value,
+}
+
+/// Write `staged` to the store in one transaction, then index what was
+/// written (one transaction) and notify subscriptions once it is searchable.
+async fn flush(state: &Arc<AppState>, staged: &mut Vec<Staged>, created: &mut usize, errors: &mut Vec<Value>) {
+    if staged.is_empty() {
+        return;
+    }
+    let rows: Vec<(&str, &str, &str, &[u8])> = staged
+        .iter()
+        .map(|s| (s.resource_type.as_str(), s.id.as_str(), s.version_id.as_str(), s.data.as_slice()))
+        .collect();
+    let results = match state.store.put_versions(&rows) {
+        Ok(r) => r.into_iter().map(|r| r.map_err(|e| e.to_string())).collect::<Vec<_>>(),
+        Err(e) => vec![Err(e.to_string()); rows.len()],
+    };
+    drop(rows);
+    let mut pending: Vec<(sazare_store::IndexUpdate, Value)> = Vec::new();
+    for (s, result) in staged.drain(..).zip(results) {
+        match result {
+            Ok(()) => {
+                state.webhook.maybe_task_completed(&s.resource);
+                let update = crate::handlers::index_update(&state.search_param_registry, &s.resource_type, &s.id, &s.resource);
+                pending.push((update, s.resource));
+                *created += 1;
+            }
+            Err(e) => errors.push(json!({
+                "line": s.line,
+                "resourceType": s.resource_type,
+                "id": s.id,
+                "error": format!("Storage error: {e}")
+            })),
+        }
+    }
+    {
+        let updates: Vec<sazare_store::IndexUpdate> = pending.iter().map(|(u, _)| u.clone()).collect();
+        let index = state.index.lock().await;
+        if let Err(e) = index.replace_many(&updates) {
+            tracing::warn!("search index update failed for an $import batch: {e}");
+        }
+    }
+    // Subscription criteria are evaluated by searching, so notifications go
+    // out only after their batch is indexed.
+    if crate::subscription::SubscriptionManager::any(state) {
+        for (u, resource) in pending {
+            let state = state.clone();
+            tokio::spawn(async move {
+                crate::subscription::SubscriptionManager::notify(&state, &u.resource_type, &u.resource_id, &resource).await;
+            });
+        }
+    }
+}
+

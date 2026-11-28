@@ -243,6 +243,47 @@ impl SqliteStore {
         Ok(())
     }
 
+    /// Several versions in one transaction — one commit (one sync) for all,
+    /// where `put_with_version` syncs each: `$import` at the disk's sync rate
+    /// was ~170 resources/s on an SSD. Each row is all or nothing (its
+    /// current row and history row together); a failing row is reported and
+    /// the others are kept.
+    #[allow(clippy::type_complexity)]
+    pub fn put_versions(&self, rows: &[(&str, &str, &str, &[u8])]) -> Result<Vec<Result<()>>> {
+        let conn = self.conn();
+        let tx = conn.unchecked_transaction()?;
+        let mut out = Vec::with_capacity(rows.len());
+        for (resource_type, id, version_id, data) in rows {
+            let row = (|| -> Result<()> {
+                let value = std::str::from_utf8(data)
+                    .map_err(|e| crate::error::StoreError::Other(format!("Invalid UTF-8: {e}")))?;
+                tx.execute_batch("SAVEPOINT row")?;
+                let written = tx
+                    .prepare_cached(
+                        "INSERT INTO resource_history (resource_type, id, version_id, value) VALUES (?, ?, ?, ?)",
+                    )
+                    .and_then(|mut s| s.execute(params![resource_type, id, version_id, value]))
+                    .and_then(|_| {
+                        tx.prepare_cached("INSERT OR REPLACE INTO resources (resource_type, id, value) VALUES (?, ?, ?)")
+                            .and_then(|mut s| s.execute(params![resource_type, id, value]))
+                    });
+                match written {
+                    Ok(_) => {
+                        tx.execute_batch("RELEASE row")?;
+                        Ok(())
+                    }
+                    Err(e) => {
+                        tx.execute_batch("ROLLBACK TO row; RELEASE row")?;
+                        Err(e.into())
+                    }
+                }
+            })();
+            out.push(row);
+        }
+        tx.commit()?;
+        Ok(out)
+    }
+
     /// Compare-and-swap write: persist `data` as `new_version` only if the
     /// resource's current stored version still matches `expected_current`
     /// (`Some(v)` for an update of a resource last seen at version `v`, `None`

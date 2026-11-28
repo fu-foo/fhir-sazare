@@ -4,6 +4,16 @@ All notable changes to sazare. Versions follow [Semantic Versioning](https://sem
 until 1.0, a minor version (0.x.0) may change behavior — those changes are listed under
 **Behavior changes**. See [UPGRADING.md](UPGRADING.md) for how to upgrade.
 
+## Unreleased
+
+### Fixed
+- **`$import` is about 27× faster on a real disk.** Each resource was its own store
+  transaction, and each store commit waits for the disk: about 170 resources/s on an NVMe
+  SSD (CI's disks hid it). Resources are now written 1,000 to a transaction, like the
+  index already was: 200k resources in 43 s instead of about 20 minutes. A line that
+  fails is still reported and the others kept; the response still comes after everything
+  is committed.
+
 ## 0.18.3 — 2026-11-28
 
 ### Added

@@ -2661,3 +2661,29 @@ async fn test_favicon() {
     let page = c.get(format!("{base}/")).send().await.unwrap().text().await.unwrap();
     assert!(page.contains(r#"href="/favicon.svg""#));
 }
+
+/// $import writes in batches: the same id twice in a file is two versions,
+/// and everything is readable and searchable afterwards.
+#[tokio::test]
+async fn test_import_batches_keep_versions() {
+    let (base, _dir) = start_test_server().await;
+    let c = reqwest::Client::new();
+    let mut body = String::new();
+    for i in 0..2500 {
+        body.push_str(&format!("{{\"resourceType\":\"Patient\",\"id\":\"b{i}\",\"gender\":\"male\"}}\n"));
+    }
+    body.push_str("{\"resourceType\":\"Patient\",\"id\":\"b7\",\"gender\":\"female\"}\n");
+    body.push_str("{\"resourceType\":\"Patient\",\"gender\":5}\n");
+    let r = c.post(format!("{base}/$import")).header("Content-Type", "application/fhir+ndjson").body(body)
+        .send().await.unwrap();
+    let out: Value = r.json().await.unwrap();
+    assert_eq!(out["issue"][0]["diagnostics"], "2501 resources imported, 1 error", "{out}");
+    assert!(out["issue"][1]["diagnostics"].as_str().unwrap().starts_with("line 2502"), "{out}");
+    let p: Value = c.get(format!("{base}/Patient/b7")).send().await.unwrap().json().await.unwrap();
+    assert_eq!(p["meta"]["versionId"], "2", "{p}");
+    assert_eq!(p["gender"], "female");
+    let h: Value = c.get(format!("{base}/Patient/b7/_history")).send().await.unwrap().json().await.unwrap();
+    assert_eq!(h["entry"].as_array().unwrap().len(), 2, "{h}");
+    let n: Value = c.get(format!("{base}/Patient?gender=male&_summary=count")).send().await.unwrap().json().await.unwrap();
+    assert_eq!(n["total"], 2499, "{n}");
+}
