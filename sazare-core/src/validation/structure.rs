@@ -402,9 +402,16 @@ const NARRATIVE_CHILDREN: &[(&str, &[&str])] = &[
     ("tbody", &["tr"]),
     ("tfoot", &["tr"]),
     ("tr", &["td", "th"]),
-    ("colgroup", &["col"]),
     ("map", &["area"]),
 ];
+/// Elements that may not hold one of their own kind, at any depth
+/// (`<b><span><b>`): the validator's rule.
+const NARRATIVE_NO_RECURSION: &[&str] = &[
+    "a", "abbr", "acronym", "b", "bdo", "big", "cite", "code", "dfn", "em", "i", "kbd", "q", "samp", "small", "strong",
+    "sub", "sup", "tt", "var",
+];
+/// Elements with no content.
+const NARRATIVE_EMPTY: &[&str] = &["br", "hr", "img", "area"];
 /// The parents some elements must have.
 const NARRATIVE_PARENTS: &[(&str, &[&str])] = &[
     ("li", &["ul", "ol"]),
@@ -426,14 +433,22 @@ const NARRATIVE_PARENTS: &[(&str, &[&str])] = &[
 /// allows (an allow-list, as the HL7 validator's — a block-list of what can
 /// run was bypassed by `<scriptx>` before `<script>`, `<svg/onload=…>`, a tab
 /// before `onclick`), the validator's structure (no block in running text, a
-/// list item in a list, table parts in a table, no link in a link), no
+/// list item in a list, table parts in a table, no `<b>` in a `<b>` — nor a
+/// link in a link —, nothing in `<br>`), no
 /// `javascript:`/`vbscript:`/`data:` link (a `data:` image aside), and some
 /// content. Duplicate ids are only a warning there, and are accepted.
 fn narrative(div: &str) -> Result<(), String> {
     const XHTML: &str = "http://www.w3.org/1999/xhtml";
     // Only XML's own entities (&amp; &lt; &gt; &quot; &apos;) and numeric
     // references: the HL7 validator refuses HTML's named ones (&nbsp; too).
-    let doc = roxmltree::Document::parse(div).map_err(|e| format!("not well-formed XHTML ({e})"))?;
+    let doc = roxmltree::Document::parse(div).map_err(|e| {
+        let hint = if e.to_string().contains("entity") {
+            " — only &amp; &lt; &gt; &quot; &apos; are named; write others as numbers (&#160; for a no-break space)"
+        } else {
+            ""
+        };
+        format!("not well-formed XHTML ({e}){hint}")
+    })?;
     let root = doc.root_element();
     if root.tag_name().name() != "div" || root.tag_name().namespace() != Some(XHTML) {
         return Err(format!("a narrative is one <div> in the XHTML namespace ({XHTML})"));
@@ -468,8 +483,13 @@ fn narrative(div: &str) -> Result<(), String> {
         if NARRATIVE_NOT_IN_PARAGRAPH.contains(&name) && ancestors().any(|a| a == "p") {
             return Err(format!("<{name}> is not allowed inside a paragraph (txt-1)"));
         }
-        if name == "a" && ancestors().any(|a| a == "a") {
-            return Err("a link inside a link is not allowed (txt-1)".into());
+        if NARRATIVE_NO_RECURSION.contains(&name) && ancestors().any(|a| a == name) {
+            return Err(format!("<{name}> inside <{name}> is not allowed (txt-1)"));
+        }
+        if NARRATIVE_EMPTY.contains(&name)
+            && node.children().any(|c| c.is_element() || c.text().is_some_and(|t| !t.trim().is_empty()))
+        {
+            return Err(format!("<{name}> has no content (txt-1)"));
         }
         if let Some((_, children)) = NARRATIVE_CHILDREN.iter().find(|(n, _)| *n == name) {
             for child in node.children() {
@@ -687,6 +707,8 @@ mod tests {
             "<table border=\"1\"><tr><td colspan=\"2\">a</td></tr></table>",
             "<p xml:lang=\"ja\" lang=\"ja\" style=\"color:red\">山田&#160;太郎 &amp; one onset; javascript: in prose</p>",
             "<pre xml:space=\"preserve\">a</pre>",
+            "<span>a<span>b</span></span><h2>a<h2>b</h2></h2>",
+            "<table><colgroup><p>a</p></colgroup><tr><td>b</td></tr></table>",
             "<p id=\"d1\">a</p><p id=\"d1\">b</p>",
             "<p>a<b>b</b><h3>c</h3><hr/><dl><dt>t</dt><dd>d</dd></dl></p>",
             "<ul>\n  <li><p>a</p><div>b</div></li>\n</ul><blockquote><p>q</p><div>d</div></blockquote>",
@@ -730,6 +752,13 @@ mod tests {
             "<ul><p>a</p></ul>",
             "<dl><div>a</div></dl>",
             "<a href=\"#x\"><span><a href=\"#y\">a</a></span></a>",
+            "<b>a<b>b</b></b>",
+            "<em>a<span><em>b</em></span></em>",
+            "<code>a<code>b</code></code>",
+            "<p>a<br>b</br></p>",
+            "<img src=\"x.png\" alt=\"a\">b</img>",
+            "<hr>x</hr><p>a</p>",
+            "<table><thead><td>a</td></thead></table>",
             "<p space=\"preserve\">a</p>",
         ] {
             assert!(!div(bad).is_empty(), "{bad:?} accepted");

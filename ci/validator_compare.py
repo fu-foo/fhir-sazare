@@ -194,7 +194,11 @@ def mutations(resource):
                         ("narrative-link-in-link", "<a href=\"#x\"><a href=\"#y\">a</a></a>"),
                         ("narrative-duplicate-id", "<p id=\"d1\">a</p><p id=\"d1\">b</p>"),
                         ("narrative-pre-xml-space", "<pre xml:space=\"preserve\">a</pre>"),
-                        ("narrative-html-entity", "<p>a&ensp;b&hearts;c&thetasym;</p>")):
+                        ("narrative-html-entity", "<p>a&ensp;b&hearts;c&thetasym;</p>"),
+                        ("narrative-self-nesting", "<b>a<span><b>b</b></span></b>"),
+                        ("narrative-content-in-br", "<p>a<br>b</br></p>"),
+                        ("narrative-colgroup-p", "<table><colgroup><p>a</p></colgroup><tr><td>b</td></tr></table>"),
+                        ("narrative-thead-td", "<table><thead><td>a</td></thead></table>")):
         div = resource.get("text", {}).get("div") if isinstance(resource.get("text"), dict) else None
         if isinstance(div, str) and ">" in div:
             r = copy.deepcopy(resource)
@@ -244,6 +248,40 @@ def mutations(resource):
     return out
 
 
+# The txt-1 elements (the validator's list): every one inside every one, one
+# level, as narratives of their own — so the comparison covers the structure
+# rules for every pair, not the pairs someone thought of.
+NARRATIVE_ELEMENTS = [
+    "p", "br", "div", "h1", "h2", "h3", "h4", "h5", "h6", "a", "span", "b", "em", "i", "strong", "small", "big", "tt",
+    "dfn", "q", "var", "abbr", "acronym", "cite", "blockquote", "hr", "address", "bdo", "kbd", "sub", "sup", "ul", "ol",
+    "li", "dl", "dt", "dd", "pre", "table", "caption", "colgroup", "col", "thead", "tr", "tfoot", "tbody", "th", "td",
+    "code", "samp", "img", "map", "area",
+]
+
+
+def element(name, inner=""):
+    attrs = {"img": ' src="x.png" alt="x"', "area": ' alt="x"', "map": ' name="m"', "a": ' name="n"'}.get(name, "")
+    return f"<{name}{attrs}>{inner}</{name}>"
+
+
+def element_pairs(dst, start):
+    """A Basic for each (outer, inner) pair of narrative elements."""
+    n = start
+    for outer in NARRATIVE_ELEMENTS:
+        for inner in NARRATIVE_ELEMENTS:
+            n += 1
+            div = f'<div xmlns="http://www.w3.org/1999/xhtml"><p>text</p>{element(outer, "a" + element(inner, "b"))}</div>'
+            r = {"resourceType": "Basic", "id": f"pair{n}", "code": {"text": "x"}, "text": {"status": "generated", "div": div}}
+            json.dump(r, open(os.path.join(dst, f"pairs-{outer}-{inner}.json"), "w"))
+    # And each one empty (`<ul></ul>`, `<table></table>`, `<br/>`).
+    for name in NARRATIVE_ELEMENTS:
+        n += 1
+        div = f'<div xmlns="http://www.w3.org/1999/xhtml"><p>text</p>{element(name)}</div>'
+        r = {"resourceType": "Basic", "id": f"pair{n}", "code": {"text": "x"}, "text": {"status": "generated", "div": div}}
+        json.dump(r, open(os.path.join(dst, f"pairs-{name}-empty.json"), "w"))
+    return n - start
+
+
 def corpus(src, resources, types, dst):
     load_definitions(resources, types)
     os.makedirs(dst, exist_ok=True)
@@ -263,7 +301,8 @@ def corpus(src, resources, types, dst):
         for kind, broken in mutations(r):
             json.dump(broken, open(os.path.join(dst, f"{name}~{kind}.json"), "w"), ensure_ascii=False)
             m += 1
-    print(f"{n} examples, {m} broken copies in {dst}")
+    pairs = element_pairs(dst, n)
+    print(f"{n} examples, {m} broken copies, {pairs} element pairs in {dst}")
 
 
 def validator_results(path):
@@ -364,6 +403,7 @@ def compare(dirname, vpath, base, baseline_path=None):
     for name in sorted(os.listdir(dirname)):
         if not name.endswith(".json") or name not in v:
             continue
+        pair = name.startswith("pairs-")
         broken = "~" in name
         original_name = name.split("~")[0] + ".json"
         if broken and original_name not in accepted:
@@ -376,14 +416,14 @@ def compare(dirname, vpath, base, baseline_path=None):
             continue
         s_ok, v_ok = verdicts.pop(), not v[name]
         refusal = next((m for ok, m in paths.values() if not ok), "")
-        if not broken and s_ok and v_ok:
+        if not broken and not pair and s_ok and v_ok:
             accepted[name] = resource
-        kind = name.split("~")[1][:-5] if broken else "example"
+        kind = "element pairs" if pair else name.split("~")[1][:-5] if broken else "example"
         tally[(kind, s_ok, v_ok)] += 1
         if v_ok and not s_ok and name not in KNOWN_SAZARE_ONLY:
             sazare_only.append(f"{name} ({resource['resourceType']}): {refusal}")
         elif not v_ok and s_ok:
-            if broken:
+            if broken or pair:
                 missed.append(f"{name}: validator: {v[name][0]}")
             else:
                 only_validator_examples += 1

@@ -8,21 +8,25 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
 
 ### Added
 - CI compares sazare's write checks with the HL7 FHIR validator (7.0.8): the R4 examples
-  (but definitional resources) and copies broken on purpose in 24 ways — a date that
+  (but definitional resources) and copies broken on purpose in 28 ways — a date that
   doesn't exist, a dateTime without a zone, a required element left out (of the resource,
   and nested), an empty string or object, a uri or extension url with a space, a contained
   resource's id, a 64-bit integer, a code with a double space, an extension with a value
-  and extensions, two types of a choice, and eleven narratives (script, event attribute,
+  and extensions, two types of a choice, and fifteen narratives (script, event attribute,
   javascript link, unknown element, not well-formed, block in a paragraph, list item
-  outside a list, link in a link, an HTML entity; and two the validator accepts: a
-  duplicate id, `xml:space` on `<pre>`). Where and how to break comes from the R4
+  outside a list, link in a link, an HTML entity, `<b>` in `<b>`, content in `<br>`, `<td>`
+  directly in `<thead>`; and three the validator accepts: a duplicate id, `xml:space` on
+  `<pre>`, `<p>` in `<colgroup>`). Where and how to break comes from the R4
   StructureDefinitions, not from sazare's own table. Every file goes through all ten write
   paths (POST, PUT, conditional create and update, transaction and batch POST and PUT
   entries, PATCH, `$import`), which must agree. It fails when sazare refuses what the
   validator accepts, accepts a broken copy the validator refuses, its write paths
   disagree, or the validator alone refuses more examples than `ci/validator_baseline.json`
-  (203). Now: 0 refused by sazare alone, 4,047 broken copies refused by both and 486
-  accepted by both, 0 disagreements.
+  (203). Besides, every pair of the 53 narrative elements, one inside the other, and each
+  one empty (2,862 narratives), so the structure rules are compared for every pair, not
+  the ones someone thought of. Now: 0 refused by sazare alone; 4,776 broken copies
+  refused by both and 729 accepted by both; of the element pairs 1,879 refused and 983
+  accepted by both; 0 disagreements.
 - `sazare-server check`: lists stored resources that don't meet the R4 rules writes are
   checked with (exit 1 when any). Read-only — safe while the server runs, and before an
   upgrade (no migration).
@@ -43,10 +47,13 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
   A `div` is parsed as XML and checked against txt-1's allow-list (the HL7 validator's
   elements and attributes) and the validator's structure (no block — div, ul, ol, table,
   pre — in running text, nor p or blockquote in a paragraph; list items in lists, table
-  parts in tables, only their own children there; no link in a link), well-formed, with
+  parts in tables, only their own children there; none of 20 inline elements inside one
+  of its kind — `<b><span><b>` — and no link in a link; nothing in `<br>`, `<hr>`, `<img>`,
+  `<area>`), well-formed, with
   content (txt-2), no `javascript:`, `vbscript:` or `data:` link (a `data:` image aside,
   references resolved first). Only XML's entities: the validator refuses HTML's named
-  ones, `&nbsp;` too. `xml:space` on `<pre>` and duplicate ids are accepted, as there.
+  ones, `&nbsp;` too (the error says to write `&#160;`). `xml:space` on `<pre>`, any
+  content in `<colgroup>` and duplicate ids are accepted, as there.
   Each rule was asked of the validator element by element. `_given: []` is refused like
   `given: []`.
 - A Bundle's scopes are checked on every entry before any body: a token that may not write
