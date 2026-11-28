@@ -33,6 +33,20 @@ pub fn backup_database(src: &Path, dest: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Every current resource in the store at `path`, in type and id order, read
+/// through a read-only connection: no migration, so a store an older version
+/// wrote is read as it is (`sazare-server check` before an upgrade).
+pub fn scan_resources(path: &Path, mut each: impl FnMut(&str, &str, &str)) -> Result<()> {
+    let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    conn.busy_timeout(std::time::Duration::from_secs(30))?;
+    let mut stmt = conn.prepare("SELECT resource_type, id, value FROM resources ORDER BY resource_type, id")?;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        each(&row.get::<_, String>(0)?, &row.get::<_, String>(1)?, &row.get::<_, String>(2)?);
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

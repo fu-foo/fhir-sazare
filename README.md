@@ -270,6 +270,7 @@ sazare-server restart [same options as start]                 # stop and start, 
 sazare-server run [--config config.yaml]                      # in the foreground
 sazare-server logs [-f]                                       # the background server's log
 sazare-server backup <dir> [--config config.yaml]             # consistent copy of the databases
+sazare-server check [--config config.yaml]                    # stored resources the R4 rules refuse (read-only)
 ```
 
 - **One server per data directory.** A second `start` reports the running one; a second

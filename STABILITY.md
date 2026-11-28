@@ -53,7 +53,7 @@ A change to any of the following requires a **major** version.
 
 ### Command line
 
-- The commands `run`, `start`, `stop`, `restart`, `status`, `logs`, `backup <dir>`,
+- The commands `run`, `start`, `stop`, `restart`, `status`, `logs`, `backup <dir>`, `check`,
   `auth hash-password`, `auth new-api-key`, `version`, and the options `--config`,
   `--port`, `--demo`, `--open`. An argument a command doesn't take is an error.
 - Exit statuses: 0 on success; `backup` returns 0 only when a complete backup was

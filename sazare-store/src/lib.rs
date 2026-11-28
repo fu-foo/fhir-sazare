@@ -11,7 +11,7 @@ pub mod index_v2;
 #[cfg(test)]
 mod differential_tests;
 
-pub use backup::backup_database;
+pub use backup::{backup_database, scan_resources};
 pub use error::{Result, StoreError};
 pub use sqlite_store::SqliteStore;
 pub use search_index::{IndexReaders, SearchIndex};

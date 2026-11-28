@@ -28,6 +28,8 @@ Commands:
   run       Run in the foreground (for Docker, systemd, launchd, brew services)
   logs      Print the background server's log (-f to follow, -n <lines>)
   backup    Write a consistent copy of the databases: backup <dir>
+  check     List stored resources that don't meet the R4 rules writes are checked with
+            (they read as before; an update of one is refused until it is fixed)
   auth      Credentials for config.yaml:
               auth hash-password [user]   prompt for a password (12+ characters), print password_hash
               auth new-api-key [name]     generate a key, print it and its key_sha256
@@ -91,6 +93,7 @@ fn main() {
             };
             run_backup(&load_config(&rest), std::path::Path::new(dir))
         }
+        "check" => run_check(&load_config(&rest)),
         "version" | "--version" | "-V" => {
             println!("sazare-server {}", env!("CARGO_PKG_VERSION"));
             0
@@ -279,6 +282,7 @@ fn command_options(command: &str) -> &'static [(&'static str, bool)] {
         "stop" | "status" => &[("--config", true)],
         "logs" => &[("--config", true), ("-f", false), ("--follow", false), ("-n", true)],
         "backup" => &[("--config", true)],
+        "check" => &[("--config", true)],
         _ => &[],
     }
 }
@@ -936,6 +940,51 @@ fn run_backup(config: &ServerConfig, dir: &std::path::Path) -> i32 {
         }
     }
     0
+}
+
+/// `check`: every stored resource against the R4 rules (elements, types,
+/// required elements, primitive formats, choices, empty values). Read-only,
+/// safe while the server runs, and before an upgrade (no migration). Exit 1
+/// when any doesn't fit.
+fn run_check(config: &ServerConfig) -> i32 {
+    let path = config.resources_db_path();
+    if !path.exists() {
+        eprintln!("No store at {}", path.display());
+        return 1;
+    }
+    let (mut checked, mut failing) = (0usize, 0usize);
+    let scanned = sazare_store::scan_resources(&path, |rt, id, value| {
+        checked += 1;
+        let problems = match serde_json::from_str::<serde_json::Value>(value) {
+            Ok(v) => match sazare_core::validation::structure::validate(&v) {
+                Ok(()) => return,
+                Err(o) => o.issue.into_iter().filter_map(|i| i.diagnostics).collect::<Vec<_>>(),
+            },
+            Err(e) => vec![format!("not JSON: {e}")],
+        };
+        failing += 1;
+        for p in problems {
+            println!("{rt}/{id}: {p}");
+        }
+    });
+    if let Err(e) = scanned {
+        eprintln!("Cannot read {}: {e}", path.display());
+        return 1;
+    }
+    if failing == 0 {
+        if checked == 1 {
+            eprintln!("The 1 resource meets the R4 rules.");
+        } else {
+            eprintln!("All {checked} resources meet the R4 rules.");
+        }
+        0
+    } else {
+        eprintln!(
+            "{failing} of {checked} resources don't meet the R4 rules. They read as before; an update of one is \
+             refused until it is fixed."
+        );
+        1
+    }
 }
 
 #[cfg(test)]

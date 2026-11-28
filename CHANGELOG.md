@@ -6,6 +6,11 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
 
 ## Unreleased
 
+### Added
+- `sazare-server check`: lists stored resources that don't meet the R4 rules writes are
+  checked with (exit 1 when any). Read-only — safe while the server runs, and before an
+  upgrade (no migration).
+
 ### Fixed
 - **Decimals keep their precision.** `5.40` came back as `5.4` and
   `1.000000000000000000001` as `1.0` (numbers were read as 64-bit floats); in R4 the
