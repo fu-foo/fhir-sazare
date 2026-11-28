@@ -7,6 +7,12 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
 ## Unreleased
 
 ### Fixed
+- `GET /{type}/{id}/_history` of an id that never existed is a 404 (it was an empty 200, which
+  told an unused id from another patient's, a 404 since 0.18.2).
+- A chain's last parameter takes its modifier: `subject.family:exact=Doe`,
+  `:contains`, `:missing`, `:not` found nothing (the modifier stayed in the parameter's
+  name). An unknown `_` parameter there (`subject._bogus`) is a 400.
+- `sazare-server logs --follow` was refused (only `-f` was listed).
 - **`$import` is about 27× faster on a real disk.** Each resource was its own store
   transaction, and each store commit waits for the disk: about 170 resources/s on an NVMe
   SSD (CI's disks hid it). Resources are now written 1,000 to a transaction, like the

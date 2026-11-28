@@ -277,7 +277,7 @@ fn command_options(command: &str) -> &'static [(&'static str, bool)] {
     match command {
         "start" | "restart" | "run" => &[("--config", true), ("--port", true), ("--demo", false), ("--open", false)],
         "stop" | "status" => &[("--config", true)],
-        "logs" => &[("--config", true), ("-f", false), ("-n", true)],
+        "logs" => &[("--config", true), ("-f", false), ("--follow", false), ("-n", true)],
         "backup" => &[("--config", true)],
         _ => &[],
     }
@@ -944,6 +944,12 @@ mod cli_tests {
 
     fn args(a: &[&str]) -> Vec<String> {
         a.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn logs_takes_follow_spelled_out() {
+        assert!(check_args("logs", &args(&["--follow"])).is_ok());
+        assert!(check_args("logs", &args(&["-f", "-n", "20"])).is_ok());
     }
 
     #[test]

@@ -267,8 +267,6 @@ impl SearchQuery {
             // (`_id`, `_tag`, … with their modifiers) or an error: ignoring
             // `_filter`, `_list`, `_contained`, `_include:iterate`, … would
             // answer a broader search than the one asked.
-            const UNDERSCORE_SEARCH_PARAMS: &[&str] =
-                &["_id", "_lastUpdated", "_profile", "_tag", "_security", "_text", "_content"];
             let base = key.split(':').next().unwrap_or(&key);
             if key.starts_with('_') && !UNDERSCORE_SEARCH_PARAMS.contains(&base) {
                 return Err(format!(
@@ -456,7 +454,8 @@ fn check_chains(
             Some((n, m)) => (n, Some(m)),
             None => (param, None),
         };
-        if known(t) && !name.starts_with('_') && registry.lookup_param_type(t, name).is_none() {
+        let underscore = name.starts_with('_') && UNDERSCORE_SEARCH_PARAMS.contains(&name);
+        if known(t) && !underscore && registry.lookup_param_type(t, name).is_none() {
             return Err(format!("'{name}' is not a search parameter of {t}"));
         }
         if let Some(m) = modifier {
@@ -522,6 +521,10 @@ fn check_chains(
 /// `subject.family` → `subject:Patient.family`: each hop without a type gets
 /// the one type it may point to that has the next parameter (a reference
 /// parameter, for a hop that isn't the last). Typed hops are kept.
+/// The `_` parameters that are search filters here (with their modifiers).
+pub const UNDERSCORE_SEARCH_PARAMS: &[&str] =
+    &["_id", "_lastUpdated", "_profile", "_tag", "_security", "_text", "_content"];
+
 fn type_untyped_chain(resource_type: &str, key: &str, registry: &SearchParamRegistry) -> Result<String, String> {
     let hops: Vec<&str> = key.split('.').collect();
     let mut current = resource_type.to_string();

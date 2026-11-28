@@ -2714,3 +2714,26 @@ async fn test_dashboard_lists_newest_first_with_kept_counts() {
     assert_eq!(patients["count"], 2, "{status}");
     assert_eq!(status["totalResources"], 2, "{status}");
 }
+
+/// A chain's terminal parameter takes its modifiers; an unknown `_` parameter
+/// at the end is refused; the history of an id that never existed is a 404.
+#[tokio::test]
+async fn test_chain_modifiers_and_missing_history() {
+    let (base, _dir) = start_test_server().await;
+    let c = reqwest::Client::new();
+    create(&c, &base, "Patient", &json!({"resourceType": "Patient", "id": "cp", "name": [{"family": "Doe"}]})).await;
+    create(&c, &base, "Observation", &json!({"resourceType": "Observation", "status": "final", "code": {"text": "x"},
+        "subject": {"reference": "Patient/cp"}})).await;
+    for (q, n) in [
+        ("subject:Patient.family:exact=Doe", 1),
+        ("subject:Patient.family:exact=doe", 0),
+        ("subject:Patient.family:contains=o", 1),
+        ("subject:Patient.birthdate:missing=true", 1),
+        ("subject.family:exact=Doe", 1),
+    ] {
+        let b: Value = c.get(format!("{base}/Observation?{q}")).send().await.unwrap().json().await.unwrap();
+        assert_eq!(b["total"], n, "{q}: {b}");
+    }
+    assert_eq!(c.get(format!("{base}/Observation?subject:Patient._bogus=1")).send().await.unwrap().status(), 400);
+    assert_eq!(c.get(format!("{base}/Observation/no-such/_history")).send().await.unwrap().status(), 404);
+}

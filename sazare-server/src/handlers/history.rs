@@ -29,6 +29,14 @@ pub async fn history(
                 Json(json!(OperationOutcome::storage_error(e.to_string()))),
             )
         })?;
+    // A resource that never existed has no history: 404, as R4 says (and as
+    // another patient's resource answers — an empty 200 told them apart).
+    if versions.is_empty() {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(json!(OperationOutcome::not_found(&resource_type, &id))),
+        ));
+    }
 
     let base = base_url_from_headers(&headers);
     // Newest first; a version is a create when it is the first, or the one

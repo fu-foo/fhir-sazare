@@ -596,14 +596,7 @@ impl<'a> V1Executor<'a> {
         };
 
         // Search the final target type by the terminal parameter.
-        let (prefix, value) = split_prefix(&chain.target_param_type, &chain.value);
-        let terminal = SearchParameter {
-            name: chain.target_param.clone(),
-            value,
-            modifier: None,
-            prefix,
-            param_type: chain.target_param_type.clone(),
-        };
+        let terminal = terminal_parameter(&chain.target_param, &chain.target_param_type, &chain.value);
         let mut current_ids = self.search_parameter(&last.target_type, &terminal)?;
 
         // Walk hops backward. For hop i, the resources holding `reference_param`
@@ -644,14 +637,7 @@ impl<'a> V1Executor<'a> {
         resource_type: &str,
         has: &HasParameter,
     ) -> Result<Vec<String>, String> {
-        let (prefix, value) = split_prefix(&has.target_param_type, &has.value);
-        let inner = SearchParameter {
-            name: has.target_param.clone(),
-            value,
-            modifier: None,
-            prefix,
-            param_type: has.target_param_type.clone(),
-        };
+        let inner = terminal_parameter(&has.target_param, &has.target_param_type, &has.value);
         let source_ids = self.search_parameter(&has.source_type, &inner)?;
         if source_ids.is_empty() {
             return Ok(Vec::new());
@@ -760,6 +746,23 @@ impl Drop for ScopeGuard<'_> {
             self.index.clear_scope();
         }
     }
+}
+
+
+/// The parameter at the end of a chain or `_has` (`family:exact=Doe`): its
+/// modifier split off the name, its prefix off the value. With the modifier
+/// left in the name, no parameter matched and the search was empty.
+pub(crate) fn terminal_parameter(param: &str, param_type: &SearchParamType, value: &str) -> SearchParameter {
+    let (name, modifier) = match param.split_once(':') {
+        Some((n, m)) => (n.to_string(), Some(m.to_string())),
+        None => (param.to_string(), None),
+    };
+    let (prefix, value) = if modifier.as_deref() == Some("missing") {
+        (None, value.to_string())
+    } else {
+        split_prefix(param_type, value)
+    };
+    SearchParameter { name, value, modifier, prefix, param_type: param_type.clone() }
 }
 
 #[cfg(test)]

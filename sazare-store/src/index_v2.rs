@@ -1290,14 +1290,7 @@ impl IndexV2 {
         // Walk outward: the set of target rids at the end, then back hop by hop.
         let last = c.links.last().expect("a chain has a link");
         let ttid = self.tid(&last.target_type, false)?.unwrap_or(-1);
-        let (prefix, value) = crate::search_executor::split_prefix(&c.target_param_type, &c.value);
-        let terminal = SearchParameter {
-            name: c.target_param.clone(),
-            value,
-            modifier: None,
-            prefix,
-            param_type: c.target_param_type.clone(),
-        };
+        let terminal = crate::search_executor::terminal_parameter(&c.target_param, &c.target_param_type, &c.value);
         let terminal_c = self.parameter(ttid, &terminal)?;
         let mut targets = terminal_c.set;
         // The per-candidate check, built from the end: each hop follows the
@@ -1342,14 +1335,7 @@ impl IndexV2 {
     /// references (existing resources of this type only).
     fn has(&self, tid: i64, h: &HasParameter) -> Result<Criterion> {
         let stid = self.tid(&h.source_type, false)?.unwrap_or(-1);
-        let (prefix, value) = crate::search_executor::split_prefix(&h.target_param_type, &h.value);
-        let inner = SearchParameter {
-            name: h.target_param.clone(),
-            value,
-            modifier: None,
-            prefix,
-            param_type: h.target_param_type.clone(),
-        };
+        let inner = crate::search_executor::terminal_parameter(&h.target_param, &h.target_param_type, &h.value);
         let inner_c = self.parameter(stid, &inner)?;
         let sources = inner_c.set;
         let pid = self.pid(stid, &h.reference_param, None)?.map(|p| p.0).unwrap_or(-1);
