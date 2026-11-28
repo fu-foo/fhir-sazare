@@ -1975,6 +1975,13 @@ async fn test_write_paths_keep_fhir_rules() {
     assert_eq!(methods, ["PATCH", "PUT", "DELETE", "PUT"], "{h}");
     let statuses: Vec<&str> = h["entry"].as_array().unwrap().iter().map(|e| e["response"]["status"].as_str().unwrap()).collect();
     assert_eq!(statuses, ["200", "201", "204", "201"], "{h}");
+    let urls: Vec<&str> = h["entry"].as_array().unwrap().iter().map(|e| e["request"]["url"].as_str().unwrap()).collect();
+    assert_eq!(urls, ["Patient/t1"; 4], "{h}");
+    // A POST's entry names the type.
+    let r = c.post(format!("{base}/Patient")).json(&json!({"resourceType": "Patient"})).send().await.unwrap();
+    let id = r.json::<Value>().await.unwrap()["id"].as_str().unwrap().to_string();
+    let h: Value = c.get(format!("{base}/Patient/{id}/_history")).send().await.unwrap().json().await.unwrap();
+    assert_eq!(h["entry"][0]["request"], json!({"method": "POST", "url": "Patient"}), "{h}");
     assert!(h["entry"][2].get("resource").is_none(), "a delete has no resource");
 }
 
@@ -2794,4 +2801,48 @@ async fn test_prefer_history_method_and_conditional_references() {
     let r = c.post(format!("{base}/Observation")).json(&obs("Patient?identifier=urn:mrn|A")).send().await.unwrap();
     let o: Value = r.json().await.unwrap();
     assert_eq!(o["subject"]["reference"], "Patient/m1", "{o}");
+}
+
+/// Decimals come back as written (R4: a decimal's precision is part of its
+/// value): through create, $import, a transaction, a search and $export.
+#[tokio::test]
+async fn test_decimals_keep_their_precision() {
+    let (base, _dir) = start_test_server().await;
+    let c = reqwest::Client::new();
+    let values = ["5.40", "1.000000000000000000001", "1.0e2", "0.0", "-0.00", "123456789012345678901234567890"];
+    let obs = |id: &str, v: &str| {
+        format!(r#"{{"resourceType":"Observation","id":"{id}","status":"final","code":{{"text":"x"}},"valueQuantity":{{"value":{v},"unit":"mg"}}}}"#)
+    };
+    let raw = |text: String| -> String {
+        let at = text.find(r#""value":"#).expect("a value") + 8;
+        text[at..].split([',', '}']).next().unwrap().to_string()
+    };
+    for (i, v) in values.iter().enumerate() {
+        let id = format!("d{i}");
+        let r = c.put(format!("{base}/Observation/{id}")).header("Content-Type", "application/fhir+json")
+            .body(obs(&id, v)).send().await.unwrap();
+        assert_eq!(r.status(), 201, "{v}");
+        // An exponent is written with its sign (serde_json's form): the same
+        // value and the same significant digits.
+        let want = if *v == "1.0e2" { "1.0e+2" } else { v };
+        assert_eq!(raw(r.text().await.unwrap()), want, "create response");
+        let back = c.get(format!("{base}/Observation/{id}")).send().await.unwrap().text().await.unwrap();
+        assert_eq!(raw(back), want, "read");
+    }
+    // $import and a transaction.
+    let r = c.post(format!("{base}/$import")).header("Content-Type", "application/fhir+ndjson")
+        .body(format!("{}\n", obs("imp", "7.250"))).send().await.unwrap();
+    assert_eq!(r.status(), 200);
+    assert_eq!(raw(c.get(format!("{base}/Observation/imp")).send().await.unwrap().text().await.unwrap()), "7.250");
+    let tx = format!(r#"{{"resourceType":"Bundle","type":"transaction","entry":[{{"resource":{},"request":{{"method":"PUT","url":"Observation/tx"}}}}]}}"#, obs("tx", "3.10"));
+    assert_eq!(c.post(&base).header("Content-Type", "application/fhir+json").body(tx).send().await.unwrap().status(), 200);
+    assert_eq!(raw(c.get(format!("{base}/Observation/tx")).send().await.unwrap().text().await.unwrap()), "3.10");
+    // A search result and $export.
+    let s = c.get(format!("{base}/Observation?_id=d0")).send().await.unwrap().text().await.unwrap();
+    assert_eq!(raw(s), "5.40");
+    let e = c.get(format!("{base}/$export?_type=Observation")).send().await.unwrap().text().await.unwrap();
+    assert!(e.contains(r#""value":5.40"#) && e.contains(r#""value":7.250"#), "{e}");
+    // Searching by quantity still compares values, not text.
+    let n: Value = c.get(format!("{base}/Observation?value-quantity=5.4")).send().await.unwrap().json().await.unwrap();
+    assert_eq!(n["total"], 1, "{n}");
 }

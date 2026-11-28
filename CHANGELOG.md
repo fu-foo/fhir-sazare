@@ -7,6 +7,11 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
 ## Unreleased
 
 ### Fixed
+- **Decimals keep their precision.** `5.40` came back as `5.4` and
+  `1.000000000000000000001` as `1.0` (numbers were read as 64-bit floats); in R4 the
+  precision is part of the value. They are kept as written (an exponent gains its sign:
+  `1.0e2` → `1.0e+2`). A decimal beyond 64 bits (`123456789012345678901234567890`) was
+  refused; it is stored. Searches still compare values.
 - **Conditional references are resolved**: `"reference": "Patient?identifier=urn:mrn|42"` in a
   transaction, a create or an update becomes the one resource the search finds; none or
   several is a 412. It was stored as written, a reference nothing followed (`_include`,
@@ -15,7 +20,8 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
   **`return=OperationOutcome`** with an outcome instead of the resource (the headers stay).
   Both were ignored.
 - A resource created by `PUT` shows as `PUT` in its history (it was `POST`): each version
-  records the method that made it. Versions from before keep the inferred method.
+  records the method that made it. Versions from before keep the inferred method. A POST's
+  entry names the type (`"url": "Patient"`), as R4 has it; it named the resource.
 - `GET /{type}/{id}/_history` of an id that never existed is a 404 (it was an empty 200, which
   told an unused id from another patient's, a 404 since 0.18.2).
 - A chain's last parameter takes its modifier: `subject.family:exact=Doe`,

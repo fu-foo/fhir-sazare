@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// Core FHIR resource structure
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Resource {
     #[serde(rename = "resourceType")]
     pub resource_type: String,
@@ -19,7 +19,7 @@ pub struct Resource {
 }
 
 /// FHIR resource metadata
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Default)]
 pub struct Meta {
     #[serde(rename = "versionId", skip_serializing_if = "Option::is_none")]
     pub version_id: Option<String>,
@@ -37,6 +37,58 @@ pub struct Meta {
     /// as sent — dropping them lost `_tag` / `_security` searchability.
     #[serde(flatten)]
     pub extra: serde_json::Map<String, serde_json::Value>,
+}
+
+// Read through a `Value`, not serde's derived `flatten`: that buffers the
+// other elements in serde's own content type, which can't hold a number
+// beyond 64 bits — a decimal like 123456789012345678901234567890 (valid in
+// R4, kept as written with `arbitrary_precision`) was refused.
+impl<'de> Deserialize<'de> for Resource {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        use serde::de::Error;
+        let Value::Object(mut map) = Value::deserialize(d)? else {
+            return Err(D::Error::custom("a resource is a JSON object"));
+        };
+        let resource_type = match map.remove("resourceType") {
+            Some(Value::String(t)) => t,
+            Some(_) => return Err(D::Error::custom("resourceType must be a string")),
+            None => return Err(D::Error::missing_field("resourceType")),
+        };
+        let id = match map.remove("id") {
+            None | Some(Value::Null) => None,
+            Some(Value::String(i)) => Some(i),
+            Some(_) => return Err(D::Error::custom("id must be a string")),
+        };
+        let meta = match map.remove("meta") {
+            None | Some(Value::Null) => None,
+            Some(m) => Some(serde_json::from_value(m).map_err(D::Error::custom)?),
+        };
+        Ok(Resource { resource_type, id, meta, rest: Value::Object(map) })
+    }
+}
+
+impl<'de> Deserialize<'de> for Meta {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        use serde::de::Error;
+        let Value::Object(mut map) = Value::deserialize(d)? else {
+            return Err(D::Error::custom("meta is a JSON object"));
+        };
+        fn string<E: Error>(v: Option<Value>, name: &str) -> Result<Option<String>, E> {
+            match v {
+                None | Some(Value::Null) => Ok(None),
+                Some(Value::String(s)) => Ok(Some(s)),
+                Some(_) => Err(E::custom(format!("meta.{name} must be a string"))),
+            }
+        }
+        let version_id = string(map.remove("versionId"), "versionId")?;
+        let last_updated = string(map.remove("lastUpdated"), "lastUpdated")?;
+        let source = string(map.remove("source"), "source")?;
+        let profile = match map.remove("profile") {
+            None | Some(Value::Null) => None,
+            Some(p) => Some(serde_json::from_value(p).map_err(D::Error::custom)?),
+        };
+        Ok(Meta { version_id, last_updated, source, profile, extra: map })
+    }
 }
 
 impl Resource {
@@ -100,3 +152,4 @@ mod tests {
         assert_eq!(reparsed.id, Some("456".to_string()));
     }
 }
+

@@ -84,7 +84,9 @@ pub async fn history(
         entries.push(json!({
             "fullUrl": format!("{base}/{url}"),
             "resource": resource,
-            "request": {"method": method, "url": url},
+            // A POST names the type (the server chose the id); PUT and PATCH
+            // the resource.
+            "request": {"method": method, "url": if method == "POST" { resource_type.clone() } else { url }},
             "response": {
                 "status": if created { "201" } else { "200" },
                 "etag": format!("W/\"{ver}\""),
