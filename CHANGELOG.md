@@ -8,11 +8,16 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
 
 ### Added
 - CI compares sazare's write checks with the HL7 FHIR validator (7.0.8): the R4 examples
-  (but definitional resources) and copies broken on purpose (a date that doesn't exist, a
-  dateTime without a zone, a required element left out, an empty string or object, a uri
-  with a space, a 64-bit integer, a code with a double space, two types of a choice). It
-  fails when sazare refuses what the validator accepts, or accepts a broken copy the
-  validator refuses. First run: 0 and 0 (771 broken copies, 720 examples).
+  (but definitional resources) and copies broken on purpose in 13 ways — a date that
+  doesn't exist, a dateTime without a zone, a required element left out (of the resource,
+  and nested), an empty string or object, a uri or extension url with a space, a contained
+  resource's id, a 64-bit integer, a code with a double space, an extension with a value
+  and extensions, two types of a choice. Where and how to break comes from the R4
+  StructureDefinitions, not from sazare's own table. Every file goes through POST, PUT, a
+  transaction, a batch and PATCH, which must agree. It fails when sazare refuses what the
+  validator accepts, accepts a broken copy the validator refuses, its write paths
+  disagree, or the validator alone refuses more examples than `ci/validator_baseline.json`
+  (203). Now: 0, 0 (1,860 broken copies), 0.
 - `sazare-server check`: lists stored resources that don't meet the R4 rules writes are
   checked with (exit 1 when any). Read-only — safe while the server runs, and before an
   upgrade (no migration).

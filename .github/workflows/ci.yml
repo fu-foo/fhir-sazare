@@ -82,9 +82,11 @@ jobs:
         run: MAX_MS=500 bench/run.sh 10000 5 | tee -a "$GITHUB_STEP_SUMMARY"
 
   # sazare's write checks against the HL7 FHIR validator: the R4 examples and
-  # copies broken on purpose, accepted or refused by each
-  # (ci/validator_compare.py). Fails when sazare refuses what the validator
-  # accepts, or accepts a broken copy the validator refuses.
+  # copies broken on purpose (where and how from the R4 definitions), sent by
+  # every write path (ci/validator_compare.py). Fails when sazare refuses what
+  # the validator accepts, accepts a broken copy the validator refuses, its
+  # write paths disagree, or the validator alone refuses more examples than
+  # ci/validator_baseline.json.
   validator:
     runs-on: ubuntu-latest
     env:
@@ -100,9 +102,12 @@ jobs:
       - run: cargo build --release
       - name: Corpus
         run: |
-          curl -sfL --retry 3 -o "$RUNNER_TEMP/examples-json.zip" https://hl7.org/fhir/R4/examples-json.zip
+          for f in examples-json.zip profiles-resources.json profiles-types.json; do
+            curl -sfL --retry 3 -o "$RUNNER_TEMP/$f" "https://hl7.org/fhir/R4/$f"
+          done
           python3 ci/r4_examples.py "$RUNNER_TEMP/examples-json.zip" > "$RUNNER_TEMP/r4-examples.ndjson"
-          python3 ci/validator_compare.py corpus "$RUNNER_TEMP/r4-examples.ndjson" "$RUNNER_TEMP/corpus"
+          python3 ci/validator_compare.py corpus "$RUNNER_TEMP/r4-examples.ndjson" \
+            "$RUNNER_TEMP/profiles-resources.json" "$RUNNER_TEMP/profiles-types.json" "$RUNNER_TEMP/corpus"
       - name: HL7 validator
         run: |
           curl -sfL --retry 3 -o "$RUNNER_TEMP/validator_cli.jar" \
@@ -116,7 +121,7 @@ jobs:
           target/release/sazare-server start --config "$RUNNER_TEMP/config.yaml"
           set -o pipefail
           python3 ci/validator_compare.py compare "$RUNNER_TEMP/corpus" "$RUNNER_TEMP/validator.json" http://127.0.0.1:18080 \
-            | tee -a "$GITHUB_STEP_SUMMARY"
+            ci/validator_baseline.json | tee -a "$GITHUB_STEP_SUMMARY"
 
   # An implementation guide end to end, with JP Core: fetch the package and its
   # terminology with the generic IG script, start sazare on them, load the

@@ -1,0 +1,4 @@
+{
+  "only_validator_examples": 203,
+  "note": "R4 examples the HL7 validator refuses and sazare stores (example URLs, terminology, unresolved extensions, other invariants). ci/validator_compare.py fails above this; lower it when the report says so."
+}
