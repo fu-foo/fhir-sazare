@@ -7,6 +7,15 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
 ## Unreleased
 
 ### Fixed
+- **Conditional references are resolved**: `"reference": "Patient?identifier=urn:mrn|42"` in a
+  transaction, a create or an update becomes the one resource the search finds; none or
+  several is a 412. It was stored as written, a reference nothing followed (`_include`,
+  `_revinclude` and compartments missed it).
+- **`Prefer: return=minimal`** answers a create, update or patch without a body, and
+  **`return=OperationOutcome`** with an outcome instead of the resource (the headers stay).
+  Both were ignored.
+- A resource created by `PUT` shows as `PUT` in its history (it was `POST`): each version
+  records the method that made it. Versions from before keep the inferred method.
 - `GET /{type}/{id}/_history` of an id that never existed is a 404 (it was an empty 200, which
   told an unused id from another patient's, a 404 since 0.18.2).
 - A chain's last parameter takes its modifier: `subject.family:exact=Doe`,
@@ -28,8 +37,9 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
   `GET /{type}?_sort=-_lastUpdated`.
 
 ### Behavior changes
-- `resources.sqlite` moves to schema version 4: the per-type counts (taken once on the first
-  start, a scan of the store) and two unused indexes dropped (smaller files, cheaper writes).
+- `resources.sqlite` moves to schema version 5: the per-type counts (taken once on the first
+  start, a scan of the store), two unused indexes dropped (smaller files, cheaper writes),
+  and the method of each history version.
 
 ## 0.18.3 — 2026-11-28
 

@@ -172,7 +172,7 @@ async fn process_batch_entry(
             let data = serde_json::to_vec(&resource).unwrap();
             match state
                 .store
-                .put_with_version(&entry.resource_type, &id, &version_id, &data)
+                .put_with_version(&entry.resource_type, &id, &version_id, &data, "POST")
             {
                 Ok(()) => {
                     // Index
@@ -269,7 +269,7 @@ async fn process_batch_entry(
             let data = serde_json::to_vec(&resource).unwrap();
             // `ifMatch`: replace only that version (compare-and-swap).
             let written = match &entry.if_match {
-                Some(want) => match state.store.put_with_version_cas(&entry.resource_type, &id, Some(want), &version_id, &data) {
+                Some(want) => match state.store.put_with_version_cas(&entry.resource_type, &id, Some(want), &version_id, &data, "PUT") {
                     Ok(true) => Ok(()),
                     Ok(false) => {
                         return error_entry(
@@ -279,7 +279,7 @@ async fn process_batch_entry(
                     }
                     Err(e) => Err(e),
                 },
-                None => state.store.put_with_version(&entry.resource_type, &id, &version_id, &data),
+                None => state.store.put_with_version(&entry.resource_type, &id, &version_id, &data, "PUT"),
             };
             match written {
                 Ok(()) => {

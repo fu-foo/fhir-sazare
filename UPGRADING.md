@@ -50,9 +50,9 @@ into `data_dir`, delete every `search_index*` file — the index generations
 
 ### To 0.19.0
 
-- **`resources.sqlite` moves to schema version 4.** The first start counts the resources
+- **`resources.sqlite` moves to schema version 5.** The first start counts the resources
   per type once (a scan of the store before the server answers: 0.2 s for 200k
-  resources on an SSD, so a few seconds per 10M) and drops two indexes that served nothing. To go back, restore the
+  resources on an SSD, so a few seconds per 10M) drops two indexes that served nothing, and records each new version's HTTP method. To go back, restore the
   backup from step 1.
 
 ### To 0.18.0

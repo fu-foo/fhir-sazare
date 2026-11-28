@@ -167,10 +167,24 @@ pub(super) async fn process_transaction(
         assigned.push((entry.resource_type.clone(), id));
     }
 
-    // Phase 3: Resolve urn:uuid references in all resources
+    // Phase 3: Resolve urn:uuid references in all resources, then the
+    // conditional ones (`Patient?identifier=…`) against what is stored.
     for entry in entries.iter_mut() {
         if let Some(ref mut resource) = entry.resource {
             resolve_references(resource, &ref_map);
+        }
+    }
+    for (i, entry) in entries.iter_mut().enumerate() {
+        if conditional_existing[i].is_some() {
+            continue;
+        }
+        if let Some(ref mut resource) = entry.resource
+            && let Err((status, msg)) = crate::resolve_conditional_references(state, auth_user, resource).await
+        {
+            let code = if status == StatusCode::PRECONDITION_FAILED { IssueType::Processing } else { IssueType::Invalid };
+            let outcome = OperationOutcome::error(code, format!("entry[{i}]: {msg}"));
+            audit::log_operation_error(audit_ctx, "TRANSACTION", "Bundle", None, &msg, &state.audit);
+            return (status, Json(json!(outcome))).into_response();
         }
     }
 
@@ -220,7 +234,7 @@ pub(super) async fn process_transaction(
                     let data = serde_json::to_vec(&resource).map_err(|e| {
                         sazare_store::StoreError::Other(format!("serialize failed: {e}"))
                     })?;
-                    ops.put_with_version(resource_type, id, &version_id, &data)?;
+                    ops.put_with_version(resource_type, id, &version_id, &data, "POST")?;
 
                     resources_for_index.push((
                         resource_type.clone(),
@@ -264,7 +278,7 @@ pub(super) async fn process_transaction(
                     let data = serde_json::to_vec(&resource).map_err(|e| {
                         sazare_store::StoreError::Other(format!("serialize failed: {e}"))
                     })?;
-                    ops.put_with_version(resource_type, id, &version_id, &data)?;
+                    ops.put_with_version(resource_type, id, &version_id, &data, "PUT")?;
 
                     resources_for_index.push((
                         resource_type.clone(),

@@ -792,7 +792,7 @@ mod tests {
             if i % 5 == 0 {
                 obs.as_object_mut().unwrap().remove("status");
             }
-            store.put_with_version("Observation", &id, "1", obs.to_string().as_bytes()).unwrap();
+            store.put_with_version("Observation", &id, "1", obs.to_string().as_bytes(), "PUT").unwrap();
             updates.push(IndexUpdate {
                 resource_type: "Observation".into(),
                 resource_id: id.clone(),
@@ -899,7 +899,7 @@ mod tests {
 
     fn put(store: &SqliteStore, rt: &str, id: &str, body: serde_json::Value) {
         let data = serde_json::to_vec(&body).unwrap();
-        store.put_with_version(rt, id, "1", &data).unwrap();
+        store.put_with_version(rt, id, "1", &data, "PUT").unwrap();
     }
 
     fn sorted(mut v: Vec<String>) -> Vec<String> {

@@ -421,7 +421,7 @@ impl SubscriptionManager {
                 // isn't silently clobbered by this background status flip.
                 let wrote = state
                     .store
-                    .put_with_version_cas("Subscription", id, Some(&current), &new_ver, &bytes)
+                    .put_with_version_cas("Subscription", id, Some(&current), &new_ver, &bytes, "PUT")
                     .unwrap_or(false);
                 // Keep the search index in step (status is an indexed param).
                 if wrote {

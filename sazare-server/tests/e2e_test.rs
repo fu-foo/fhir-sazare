@@ -1967,11 +1967,14 @@ async fn test_write_paths_keep_fhir_rules() {
     assert_eq!(c.get(format!("{base}/Patient/t2")).send().await.unwrap().status(), 404);
 
     // The history lists every version, the delete and the re-created ones
-    // included, newest first: PUT (patch), POST (the re-create), DELETE, POST.
+    // included, newest first, each with the method that made it: PATCH, PUT
+    // (the re-create), DELETE, PUT (the create).
     let h: Value = c.get(format!("{base}/Patient/t1/_history")).send().await.unwrap().json().await.unwrap();
     assert_eq!(h["total"], 4, "{h}");
     let methods: Vec<&str> = h["entry"].as_array().unwrap().iter().map(|e| e["request"]["method"].as_str().unwrap()).collect();
-    assert_eq!(methods, ["PUT", "POST", "DELETE", "POST"], "{h}");
+    assert_eq!(methods, ["PATCH", "PUT", "DELETE", "PUT"], "{h}");
+    let statuses: Vec<&str> = h["entry"].as_array().unwrap().iter().map(|e| e["response"]["status"].as_str().unwrap()).collect();
+    assert_eq!(statuses, ["200", "201", "204", "201"], "{h}");
     assert!(h["entry"][2].get("resource").is_none(), "a delete has no resource");
 }
 
@@ -2715,6 +2718,7 @@ async fn test_dashboard_lists_newest_first_with_kept_counts() {
     assert_eq!(status["totalResources"], 2, "{status}");
 }
 
+<<<<<<< HEAD
 /// A chain's terminal parameter takes its modifiers; an unknown `_` parameter
 /// at the end is refused; the history of an id that never existed is a 404.
 #[tokio::test]
@@ -2736,4 +2740,59 @@ async fn test_chain_modifiers_and_missing_history() {
     }
     assert_eq!(c.get(format!("{base}/Observation?subject:Patient._bogus=1")).send().await.unwrap().status(), 400);
     assert_eq!(c.get(format!("{base}/Observation/no-such/_history")).send().await.unwrap().status(), 404);
+=======
+/// `Prefer: return=minimal | OperationOutcome` on writes; the history records
+/// a create by PUT as a PUT; conditional references resolve (or fail).
+#[tokio::test]
+async fn test_prefer_history_method_and_conditional_references() {
+    let (base, _dir) = start_test_server().await;
+    let c = reqwest::Client::new();
+    let post = |body: Value, prefer: &'static str| {
+        c.post(format!("{base}/Patient")).header("Prefer", prefer).json(&body).send()
+    };
+    let r = post(json!({"resourceType": "Patient"}), "return=minimal").await.unwrap();
+    assert_eq!(r.status(), 201);
+    assert!(r.headers().contains_key("location") && r.headers().contains_key("etag"));
+    assert_eq!(r.text().await.unwrap(), "");
+    let r = post(json!({"resourceType": "Patient"}), "return=OperationOutcome").await.unwrap();
+    let o: Value = r.json().await.unwrap();
+    assert_eq!(o["resourceType"], "OperationOutcome", "{o}");
+    let r = post(json!({"resourceType": "Patient"}), "return=representation").await.unwrap();
+    let p: Value = r.json().await.unwrap();
+    assert_eq!(p["resourceType"], "Patient");
+    // An error keeps its outcome whatever was preferred.
+    let r = post(json!({"resourceType": "Patient", "gender": 5}), "return=minimal").await.unwrap();
+    assert_eq!(r.status(), 400);
+    assert!(!r.text().await.unwrap().is_empty());
+
+    // Created by PUT, then updated: PUT, PUT (newest first).
+    for g in ["male", "female"] {
+        c.put(format!("{base}/Patient/h")).json(&json!({"resourceType": "Patient", "id": "h", "gender": g})).send().await.unwrap();
+    }
+    let h: Value = c.get(format!("{base}/Patient/h/_history")).send().await.unwrap().json().await.unwrap();
+    let methods: Vec<&str> = h["entry"].as_array().unwrap().iter().map(|e| e["request"]["method"].as_str().unwrap()).collect();
+    assert_eq!(methods, ["PUT", "PUT"], "{h}");
+    assert_eq!(h["entry"][1]["response"]["status"], "201");
+
+    // Conditional references.
+    for (id, mrn) in [("m1", "A"), ("m2", "B"), ("m3", "B")] {
+        create(&c, &base, "Patient", &json!({"resourceType": "Patient", "id": id,
+            "identifier": [{"system": "urn:mrn", "value": mrn}]})).await;
+    }
+    let obs = |r: &str| json!({"resourceType": "Observation", "status": "final", "code": {"text": "x"}, "subject": {"reference": r}});
+    let tx = |r: &str| json!({"resourceType": "Bundle", "type": "transaction", "entry": [
+        {"resource": obs(r), "request": {"method": "POST", "url": "Observation"}}]});
+    let r = c.post(&base).json(&tx("Patient?identifier=urn:mrn|A")).send().await.unwrap();
+    assert_eq!(r.status(), 200);
+    let b: Value = r.json().await.unwrap();
+    let loc = b["entry"][0]["response"]["location"].as_str().unwrap().to_string();
+    let stored: Value = c.get(format!("{base}/{}", loc.split("/_history").next().unwrap())).send().await.unwrap().json().await.unwrap();
+    assert_eq!(stored["subject"]["reference"], "Patient/m1", "{stored}");
+    assert_eq!(c.post(&base).json(&tx("Patient?identifier=urn:mrn|B")).send().await.unwrap().status(), 412);
+    assert_eq!(c.post(&base).json(&tx("Patient?identifier=urn:mrn|Z")).send().await.unwrap().status(), 412);
+    // A plain create resolves too.
+    let r = c.post(format!("{base}/Observation")).json(&obs("Patient?identifier=urn:mrn|A")).send().await.unwrap();
+    let o: Value = r.json().await.unwrap();
+    assert_eq!(o["subject"]["reference"], "Patient/m1", "{o}");
+>>>>>>> f065049 (Prefer return=; PUT-created history shows PUT; conditional references resolved)
 }

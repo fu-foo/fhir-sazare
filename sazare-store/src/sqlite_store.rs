@@ -99,6 +99,12 @@ impl SqliteStore {
         DROP INDEX IF EXISTS idx_resources_type;
         DROP INDEX IF EXISTS idx_history_type;
         "#,
+        // v5 — the HTTP method that made each version (POST, PUT, PATCH), for
+        // the history's request.method: a create by PUT showed as POST.
+        // NULL for versions before it (and $import's): inferred as before.
+        r#"
+        ALTER TABLE resource_history ADD COLUMN method TEXT;
+        "#,
     ];
 
     /// Open the store (create if not exists)
@@ -245,6 +251,7 @@ impl SqliteStore {
         id: &str,
         version_id: &str,
         data: &[u8],
+        method: &str,
     ) -> Result<()> {
         let value = std::str::from_utf8(data)
             .map_err(|e| crate::error::StoreError::Other(format!("Invalid UTF-8: {}", e)))?;
@@ -261,8 +268,8 @@ impl SqliteStore {
             params![resource_type, id, value],
         )?;
         tx.execute(
-            "INSERT INTO resource_history (resource_type, id, version_id, value) VALUES (?, ?, ?, ?)",
-            params![resource_type, id, version_id, value],
+            "INSERT INTO resource_history (resource_type, id, version_id, value, method) VALUES (?, ?, ?, ?, ?)",
+            params![resource_type, id, version_id, value, method],
         )?;
         tx.commit()?;
 
@@ -325,6 +332,7 @@ impl SqliteStore {
         expected_current: Option<&str>,
         new_version: &str,
         data: &[u8],
+        method: &str,
     ) -> Result<bool> {
         let value = std::str::from_utf8(data)
             .map_err(|e| crate::error::StoreError::Other(format!("Invalid UTF-8: {}", e)))?;
@@ -359,8 +367,8 @@ impl SqliteStore {
             params![resource_type, id, value],
         )?;
         tx.execute(
-            "INSERT INTO resource_history (resource_type, id, version_id, value) VALUES (?, ?, ?, ?)",
-            params![resource_type, id, new_version, value],
+            "INSERT INTO resource_history (resource_type, id, version_id, value, method) VALUES (?, ?, ?, ?, ?)",
+            params![resource_type, id, new_version, value, method],
         )?;
         tx.commit()?;
         Ok(true)
@@ -434,6 +442,21 @@ impl SqliteStore {
     }
 
     /// A version from the history, and whether it is the record of a delete.
+    /// The HTTP method recorded for a version (`None`: from before v5, or
+    /// `$import`).
+    pub fn history_method(&self, resource_type: &str, id: &str, version_id: &str) -> Result<Option<String>> {
+        let conn = self.reader();
+        match conn.query_row(
+            "SELECT method FROM resource_history WHERE resource_type = ? AND id = ? AND version_id = ?",
+            params![resource_type, id, version_id],
+            |row| row.get::<_, Option<String>>(0),
+        ) {
+            Ok(m) => Ok(m),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e.into()),
+        }
+    }
+
     pub fn get_history_version(&self, resource_type: &str, id: &str, version_id: &str) -> Result<Option<(Vec<u8>, bool)>> {
         let conn = self.reader();
         let row = conn
@@ -597,6 +620,7 @@ impl<'a> TransactionOps<'a> {
         id: &str,
         version_id: &str,
         data: &[u8],
+        method: &str,
     ) -> Result<()> {
         let value = std::str::from_utf8(data)
             .map_err(|e| crate::error::StoreError::Other(format!("Invalid UTF-8: {}", e)))?;
@@ -607,8 +631,8 @@ impl<'a> TransactionOps<'a> {
             params![resource_type, id, value],
         )?;
         conn.execute(
-            "INSERT INTO resource_history (resource_type, id, version_id, value) VALUES (?, ?, ?, ?)",
-            params![resource_type, id, version_id, value],
+            "INSERT INTO resource_history (resource_type, id, version_id, value, method) VALUES (?, ?, ?, ?, ?)",
+            params![resource_type, id, version_id, value, method],
         )?;
         Ok(())
     }
@@ -755,16 +779,16 @@ mod tests {
     fn test_cas_prevents_lost_update() {
         let store = SqliteStore::open(":memory:").unwrap();
         let v1 = br#"{"resourceType":"Patient","id":"1","meta":{"versionId":"1"}}"#;
-        store.put_with_version("Patient", "1", "1", v1).unwrap();
+        store.put_with_version("Patient", "1", "1", v1, "PUT").unwrap();
 
         // Two writers both read version "1" and try to write "2".
         let a = br#"{"resourceType":"Patient","id":"1","meta":{"versionId":"2"},"x":"A"}"#;
         let b = br#"{"resourceType":"Patient","id":"1","meta":{"versionId":"2"},"x":"B"}"#;
 
         // First CAS against expected current "1" succeeds.
-        assert!(store.put_with_version_cas("Patient", "1", Some("1"), "2", a).unwrap());
+        assert!(store.put_with_version_cas("Patient", "1", Some("1"), "2", a, "PUT").unwrap());
         // Second CAS still expecting "1" must fail — current is now "2".
-        assert!(!store.put_with_version_cas("Patient", "1", Some("1"), "2", b).unwrap());
+        assert!(!store.put_with_version_cas("Patient", "1", Some("1"), "2", b, "PUT").unwrap());
 
         // The winner's content survived.
         let cur = store.get("Patient", "1").unwrap().unwrap();
@@ -776,9 +800,9 @@ mod tests {
         let store = SqliteStore::open(":memory:").unwrap();
         let v1 = br#"{"resourceType":"Patient","id":"1","meta":{"versionId":"1"}}"#;
         // create (expected absent) on empty store → ok
-        assert!(store.put_with_version_cas("Patient", "1", None, "1", v1).unwrap());
+        assert!(store.put_with_version_cas("Patient", "1", None, "1", v1, "PUT").unwrap());
         // create again with expected-absent → refused (already exists)
-        assert!(!store.put_with_version_cas("Patient", "1", None, "1", v1).unwrap());
+        assert!(!store.put_with_version_cas("Patient", "1", None, "1", v1, "PUT").unwrap());
     }
 
     #[test]
@@ -788,8 +812,8 @@ mod tests {
         let v1 = br#"{"resourceType":"Patient","id":"123","meta":{"versionId":"1"}}"#;
         let v2 = br#"{"resourceType":"Patient","id":"123","meta":{"versionId":"2"}}"#;
 
-        store.put_with_version("Patient", "123", "1", v1).unwrap();
-        store.put_with_version("Patient", "123", "2", v2).unwrap();
+        store.put_with_version("Patient", "123", "1", v1, "PUT").unwrap();
+        store.put_with_version("Patient", "123", "2", v2, "PUT").unwrap();
 
         // Current version should be v2
         let current = store.get("Patient", "123").unwrap();
@@ -842,8 +866,8 @@ mod tests {
         let d2 = br#"{"resourceType":"Observation","id":"o1","meta":{"versionId":"1"}}"#;
 
         store.in_transaction(|ops| {
-            ops.put_with_version("Patient", "p1", "1", d1)?;
-            ops.put_with_version("Observation", "o1", "1", d2)?;
+            ops.put_with_version("Patient", "p1", "1", d1, "PUT")?;
+            ops.put_with_version("Observation", "o1", "1", d2, "PUT")?;
             Ok(())
         }).unwrap();
 
@@ -858,7 +882,7 @@ mod tests {
         let d1 = br#"{"resourceType":"Patient","id":"p1","meta":{"versionId":"1"}}"#;
 
         let result: Result<()> = store.in_transaction(|ops| {
-            ops.put_with_version("Patient", "p1", "1", d1)?;
+            ops.put_with_version("Patient", "p1", "1", d1, "PUT")?;
             // Force an error after the put
             Err(crate::error::StoreError::Other("forced error".into()))
         });

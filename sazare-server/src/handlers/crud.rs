@@ -54,7 +54,12 @@ pub async fn create(
 ) -> Result<Response, (StatusCode, Json<Value>)> {
     let audit_ctx = AuditContext::from_request(&request);
     let auth_user = request.extensions().get::<AuthUser>().cloned();
-    let (headers, body) = extract_body(request).await?;
+    let (headers, mut body) = extract_body(request).await?;
+    // `Patient?identifier=…` references become the resource they find (or
+    // the write fails): judged, validated and stored as resolved.
+    crate::resolve_conditional_references(&state, auth_user.as_ref(), &mut body)
+        .await
+        .map_err(|(status, msg)| (status, Json(json!(OperationOutcome::error(IssueType::Processing, msg)))))?;
     // Index and store writes happen under the write gate (shared), so an index
     // switch never finds a write between its two steps. Taken once the body
     // is in: a slow upload must not hold up a switch (or, behind a waiting
@@ -174,7 +179,7 @@ pub async fn create(
     // client-chosen id can't both succeed.
     let created = state
         .store
-        .put_with_version_cas(&resource_type, &id, None, &version_id, &json_bytes)
+        .put_with_version_cas(&resource_type, &id, None, &version_id, &json_bytes, "POST")
         .map_err(|e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -274,7 +279,12 @@ pub async fn update(
 ) -> Result<Response, (StatusCode, Json<Value>)> {
     let audit_ctx = AuditContext::from_request(&request);
     let auth_user = request.extensions().get::<AuthUser>().cloned();
-    let (headers, body) = extract_body(request).await?;
+    let (headers, mut body) = extract_body(request).await?;
+    // `Patient?identifier=…` references become the resource they find (or
+    // the write fails): judged, validated and stored as resolved.
+    crate::resolve_conditional_references(&state, auth_user.as_ref(), &mut body)
+        .await
+        .map_err(|(status, msg)| (status, Json(json!(OperationOutcome::error(IssueType::Processing, msg)))))?;
     // Index and store writes happen under the write gate (shared), so an index
     // switch never finds a write between its two steps. Taken once the body
     // is in: a slow upload must not hold up a switch (or, behind a waiting
@@ -465,7 +475,7 @@ pub async fn update(
         // restore the index to reflect the actually-stored resource before returning.
         let written = state
             .store
-            .put_with_version_cas(&resource_type, &id, expected_current.as_deref(), &new_version, &json_bytes)
+            .put_with_version_cas(&resource_type, &id, expected_current.as_deref(), &new_version, &json_bytes, "PUT")
             .map_err(|e| {
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
@@ -689,7 +699,7 @@ pub async fn patch_resource(
         // concurrent update in between makes this a 409, not a lost update.
         let written = state
             .store
-            .put_with_version_cas(&resource_type, &id, Some(&current_ver_str), &new_version, &json_bytes)
+            .put_with_version_cas(&resource_type, &id, Some(&current_ver_str), &new_version, &json_bytes, "PATCH")
             .map_err(|e| {
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,

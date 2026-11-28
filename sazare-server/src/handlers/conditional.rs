@@ -198,7 +198,7 @@ pub async fn conditional_update(
 
         state
             .store
-            .put_with_version(&resource_type, &id, &version_id, &json_bytes)
+            .put_with_version(&resource_type, &id, &version_id, &json_bytes, "PUT")
             .map_err(|e| {
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
@@ -251,7 +251,7 @@ pub async fn conditional_update(
 
         state
             .store
-            .put_with_version(&resource_type, &id, &new_version, &json_bytes)
+            .put_with_version(&resource_type, &id, &new_version, &json_bytes, "PUT")
             .map_err(|e| {
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,

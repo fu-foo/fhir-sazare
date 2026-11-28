@@ -73,10 +73,18 @@ pub async fn history(
             continue;
         }
         let created = loaded.get(i + 1).is_none_or(|(_, before_deleted, _)| *before_deleted);
+        // The method recorded with the version (since store v5); before
+        // that, inferred: a create was a POST.
+        let method = state
+            .store
+            .history_method(&resource_type, &id, ver)
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| if created { "POST".into() } else { "PUT".into() });
         entries.push(json!({
             "fullUrl": format!("{base}/{url}"),
             "resource": resource,
-            "request": {"method": if created { "POST" } else { "PUT" }, "url": url},
+            "request": {"method": method, "url": url},
             "response": {
                 "status": if created { "201" } else { "200" },
                 "etag": format!("W/\"{ver}\""),

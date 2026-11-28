@@ -442,7 +442,7 @@ fn load(resources: &[Value], registry: &SearchParamRegistry) -> (SqliteStore, V1
     for r in resources {
         let rt = r["resourceType"].as_str().unwrap().to_string();
         let id = r["id"].as_str().unwrap().to_string();
-        store.put_with_version(&rt, &id, "1", r.to_string().as_bytes()).unwrap();
+        store.put_with_version(&rt, &id, "1", r.to_string().as_bytes(), "PUT").unwrap();
         let e = IndexBuilder::extract_indices_with_registry(registry, &rt, r);
         updates.push(IndexUpdate { resource_type: rt.clone(), resource_id: id.clone(), entries: e.clone(), text: resource_text(r) });
         entries.insert((rt, id), e);

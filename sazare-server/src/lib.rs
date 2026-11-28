@@ -122,6 +122,60 @@ pub enum ConditionalResult {
     SearchError(String),
 }
 
+/// Conditional references (`Patient?identifier=urn:mrn|42`, R4 http.html#trules)
+/// in `resource`, replaced by the one resource each search finds. None or
+/// several is a 412: the write fails rather than storing a reference nothing
+/// resolves (it was stored as written). The search runs as `auth_user`, so a
+/// patient-scoped caller resolves only within their compartment.
+pub async fn resolve_conditional_references(
+    state: &Arc<AppState>,
+    auth_user: Option<&auth::AuthUser>,
+    resource: &mut Value,
+) -> Result<(), (axum::http::StatusCode, String)> {
+    fn collect(v: &Value, out: &mut Vec<String>) {
+        match v {
+            Value::Object(map) => {
+                if let Some(r) = map.get("reference").and_then(|r| r.as_str())
+                    && let Some((t, q)) = r.split_once('?')
+                    && !q.is_empty()
+                    && sazare_core::r4_types::is_resource_type(t)
+                    && !out.iter().any(|o| o == r)
+                {
+                    out.push(r.to_string());
+                }
+                map.values().for_each(|v| collect(v, out));
+            }
+            Value::Array(a) => a.iter().for_each(|v| collect(v, out)),
+            _ => {}
+        }
+    }
+    let mut refs = Vec::new();
+    collect(resource, &mut refs);
+    if refs.is_empty() {
+        return Ok(());
+    }
+    let mut map = std::collections::HashMap::new();
+    for r in refs {
+        let (t, q) = r.split_once('?').expect("collected with a ?");
+        let found = match conditional_create_check(state, auth_user, t, q).await {
+            ConditionalResult::Exists(existing) => existing.get("id").and_then(|v| v.as_str()).map(|id| format!("{t}/{id}")),
+            ConditionalResult::NoMatch => None,
+            ConditionalResult::MultipleMatches => {
+                return Err((axum::http::StatusCode::PRECONDITION_FAILED, format!("The conditional reference '{r}' matches more than one {t}")));
+            }
+            ConditionalResult::SearchError(e) => {
+                return Err((axum::http::StatusCode::BAD_REQUEST, format!("The conditional reference '{r}': {e}")));
+            }
+        };
+        let Some(found) = found else {
+            return Err((axum::http::StatusCode::PRECONDITION_FAILED, format!("The conditional reference '{r}' matches no {t}")));
+        };
+        map.insert(r, found);
+    }
+    bundle::resolve_references(resource, &map);
+    Ok(())
+}
+
 /// The HTTP client for outbound calls to configured services (JWKS, webhooks):
 /// bounded connect and total timeouts, so a slow or silent remote can't hold
 /// requests — or locks — indefinitely.
@@ -453,6 +507,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         // Middleware
         // A handler that panics answers 500 (counted by `metrics::track`)
         // instead of dropping the connection.
+        .layer(axum::middleware::from_fn(prefer_return))
         .layer(axum::middleware::from_fn(known_resource_type))
         .layer(axum::middleware::from_fn(json_only))
         .layer(tower_http::catch_panic::CatchPanicLayer::custom(panic_response))
@@ -486,6 +541,53 @@ fn panic_response(_panic: Box<dyn std::any::Any + Send + 'static>) -> axum::resp
             "Internal server error (the server log has the details)"
         )),
     )
+}
+
+/// `Prefer: return=minimal | OperationOutcome | representation` on a create,
+/// update or patch (R4 http.html#ops): minimal is no body, OperationOutcome
+/// an outcome instead of the resource; the headers (Location, ETag,
+/// Last-Modified) stay. Errors, searches, operations and Bundles at `/` are
+/// untouched. The resource was always returned.
+async fn prefer_return(req: axum::extract::Request, next: axum::middleware::Next) -> axum::response::Response {
+    use axum::http::{header, Method, StatusCode};
+    let wants = req
+        .headers()
+        .get_all("prefer")
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .flat_map(|v| v.split([',', ';']))
+        .filter_map(|p| p.trim().strip_prefix("return="))
+        .map(|r| r.trim_matches('"').to_string())
+        .next();
+    let path = req.uri().path();
+    let write = matches!(*req.method(), Method::POST | Method::PUT | Method::PATCH);
+    let resource_path = path != "/" && !path.contains("/$") && !path.ends_with("/_search");
+    let Some(wants) = wants.filter(|w| (w == "minimal" || w == "OperationOutcome") && write && resource_path) else {
+        return next.run(req).await;
+    };
+    let resp = next.run(req).await;
+    let status = resp.status();
+    if status != StatusCode::OK && status != StatusCode::CREATED {
+        return resp;
+    }
+    let (mut parts, _) = resp.into_parts();
+    parts.headers.remove(header::CONTENT_LENGTH);
+    let body = if wants == "OperationOutcome" {
+        let what = if status == StatusCode::CREATED { "Created" } else { "Updated" };
+        let at = parts.headers.get(header::LOCATION).and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
+        let outcome = serde_json::json!({
+            "resourceType": "OperationOutcome",
+            "issue": [{"severity": "information", "code": "informational",
+                       "diagnostics": if at.is_empty() { what.to_string() } else { format!("{what}: {at}") }}]
+        });
+        parts.headers.insert(header::CONTENT_TYPE, header::HeaderValue::from_static("application/fhir+json"));
+        axum::body::Body::from(outcome.to_string())
+    } else {
+        // minimal: no body.
+        parts.headers.remove(header::CONTENT_TYPE);
+        axum::body::Body::empty()
+    };
+    axum::response::Response::from_parts(parts, body)
 }
 
 /// Endpoints that aren't FHIR (they keep their own content types).

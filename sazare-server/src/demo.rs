@@ -215,7 +215,7 @@ async fn load_resources_into(state: &AppState, resources: &[Value]) -> (usize, V
                 continue;
             }
         };
-        if let Err(e) = state.store.put_with_version(&rt, &id, &version, &data) {
+        if let Err(e) = state.store.put_with_version(&rt, &id, &version, &data, "PUT") {
             errors.push(format!("{rt}/{id}: {e}"));
             continue;
         }
