@@ -2718,7 +2718,6 @@ async fn test_dashboard_lists_newest_first_with_kept_counts() {
     assert_eq!(status["totalResources"], 2, "{status}");
 }
 
-<<<<<<< HEAD
 /// A chain's terminal parameter takes its modifiers; an unknown `_` parameter
 /// at the end is refused; the history of an id that never existed is a 404.
 #[tokio::test]
@@ -2795,5 +2794,4 @@ async fn test_prefer_history_method_and_conditional_references() {
     let r = c.post(format!("{base}/Observation")).json(&obs("Patient?identifier=urn:mrn|A")).send().await.unwrap();
     let o: Value = r.json().await.unwrap();
     assert_eq!(o["subject"]["reference"], "Patient/m1", "{o}");
->>>>>>> f065049 (Prefer return=; PUT-created history shows PUT; conditional references resolved)
 }
