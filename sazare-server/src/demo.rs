@@ -9,7 +9,6 @@
 use std::sync::Arc;
 
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
-use sazare_core::validation::validate_resource_all_phases;
 use serde_json::{json, Value};
 
 use crate::AppState;
@@ -180,11 +179,10 @@ async fn load_resources_into(state: &AppState, resources: &[Value]) -> (usize, V
 
         // The demo set is curated to be valid; surface a failure loudly so a
         // regression in the sample data is caught (the e2e test asserts none).
-        if let Err(outcome) = validate_resource_all_phases(
-            resource,
-            &state.profile_registry,
-            &state.terminology_registry,
-        ) {
+        // A seed file is the operator's data: it goes the way of every write.
+        let mut prepared = resource.clone();
+        if let Err(r) = crate::write::prepare(state, None, &mut prepared).await {
+            let outcome = r.outcome;
             let diag = outcome
                 .issue
                 .first()
@@ -204,7 +202,7 @@ async fn load_resources_into(state: &AppState, resources: &[Value]) -> (usize, V
                 continue;
             }
         };
-        let mut stored = resource.clone();
+        let mut stored = prepared;
         if let Some(obj) = stored.as_object_mut() {
             crate::handlers::merge_version_meta(obj, &version);
         }

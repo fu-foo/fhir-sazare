@@ -363,7 +363,7 @@ impl SearchQuery {
                 // true/false instead.
                 let alts = alternatives(&number);
                 if modifier.as_deref() != Some("missing")
-                    && (alts.is_empty() || alts.iter().any(|n| parse_number_prefix(n).1.trim().parse::<f64>().is_err()))
+                    && (alts.is_empty() || alts.iter().any(|n| parse_number_prefix(n).1.trim().parse::<f64>().ok().is_none_or(|x| !x.is_finite())))
                 {
                     return Err(format!("Invalid number '{value}' for parameter '{param_name}'"));
                 }
@@ -378,7 +378,7 @@ impl SearchQuery {
                 if modifier.as_deref() != Some("missing")
                     && (alts.is_empty() || alts.iter().any(|q| {
                         let q = parse_number_prefix(q).1;
-                        !matches!(q.matches('|').count(), 0 | 2) || q.split('|').next().unwrap_or("").trim().parse::<f64>().is_err()
+                        !matches!(q.matches('|').count(), 0 | 2) || q.split('|').next().unwrap_or("").trim().parse::<f64>().ok().is_none_or(|x| !x.is_finite())
                     }))
                 {
                     return Err(format!(
@@ -472,10 +472,10 @@ fn check_chains(
             let alts = alternatives(value);
             let bad = match ty {
                 SearchParamType::Date => alts.iter().any(|d| crate::date::fhir_date_range(&parse_date_prefix(d).1).is_none()),
-                SearchParamType::Number => alts.iter().any(|n| parse_number_prefix(n).1.trim().parse::<f64>().is_err()),
+                SearchParamType::Number => alts.iter().any(|n| parse_number_prefix(n).1.trim().parse::<f64>().ok().is_none_or(|x| !x.is_finite())),
                 SearchParamType::Quantity => alts.iter().any(|q| {
                     let q = parse_number_prefix(q).1;
-                    !matches!(q.matches('|').count(), 0 | 2) || q.split('|').next().unwrap_or("").trim().parse::<f64>().is_err()
+                    !matches!(q.matches('|').count(), 0 | 2) || q.split('|').next().unwrap_or("").trim().parse::<f64>().ok().is_none_or(|x| !x.is_finite())
                 }),
                 _ => false,
             };

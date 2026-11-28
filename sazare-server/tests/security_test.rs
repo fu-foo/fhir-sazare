@@ -778,3 +778,35 @@ async fn two_authorization_headers_are_refused() {
     assert_eq!(get(&[&good, "Bearer forged"]).await.unwrap().status(), 400);
     assert_eq!(get(&["Bearer forged", &good]).await.unwrap().status(), 400);
 }
+
+/// Conditional references resolve as the caller, on every write path: a
+/// patient token resolves to its own patient (in a transaction too — the
+/// entries are authorized as resolved), not to another's; a token whose scope
+/// doesn't search the referenced type can't use one.
+#[tokio::test]
+async fn conditional_references_resolve_as_the_caller() {
+    let (c, t, _d) = two_patients().await;
+    for p in ["p1", "p2"] {
+        let body = json!({"resourceType": "Patient", "id": p, "identifier": [{"system": "urn:mrn", "value": p}]});
+        assert_eq!(c.put(&format!("/Patient/{p}"), ADMIN_KEY, body).await, 200);
+    }
+    let obs = |mrn: &str| json!({"resourceType": "Observation", "status": "final", "code": {"text": "x"},
+        "subject": {"reference": format!("Patient?identifier=urn:mrn|{mrn}")}});
+    let tx = |mrn: &str| json!({"resourceType": "Bundle", "type": "transaction", "entry": [
+        {"resource": obs(mrn), "request": {"method": "POST", "url": "Observation"}}]});
+    // Their own patient: resolved and allowed, directly and in a transaction.
+    let (s, o) = c.send(reqwest::Method::POST, "/Observation", &t, Some(obs("p1"))).await;
+    assert_eq!(s, 201, "{o}");
+    assert_eq!(o["subject"]["reference"], "Patient/p1");
+    let (s, b) = c.send(reqwest::Method::POST, "/", &t, Some(tx("p1"))).await;
+    assert_eq!(s, 200, "{b}");
+    // Another patient: not found as this caller (their search sees only p1).
+    let (s, _) = c.send(reqwest::Method::POST, "/Observation", &t, Some(obs("p2"))).await;
+    assert_eq!(s, 412);
+    let (s, _) = c.send(reqwest::Method::POST, "/", &t, Some(tx("p2"))).await;
+    assert_eq!(s, 412);
+    // A scope that may write Observations but not search Patients.
+    let narrow = jwt("user/Observation.write", None);
+    let (s, o) = c.send(reqwest::Method::POST, "/Observation", &narrow, Some(obs("p1"))).await;
+    assert_eq!(s, 403, "{o}");
+}

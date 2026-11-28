@@ -14,7 +14,6 @@ use axum::{
     http::StatusCode,
     response::IntoResponse,
 };
-use sazare_core::validation::validate_resource_all_phases;
 use serde_json::{json, Value};
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -35,7 +34,8 @@ pub async fn import(
     if let Err(resp) = crate::bulk_export::authorize_bulk(&auth_user, "write") {
         return resp;
     }
-    let user_id = auth_user.map(|u| u.user_id.clone());
+    let auth_user = auth_user.map(|axum::extract::Extension(u)| u);
+    let user_id = auth_user.as_ref().map(|u| u.user_id.clone());
     let audit_ctx = AuditContext::new(user_id, addr.ip().to_string());
 
     let mut created: usize = 0;
@@ -90,30 +90,15 @@ pub async fn import(
             }
         };
 
-        // Validate
-        if let Err(outcome) = validate_resource_all_phases(
-            &resource,
-            &state.profile_registry,
-            &state.terminology_registry,
-        ) {
-            let diag = outcome
-                .issue
-                .first()
-                .and_then(|i| i.diagnostics.as_deref())
-                .unwrap_or("Validation failed")
-                .to_string();
+        // Conditional references resolved, then validated — as on every
+        // write path.
+        if let Err(r) = crate::write::prepare(&state, auth_user.as_ref(), &mut resource).await {
+            let diag = r.outcome.issue.first().and_then(|i| i.diagnostics.clone()).unwrap_or_else(|| "Validation failed".into());
             errors.push(json!({
                 "line": line_num + 1,
                 "resourceType": resource_type,
                 "error": diag
             }));
-            continue;
-        }
-
-        if resource_type == "Subscription"
-            && let Err(e) = crate::subscription::validate_subscription(&resource, &state.search_param_registry)
-        {
-            errors.push(json!({"line": line_num + 1, "resourceType": resource_type, "error": e}));
             continue;
         }
 

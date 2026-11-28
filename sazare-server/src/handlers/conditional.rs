@@ -6,7 +6,6 @@ use axum::{
 use http_body_util::BodyExt;
 use sazare_core::{
     operation_outcome::IssueType,
-    validation::validate_resource_all_phases,
     OperationOutcome, Resource, SearchQuery,
 };
 use sazare_store::SearchExecutor;
@@ -52,7 +51,7 @@ pub async fn conditional_update(
     // switch, every other write).
     let _write_gate = state.write_gate.read().await;
 
-    let body_value: Value = serde_json::from_slice(&bytes).map_err(|e| {
+    let mut body_value: Value = serde_json::from_slice(&bytes).map_err(|e| {
         (
             StatusCode::BAD_REQUEST,
             Json(json!(OperationOutcome::error(IssueType::Invalid, e.to_string()))),
@@ -104,6 +103,9 @@ pub async fn conditional_update(
         }
     };
 
+    // Conditional references resolved, then validated — as on every write path.
+    crate::write::prepare(&state, auth_user.as_ref(), &mut body_value).await.map_err(|r| r.into_error())?;
+
     // Compartment check, with the id it is stored under: the match's (the body
     // may have none), or for a create the body's (none: a new one).
     let mut as_stored = body_value.clone();
@@ -112,26 +114,8 @@ pub async fn conditional_update(
     }
     check_compartment_write(auth_user.as_ref(), &state.compartment_def, &resource_type, &as_stored, 'u')?;
 
-    // Validate
-    if let Err(outcome) = validate_resource_all_phases(
-        &body_value,
-        &state.profile_registry,
-        &state.terminology_registry,
-    ) {
-        return Err((StatusCode::BAD_REQUEST, Json(json!(outcome))));
-    }
 
-    // Same Subscription rules as every other write path.
-    if resource_type == "Subscription"
-        && let Err(e) = crate::subscription::validate_subscription(&body_value, &state.search_param_registry)
-    {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            Json(json!(OperationOutcome::error(IssueType::Invalid, e))),
-        ));
-    }
-
-    let mut resource: Resource = serde_json::from_value(body_value).map_err(|e| {
+    let mut resource: Resource = Resource::from_value(body_value).map_err(|e| {
         (
             StatusCode::BAD_REQUEST,
             Json(json!(OperationOutcome::error(IssueType::Invalid, e.to_string()))),

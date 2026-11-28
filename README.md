@@ -76,8 +76,10 @@ Know these before you rely on sazare:
   types, lists, required elements, primitive formats (dates that exist, integer ranges, the
   R4 regexes), one type per choice, no empty values — and declared (or default) profiles —
   cardinality, types, fixed values, extensions, required bindings to complete code systems.
-  It is not the full HL7 validator: no FHIRPath invariants beyond those, no terminology
-  service, no `$expand` / `$validate-code` / `$lookup`.
+  Of the FHIRPath invariants, ele-1 (no empty values), ext-1 (an extension has a value or
+  extensions, not both), txt-2 and part of txt-1 (a narrative's `<div>` is XHTML with
+  content, nothing that runs or submits) are checked; the others are not. It is not the
+  full HL7 validator: no terminology service, no `$expand` / `$validate-code` / `$lookup`.
 - **Scale:** one process with SQLite; writes go through a single index lock, so it does
   not scale horizontally or for highly concurrent writes. Benchmarked in CI on 60k
   resources (every search well under 100 ms) and measured on 10M: pages and

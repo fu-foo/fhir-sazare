@@ -58,6 +58,10 @@ into `data_dir`, delete every `search_index*` file — the index generations
   ```bash
   sazare-server check --config config.yaml
   ```
+- **History entries name the method that made each version** from this version on.
+  Versions written before have none recorded and are shown as before: the first version
+  (or one after a delete) as `POST`, the others as `PUT` — so a resource created with
+  `PUT` before the upgrade still shows `POST` there.
 - **`resources.sqlite` moves to schema version 5.** The first start counts the resources
   per type once (a scan of the store before the server answers: 0.2 s for 200k
   resources on an SSD, so a few seconds per 10M) drops two indexes that served nothing, and records each new version's HTTP method. To go back, restore the

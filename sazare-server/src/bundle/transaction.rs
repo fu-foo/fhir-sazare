@@ -11,7 +11,6 @@ use axum::{
 };
 use sazare_core::{
     operation_outcome::IssueType,
-    validation::validate_resource_all_phases,
     OperationOutcome,
 };
 use serde_json::{json, Value};
@@ -50,17 +49,8 @@ pub(super) async fn process_transaction(
                     let outcome = OperationOutcome::error(IssueType::Invalid, format!("entry[{i}]: {e}"));
                     return (StatusCode::BAD_REQUEST, Json(json!(outcome))).into_response();
                 }
-                if let Err(outcome) = validate_resource_all_phases(
-                    resource,
-                    &state.profile_registry,
-                    &state.terminology_registry,
-                ) {
-                    audit::log_operation_error(
-                        audit_ctx, "TRANSACTION", "Bundle", None,
-                        "Validation failed", &state.audit,
-                    );
-                    return (StatusCode::BAD_REQUEST, Json(json!(outcome))).into_response();
-                }
+                // Validated (with its conditional references resolved) by
+                // `write::prepare` before the entries were authorized.
             }
             "DELETE" => {}
             _ => {
@@ -167,24 +157,12 @@ pub(super) async fn process_transaction(
         assigned.push((entry.resource_type.clone(), id));
     }
 
-    // Phase 3: Resolve urn:uuid references in all resources, then the
-    // conditional ones (`Patient?identifier=…`) against what is stored.
+    // Phase 3: Resolve urn:uuid references in all resources (conditional
+    // ones were resolved with the rest of `write::prepare`, before the
+    // entries were authorized).
     for entry in entries.iter_mut() {
         if let Some(ref mut resource) = entry.resource {
             resolve_references(resource, &ref_map);
-        }
-    }
-    for (i, entry) in entries.iter_mut().enumerate() {
-        if conditional_existing[i].is_some() {
-            continue;
-        }
-        if let Some(ref mut resource) = entry.resource
-            && let Err((status, msg)) = crate::resolve_conditional_references(state, auth_user, resource).await
-        {
-            let code = if status == StatusCode::PRECONDITION_FAILED { IssueType::Processing } else { IssueType::Invalid };
-            let outcome = OperationOutcome::error(code, format!("entry[{i}]: {msg}"));
-            audit::log_operation_error(audit_ctx, "TRANSACTION", "Bundle", None, &msg, &state.audit);
-            return (status, Json(json!(outcome))).into_response();
         }
     }
 

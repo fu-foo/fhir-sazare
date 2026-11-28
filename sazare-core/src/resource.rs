@@ -45,39 +45,27 @@ pub struct Meta {
 // R4, kept as written with `arbitrary_precision`) was refused.
 impl<'de> Deserialize<'de> for Resource {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        use serde::de::Error;
-        let Value::Object(mut map) = Value::deserialize(d)? else {
-            return Err(D::Error::custom("a resource is a JSON object"));
-        };
-        let resource_type = match map.remove("resourceType") {
-            Some(Value::String(t)) => t,
-            Some(_) => return Err(D::Error::custom("resourceType must be a string")),
-            None => return Err(D::Error::missing_field("resourceType")),
-        };
-        let id = match map.remove("id") {
-            None | Some(Value::Null) => None,
-            Some(Value::String(i)) => Some(i),
-            Some(_) => return Err(D::Error::custom("id must be a string")),
-        };
-        let meta = match map.remove("meta") {
-            None | Some(Value::Null) => None,
-            Some(m) => Some(serde_json::from_value(m).map_err(D::Error::custom)?),
-        };
-        Ok(Resource { resource_type, id, meta, rest: Value::Object(map) })
+        Resource::from_value(Value::deserialize(d)?).map_err(serde::de::Error::custom)
     }
 }
 
 impl<'de> Deserialize<'de> for Meta {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        use serde::de::Error;
-        let Value::Object(mut map) = Value::deserialize(d)? else {
-            return Err(D::Error::custom("meta is a JSON object"));
+        Meta::from_value(Value::deserialize(d)?).map_err(serde::de::Error::custom)
+    }
+}
+
+impl Meta {
+    /// Meta from a parsed `Value`, split by hand (see [`Resource::from_value`]).
+    pub fn from_value(value: Value) -> Result<Self, String> {
+        let Value::Object(mut map) = value else {
+            return Err("meta is a JSON object".into());
         };
-        fn string<E: Error>(v: Option<Value>, name: &str) -> Result<Option<String>, E> {
+        fn string(v: Option<Value>, name: &str) -> Result<Option<String>, String> {
             match v {
                 None | Some(Value::Null) => Ok(None),
                 Some(Value::String(s)) => Ok(Some(s)),
-                Some(_) => Err(E::custom(format!("meta.{name} must be a string"))),
+                Some(_) => Err(format!("meta.{name} must be a string")),
             }
         }
         let version_id = string(map.remove("versionId"), "versionId")?;
@@ -85,13 +73,47 @@ impl<'de> Deserialize<'de> for Meta {
         let source = string(map.remove("source"), "source")?;
         let profile = match map.remove("profile") {
             None | Some(Value::Null) => None,
-            Some(p) => Some(serde_json::from_value(p).map_err(D::Error::custom)?),
+            Some(Value::Array(items)) => Some(
+                items
+                    .into_iter()
+                    .map(|v| match v {
+                        Value::String(s) => Ok(s),
+                        _ => Err("meta.profile holds strings".to_string()),
+                    })
+                    .collect::<Result<Vec<_>, _>>()?,
+            ),
+            Some(_) => return Err("meta.profile is a list".into()),
         };
         Ok(Meta { version_id, last_updated, source, profile, extra: map })
     }
 }
 
 impl Resource {
+    /// A resource from a parsed `Value`, split by hand. `serde_json::from_value`
+    /// would re-read every number through its deserializer, which with
+    /// `arbitrary_precision` turns some into floats (`0.000000000000000000001`
+    /// came back as `1e-21`); this keeps each `Value` as it is.
+    pub fn from_value(value: Value) -> Result<Self, String> {
+        let Value::Object(mut map) = value else {
+            return Err("a resource is a JSON object".into());
+        };
+        let resource_type = match map.remove("resourceType") {
+            Some(Value::String(t)) => t,
+            Some(_) => return Err("resourceType must be a string".into()),
+            None => return Err("missing field `resourceType`".into()),
+        };
+        let id = match map.remove("id") {
+            None | Some(Value::Null) => None,
+            Some(Value::String(i)) => Some(i),
+            Some(_) => return Err("id must be a string".into()),
+        };
+        let meta = match map.remove("meta") {
+            None | Some(Value::Null) => None,
+            Some(m) => Some(Meta::from_value(m)?),
+        };
+        Ok(Resource { resource_type, id, meta, rest: Value::Object(map) })
+    }
+
     /// Create a new resource
     pub fn new(resource_type: impl Into<String>) -> Self {
         Self {

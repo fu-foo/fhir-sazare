@@ -943,7 +943,8 @@ fn run_backup(config: &ServerConfig, dir: &std::path::Path) -> i32 {
 }
 
 /// `check`: every stored resource against the R4 rules (elements, types,
-/// required elements, primitive formats, choices, empty values). Read-only,
+/// required elements, primitive formats, choices, empty values), and
+/// conditional references stored unresolved. Read-only,
 /// safe while the server runs, and before an upgrade (no migration). Exit 1
 /// when any doesn't fit.
 fn run_check(config: &ServerConfig) -> i32 {
@@ -956,10 +957,20 @@ fn run_check(config: &ServerConfig) -> i32 {
     let scanned = sazare_store::scan_resources(&path, |rt, id, value| {
         checked += 1;
         let problems = match serde_json::from_str::<serde_json::Value>(value) {
-            Ok(v) => match sazare_core::validation::structure::validate(&v) {
-                Ok(()) => return,
-                Err(o) => o.issue.into_iter().filter_map(|i| i.diagnostics).collect::<Vec<_>>(),
-            },
+            Ok(v) => {
+                let mut p = match sazare_core::validation::structure::validate(&v) {
+                    Ok(()) => vec![],
+                    Err(o) => o.issue.into_iter().filter_map(|i| i.diagnostics).collect::<Vec<_>>(),
+                };
+                // Stored before writes resolved them: a reference nothing follows.
+                for r in sazare_core::reference::conditional_references(&v) {
+                    p.push(format!("the conditional reference '{r}' was stored unresolved (a write now resolves it)"));
+                }
+                if p.is_empty() {
+                    return;
+                }
+                p
+            }
             Err(e) => vec![format!("not JSON: {e}")],
         };
         failing += 1;

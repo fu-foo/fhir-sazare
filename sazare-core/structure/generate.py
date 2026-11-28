@@ -23,6 +23,19 @@ import json
 import sys
 
 SYSTEM = {"http://hl7.org/fhirpath/System.String": "string"}
+FHIR_TYPE = "http://hl7.org/fhir/StructureDefinition/structuredefinition-fhir-type"
+
+
+def fhir_type(t):
+    """An element's FHIR type. Resource.id, Element.id and Extension.url are
+    typed `System.String` in FHIRPath terms, with the FHIR type (`id`, `uri`,
+    `string`) in the structuredefinition-fhir-type extension: read as plain
+    strings, a contained resource's id and an extension's url weren't
+    checked as an id and a uri."""
+    for x in t.get("extension", []):
+        if x.get("url") == FHIR_TYPE:
+            return x.get("valueUrl") or x.get("valueUri")
+    return SYSTEM.get(t["code"], t["code"])
 
 
 def main(*srcs):
@@ -39,8 +52,12 @@ def main(*srcs):
                     continue
                 if "contentReference" in el:
                     types = "@" + el["contentReference"].lstrip("#")
+                elif sd["kind"] == "resource" and path == sd["type"] + ".id":
+                    # A resource's id is an `id` (R4 Resource): the snapshot's
+                    # fhir-type extension says `string` here, as for Element.id.
+                    types = "id"
                 else:
-                    types = ",".join(SYSTEM.get(t["code"], t["code"]) for t in el.get("type", []))
+                    types = ",".join(fhir_type(t) for t in el.get("type", []))
                 print(f"{path}\t{el.get('max', '*')}\t{types}\t{el.get('min', 0)}")
 
 

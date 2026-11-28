@@ -38,6 +38,9 @@ pub(crate) struct BundleEntry {
     /// `request.ifMatch`: the version the entry expects to replace or delete
     /// (`W/"3"` → `3`).
     pub if_match: Option<String>,
+    /// A batch entry whose body can't be stored (`write::prepare` refused
+    /// it): its response entry.
+    pub refused: Option<Value>,
 }
 
 /// The version an ETag names: `W/"3"`, `"3"` or `3` → `3`.
@@ -157,6 +160,7 @@ fn parse_entries(bundle: &Value) -> Result<Vec<BundleEntry>, OperationOutcome> {
             query,
             if_none_exist,
             if_match,
+            refused: None,
         });
     }
     Ok(parsed)
@@ -217,7 +221,7 @@ fn authorize_entries(state: &AppState, user: &AuthUser, entries: &[BundleEntry],
             }
         })
         .collect();
-    for (i, e) in entries.iter().enumerate() {
+    for (i, e) in entries.iter().enumerate().filter(|(_, e)| e.refused.is_none()) {
         // `Type?query` (conditional/search URLs) authorizes as `Type`.
         let rt = e.resource_type.split('?').next().unwrap_or("");
         let perm = match e.method.as_str() {
@@ -340,12 +344,35 @@ pub async fn process_bundle(
     };
 
     // Parse entries
-    let entries = match parse_entries(&bundle) {
+    let mut entries = match parse_entries(&bundle) {
         Ok(e) => e,
         Err(outcome) => {
             return (StatusCode::BAD_REQUEST, Json(json!(outcome))).into_response();
         }
     };
+
+    // Every body goes the way of any write first — its conditional references
+    // resolved (as the caller), then validated — so the authorization below
+    // judges it as stored. A transaction fails on the first that can't be; a
+    // batch answers that entry with the error.
+    for (i, e) in entries.iter_mut().enumerate() {
+        if !matches!(e.method.as_str(), "POST" | "PUT") {
+            continue;
+        }
+        let Some(body) = e.resource.as_mut() else { continue };
+        if let Err(r) = crate::write::prepare(&state, auth_user.as_ref(), body).await {
+            let mut outcome = r.outcome;
+            for issue in &mut outcome.issue {
+                issue.diagnostics = issue.diagnostics.take().map(|d| format!("entry[{i}]: {d}"));
+            }
+            if bundle_type == "transaction" {
+                crate::audit::log_operation_error(&audit_ctx, "TRANSACTION", "Bundle", None, "Entry refused", &state.audit);
+                return (r.status, Json(json!(outcome))).into_response();
+            }
+            let status = format!("{} {}", r.status.as_u16(), r.status.canonical_reason().unwrap_or(""));
+            e.refused = Some(json!({"response": {"status": status, "outcome": outcome}}));
+        }
+    }
 
     // Every entry is authorized up front, exactly like the equivalent direct
     // request; one refused entry refuses the whole Bundle.

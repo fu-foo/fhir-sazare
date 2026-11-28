@@ -18,6 +18,28 @@ until 1.0, a minor version (0.x.0) may change behavior — those changes are lis
   upgrade (no migration).
 
 ### Fixed
+- **Every write path resolves conditional references and validates the same way.** Batch
+  entries, PATCH, conditional update and `$import` stored `Patient?identifier=…` as
+  written (create, update and transaction resolved it). One function (`write::prepare`)
+  now makes every body ready — references resolved, then validated — and every path calls
+  it. In a Bundle it runs before the entries are authorized, so a patient-scoped token
+  may use a conditional reference to its own patient in a transaction (it was a 403).
+  Resolving searches as the caller, whose scope must allow searching the referenced type
+  (a 403 otherwise).
+- **A resource's id and an extension's url are checked as an `id` and a `uri`** — in
+  contained resources and Bundle entries too (`a b` was accepted). The R4 snapshots type
+  them as FHIRPath strings, the FHIR type in an extension the generator now reads.
+- **ext-1 and a narrative's `<div>`**: an extension with a value and extensions is refused;
+  a `div` must be XHTML with content and nothing that runs or submits (script, iframe,
+  form, `on…` attributes, `javascript:`). `_given: []` is refused like `given: []`.
+- Decimals: `0.000000000000000000001` came back as `1e-21` from a create, update or
+  conditional update (a parsed body was re-read through serde, which turned some numbers
+  into floats); PATCH too. They are kept. `value-quantity=123456789012345678901234567890`
+  found nothing (the implicit range was below float spacing); `NaN`, `inf` and `1e400` in
+  a number or quantity search are a 400.
+- `sazare-server check` also lists conditional references stored unresolved before.
+- `/_history` points to `/{Type}/{id}/_history` (it named `/{Type}/_history`, which isn't
+  supported either).
 - **Decimals keep their precision.** `5.40` came back as `5.4` and
   `1.000000000000000000001` as `1.0` (numbers were read as 64-bit floats); in R4 the
   precision is part of the value. They are kept as written (an exponent gains its sign:

@@ -442,19 +442,19 @@ impl SqliteStore {
     }
 
     /// A version from the history, and whether it is the record of a delete.
-    /// The HTTP method recorded for a version (`None`: from before v5, or
-    /// `$import`).
-    pub fn history_method(&self, resource_type: &str, id: &str, version_id: &str) -> Result<Option<String>> {
+    /// A version's content, whether it is a delete, and the HTTP method that
+    /// made it (`None`: from before store v5, or `$import`) — one read.
+    #[allow(clippy::type_complexity)]
+    pub fn history_entry(&self, resource_type: &str, id: &str, version_id: &str) -> Result<Option<(Vec<u8>, bool, Option<String>)>> {
         let conn = self.reader();
-        match conn.query_row(
-            "SELECT method FROM resource_history WHERE resource_type = ? AND id = ? AND version_id = ?",
-            params![resource_type, id, version_id],
-            |row| row.get::<_, Option<String>>(0),
-        ) {
-            Ok(m) => Ok(m),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(e.into()),
-        }
+        let row = conn
+            .query_row(
+                "SELECT value, deleted, method FROM resource_history WHERE resource_type = ? AND id = ? AND version_id = ?",
+                params![resource_type, id, version_id],
+                |r| Ok((r.get::<_, String>(0)?.into_bytes(), r.get::<_, i64>(1)? != 0, r.get::<_, Option<String>>(2)?)),
+            )
+            .optional()?;
+        Ok(row)
     }
 
     pub fn get_history_version(&self, resource_type: &str, id: &str, version_id: &str) -> Result<Option<(Vec<u8>, bool)>> {

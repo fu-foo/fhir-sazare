@@ -17,6 +17,7 @@ fn check_lists_what_doesnt_fit_and_leaves_the_store_alone() {
         store.put("Patient", "ok", br#"{"resourceType":"Patient","id":"ok","birthDate":"1990-02-28"}"#).unwrap();
         store.put("Patient", "bad", br#"{"resourceType":"Patient","id":"bad","birthDate":"1990-02-30","name":[{}]}"#).unwrap();
         store.put("Observation", "o", br#"{"resourceType":"Observation","id":"o","code":{"text":"x"}}"#).unwrap();
+        store.put("Observation", "c", br#"{"resourceType":"Observation","id":"c","status":"final","code":{"text":"x"},"subject":{"reference":"Patient?identifier=urn:mrn|1"}}"#).unwrap();
     }
     let modified = std::fs::metadata(data.join("resources.sqlite")).unwrap().modified().unwrap();
     let out = Command::new(BIN).args(["check", "--config", config.to_str().unwrap()]).output().unwrap();
@@ -26,8 +27,9 @@ fn check_lists_what_doesnt_fit_and_leaves_the_store_alone() {
     assert!(stdout.contains("Patient/bad: 'Patient.birthDate' is not a valid date"), "{stdout}");
     assert!(stdout.contains("Patient/bad: 'Patient.name[0]' is empty"), "{stdout}");
     assert!(stdout.contains("Observation/o: 'Observation.status' is required"), "{stdout}");
+    assert!(stdout.contains("Observation/c: the conditional reference 'Patient?identifier=urn:mrn|1' was stored unresolved"), "{stdout}");
     assert!(!stdout.contains("Patient/ok"), "{stdout}");
-    assert!(stderr.contains("2 of 3 resources don't meet the R4 rules"), "{stderr}");
+    assert!(stderr.contains("3 of 4 resources don't meet the R4 rules"), "{stderr}");
     // Read-only: nothing written.
     assert_eq!(std::fs::metadata(data.join("resources.sqlite")).unwrap().modified().unwrap(), modified);
 

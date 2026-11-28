@@ -43,7 +43,7 @@ pub async fn history(
     // before it was a delete.
     let mut loaded = Vec::new();
     for ver in versions {
-        if let Ok(Some((data, deleted))) = state.store.get_history_version(&resource_type, &id, &ver)
+        if let Ok(Some((data, deleted, method))) = state.store.history_entry(&resource_type, &id, &ver)
             && let Ok(resource) = serde_json::from_slice::<Value>(&data)
         {
             // Every version (a delete records the content it deleted) is held
@@ -51,11 +51,11 @@ pub async fn history(
             // caller's compartment denies the whole history (a resource's
             // subject can change between versions).
             check_compartment_access(auth_user.as_ref(), &state.compartment_def, &resource_type, &resource)?;
-            loaded.push((ver, deleted, resource));
+            loaded.push((ver, deleted, resource, method));
         }
     }
     let mut entries = Vec::new();
-    for (i, (ver, deleted, resource)) in loaded.iter().enumerate() {
+    for (i, (ver, deleted, resource, method)) in loaded.iter().enumerate() {
         let last_updated = resource
             .get("meta")
             .and_then(|m| m.get("lastUpdated"))
@@ -72,15 +72,10 @@ pub async fn history(
             }));
             continue;
         }
-        let created = loaded.get(i + 1).is_none_or(|(_, before_deleted, _)| *before_deleted);
+        let created = loaded.get(i + 1).is_none_or(|(_, before_deleted, _, _)| *before_deleted);
         // The method recorded with the version (since store v5); before
         // that, inferred: a create was a POST.
-        let method = state
-            .store
-            .history_method(&resource_type, &id, ver)
-            .ok()
-            .flatten()
-            .unwrap_or_else(|| if created { "POST".into() } else { "PUT".into() });
+        let method = method.clone().unwrap_or_else(|| if created { "POST".into() } else { "PUT".into() });
         entries.push(json!({
             "fullUrl": format!("{base}/{url}"),
             "resource": resource,

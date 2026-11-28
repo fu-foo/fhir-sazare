@@ -31,6 +31,7 @@ pub mod smart;
 pub mod subscription;
 pub mod tls;
 pub mod webhook;
+pub mod write;
 pub mod websocket;
 
 use axum::{
@@ -120,60 +121,6 @@ pub enum ConditionalResult {
     Exists(Value),
     MultipleMatches,
     SearchError(String),
-}
-
-/// Conditional references (`Patient?identifier=urn:mrn|42`, R4 http.html#trules)
-/// in `resource`, replaced by the one resource each search finds. None or
-/// several is a 412: the write fails rather than storing a reference nothing
-/// resolves (it was stored as written). The search runs as `auth_user`, so a
-/// patient-scoped caller resolves only within their compartment.
-pub async fn resolve_conditional_references(
-    state: &Arc<AppState>,
-    auth_user: Option<&auth::AuthUser>,
-    resource: &mut Value,
-) -> Result<(), (axum::http::StatusCode, String)> {
-    fn collect(v: &Value, out: &mut Vec<String>) {
-        match v {
-            Value::Object(map) => {
-                if let Some(r) = map.get("reference").and_then(|r| r.as_str())
-                    && let Some((t, q)) = r.split_once('?')
-                    && !q.is_empty()
-                    && sazare_core::r4_types::is_resource_type(t)
-                    && !out.iter().any(|o| o == r)
-                {
-                    out.push(r.to_string());
-                }
-                map.values().for_each(|v| collect(v, out));
-            }
-            Value::Array(a) => a.iter().for_each(|v| collect(v, out)),
-            _ => {}
-        }
-    }
-    let mut refs = Vec::new();
-    collect(resource, &mut refs);
-    if refs.is_empty() {
-        return Ok(());
-    }
-    let mut map = std::collections::HashMap::new();
-    for r in refs {
-        let (t, q) = r.split_once('?').expect("collected with a ?");
-        let found = match conditional_create_check(state, auth_user, t, q).await {
-            ConditionalResult::Exists(existing) => existing.get("id").and_then(|v| v.as_str()).map(|id| format!("{t}/{id}")),
-            ConditionalResult::NoMatch => None,
-            ConditionalResult::MultipleMatches => {
-                return Err((axum::http::StatusCode::PRECONDITION_FAILED, format!("The conditional reference '{r}' matches more than one {t}")));
-            }
-            ConditionalResult::SearchError(e) => {
-                return Err((axum::http::StatusCode::BAD_REQUEST, format!("The conditional reference '{r}': {e}")));
-            }
-        };
-        let Some(found) = found else {
-            return Err((axum::http::StatusCode::PRECONDITION_FAILED, format!("The conditional reference '{r}' matches no {t}")));
-        };
-        map.insert(r, found);
-    }
-    bundle::resolve_references(resource, &map);
-    Ok(())
 }
 
 /// The HTTP client for outbound calls to configured services (JWKS, webhooks):
@@ -377,7 +324,7 @@ pub fn visible_upto(
 
 /// Conditional create check
 pub async fn conditional_create_check(
-    state: &Arc<AppState>,
+    state: &AppState,
     auth_user: Option<&auth::AuthUser>,
     resource_type: &str,
     query_string: &str,
@@ -677,7 +624,11 @@ async fn known_resource_type(req: axum::extract::Request, next: axum::middleware
     let own = ROUTES.contains(&first) || first.starts_with('$') || first.starts_with('.');
     if !own && !sazare_core::r4_types::is_resource_type(first) {
         return not_found(if first == "_history" || first == "_search" {
-            format!("/{first} across all types is not supported; use /{{Type}}/{first}")
+            if first == "_history" {
+                "/_history across all types is not supported; a resource's history is /{Type}/{id}/_history".to_string()
+            } else {
+                format!("/{first} across all types is not supported; use /{{Type}}/{first}")
+            }
         } else {
             format!("'{first}' is not a FHIR R4 resource type (GET /metadata lists them)")
         });

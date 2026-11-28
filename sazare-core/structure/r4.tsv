@@ -1,8 +1,8 @@
-Resource.id	1	string	0
+Resource.id	1	id	0
 Resource.meta	1	Meta	0
 Resource.implicitRules	1	uri	0
 Resource.language	1	code	0
-Account.id	1	string	0
+Account.id	1	id	0
 Account.meta	1	Meta	0
 Account.implicitRules	1	uri	0
 Account.language	1	code	0
@@ -32,7 +32,7 @@ Account.guarantor.party	1	Reference	1
 Account.guarantor.onHold	1	boolean	0
 Account.guarantor.period	1	Period	0
 Account.partOf	1	Reference	0
-ActivityDefinition.id	1	string	0
+ActivityDefinition.id	1	id	0
 ActivityDefinition.meta	1	Meta	0
 ActivityDefinition.implicitRules	1	uri	0
 ActivityDefinition.language	1	code	0
@@ -96,7 +96,7 @@ ActivityDefinition.dynamicValue.extension	*	Extension	0
 ActivityDefinition.dynamicValue.modifierExtension	*	Extension	0
 ActivityDefinition.dynamicValue.path	1	string	1
 ActivityDefinition.dynamicValue.expression	1	Expression	1
-AdverseEvent.id	1	string	0
+AdverseEvent.id	1	id	0
 AdverseEvent.meta	1	Meta	0
 AdverseEvent.implicitRules	1	uri	0
 AdverseEvent.language	1	code	0
@@ -136,7 +136,7 @@ AdverseEvent.suspectEntity.causality.method	1	CodeableConcept	0
 AdverseEvent.subjectMedicalHistory	*	Reference	0
 AdverseEvent.referenceDocument	*	Reference	0
 AdverseEvent.study	*	Reference	0
-AllergyIntolerance.id	1	string	0
+AllergyIntolerance.id	1	id	0
 AllergyIntolerance.meta	1	Meta	0
 AllergyIntolerance.implicitRules	1	uri	0
 AllergyIntolerance.language	1	code	0
@@ -170,7 +170,7 @@ AllergyIntolerance.reaction.onset	1	dateTime	0
 AllergyIntolerance.reaction.severity	1	code	0
 AllergyIntolerance.reaction.exposureRoute	1	CodeableConcept	0
 AllergyIntolerance.reaction.note	*	Annotation	0
-Appointment.id	1	string	0
+Appointment.id	1	id	0
 Appointment.meta	1	Meta	0
 Appointment.implicitRules	1	uri	0
 Appointment.language	1	code	0
@@ -208,7 +208,7 @@ Appointment.participant.required	1	code	0
 Appointment.participant.status	1	code	1
 Appointment.participant.period	1	Period	0
 Appointment.requestedPeriod	*	Period	0
-AppointmentResponse.id	1	string	0
+AppointmentResponse.id	1	id	0
 AppointmentResponse.meta	1	Meta	0
 AppointmentResponse.implicitRules	1	uri	0
 AppointmentResponse.language	1	code	0
@@ -224,7 +224,7 @@ AppointmentResponse.participantType	*	CodeableConcept	0
 AppointmentResponse.actor	1	Reference	0
 AppointmentResponse.participantStatus	1	code	1
 AppointmentResponse.comment	1	string	0
-AuditEvent.id	1	string	0
+AuditEvent.id	1	id	0
 AuditEvent.meta	1	Meta	0
 AuditEvent.implicitRules	1	uri	0
 AuditEvent.language	1	code	0
@@ -285,7 +285,7 @@ AuditEvent.entity.detail.extension	*	Extension	0
 AuditEvent.entity.detail.modifierExtension	*	Extension	0
 AuditEvent.entity.detail.type	1	string	1
 AuditEvent.entity.detail.value[x]	1	string,base64Binary	1
-Basic.id	1	string	0
+Basic.id	1	id	0
 Basic.meta	1	Meta	0
 Basic.implicitRules	1	uri	0
 Basic.language	1	code	0
@@ -298,14 +298,14 @@ Basic.code	1	CodeableConcept	1
 Basic.subject	1	Reference	0
 Basic.created	1	date	0
 Basic.author	1	Reference	0
-Binary.id	1	string	0
+Binary.id	1	id	0
 Binary.meta	1	Meta	0
 Binary.implicitRules	1	uri	0
 Binary.language	1	code	0
 Binary.contentType	1	code	1
 Binary.securityContext	1	Reference	0
 Binary.data	1	base64Binary	0
-BiologicallyDerivedProduct.id	1	string	0
+BiologicallyDerivedProduct.id	1	id	0
 BiologicallyDerivedProduct.meta	1	Meta	0
 BiologicallyDerivedProduct.implicitRules	1	uri	0
 BiologicallyDerivedProduct.language	1	code	0
@@ -349,7 +349,7 @@ BiologicallyDerivedProduct.storage.description	1	string	0
 BiologicallyDerivedProduct.storage.temperature	1	decimal	0
 BiologicallyDerivedProduct.storage.scale	1	code	0
 BiologicallyDerivedProduct.storage.duration	1	Period	0
-BodyStructure.id	1	string	0
+BodyStructure.id	1	id	0
 BodyStructure.meta	1	Meta	0
 BodyStructure.implicitRules	1	uri	0
 BodyStructure.language	1	code	0
@@ -365,7 +365,7 @@ BodyStructure.locationQualifier	*	CodeableConcept	0
 BodyStructure.description	1	string	0
 BodyStructure.image	*	Attachment	0
 BodyStructure.patient	1	Reference	1
-Bundle.id	1	string	0
+Bundle.id	1	id	0
 Bundle.meta	1	Meta	0
 Bundle.implicitRules	1	uri	0
 Bundle.language	1	code	0
@@ -412,7 +412,7 @@ Bundle.entry.response.etag	1	string	0
 Bundle.entry.response.lastModified	1	instant	0
 Bundle.entry.response.outcome	1	Resource	0
 Bundle.signature	1	Signature	0
-CapabilityStatement.id	1	string	0
+CapabilityStatement.id	1	id	0
 CapabilityStatement.meta	1	Meta	0
 CapabilityStatement.implicitRules	1	uri	0
 CapabilityStatement.language	1	code	0
@@ -541,7 +541,7 @@ CapabilityStatement.document.modifierExtension	*	Extension	0
 CapabilityStatement.document.mode	1	code	1
 CapabilityStatement.document.documentation	1	markdown	0
 CapabilityStatement.document.profile	1	canonical	1
-CarePlan.id	1	string	0
+CarePlan.id	1	id	0
 CarePlan.meta	1	Meta	0
 CarePlan.implicitRules	1	uri	0
 CarePlan.language	1	code	0
@@ -600,7 +600,7 @@ CarePlan.activity.detail.dailyAmount	1	Quantity	0
 CarePlan.activity.detail.quantity	1	Quantity	0
 CarePlan.activity.detail.description	1	string	0
 CarePlan.note	*	Annotation	0
-CareTeam.id	1	string	0
+CareTeam.id	1	id	0
 CareTeam.meta	1	Meta	0
 CareTeam.implicitRules	1	uri	0
 CareTeam.language	1	code	0
@@ -628,7 +628,7 @@ CareTeam.reasonReference	*	Reference	0
 CareTeam.managingOrganization	*	Reference	0
 CareTeam.telecom	*	ContactPoint	0
 CareTeam.note	*	Annotation	0
-CatalogEntry.id	1	string	0
+CatalogEntry.id	1	id	0
 CatalogEntry.meta	1	Meta	0
 CatalogEntry.implicitRules	1	uri	0
 CatalogEntry.language	1	code	0
@@ -654,7 +654,7 @@ CatalogEntry.relatedEntry.extension	*	Extension	0
 CatalogEntry.relatedEntry.modifierExtension	*	Extension	0
 CatalogEntry.relatedEntry.relationtype	1	code	1
 CatalogEntry.relatedEntry.item	1	Reference	1
-ChargeItem.id	1	string	0
+ChargeItem.id	1	id	0
 ChargeItem.meta	1	Meta	0
 ChargeItem.implicitRules	1	uri	0
 ChargeItem.language	1	code	0
@@ -693,7 +693,7 @@ ChargeItem.product[x]	1	Reference,CodeableConcept	0
 ChargeItem.account	*	Reference	0
 ChargeItem.note	*	Annotation	0
 ChargeItem.supportingInformation	*	Reference	0
-ChargeItemDefinition.id	1	string	0
+ChargeItemDefinition.id	1	id	0
 ChargeItemDefinition.meta	1	Meta	0
 ChargeItemDefinition.implicitRules	1	uri	0
 ChargeItemDefinition.language	1	code	0
@@ -742,7 +742,7 @@ ChargeItemDefinition.propertyGroup.priceComponent.type	1	code	1
 ChargeItemDefinition.propertyGroup.priceComponent.code	1	CodeableConcept	0
 ChargeItemDefinition.propertyGroup.priceComponent.factor	1	decimal	0
 ChargeItemDefinition.propertyGroup.priceComponent.amount	1	Money	0
-Claim.id	1	string	0
+Claim.id	1	id	0
 Claim.meta	1	Meta	0
 Claim.implicitRules	1	uri	0
 Claim.language	1	code	0
@@ -890,7 +890,7 @@ Claim.item.detail.subDetail.factor	1	decimal	0
 Claim.item.detail.subDetail.net	1	Money	0
 Claim.item.detail.subDetail.udi	*	Reference	0
 Claim.total	1	Money	0
-ClaimResponse.id	1	string	0
+ClaimResponse.id	1	id	0
 ClaimResponse.meta	1	Meta	0
 ClaimResponse.implicitRules	1	uri	0
 ClaimResponse.language	1	code	0
@@ -1032,7 +1032,7 @@ ClaimResponse.error.itemSequence	1	positiveInt	0
 ClaimResponse.error.detailSequence	1	positiveInt	0
 ClaimResponse.error.subDetailSequence	1	positiveInt	0
 ClaimResponse.error.code	1	CodeableConcept	1
-ClinicalImpression.id	1	string	0
+ClinicalImpression.id	1	id	0
 ClinicalImpression.meta	1	Meta	0
 ClinicalImpression.implicitRules	1	uri	0
 ClinicalImpression.language	1	code	0
@@ -1071,7 +1071,7 @@ ClinicalImpression.prognosisCodeableConcept	*	CodeableConcept	0
 ClinicalImpression.prognosisReference	*	Reference	0
 ClinicalImpression.supportingInfo	*	Reference	0
 ClinicalImpression.note	*	Annotation	0
-CodeSystem.id	1	string	0
+CodeSystem.id	1	id	0
 CodeSystem.meta	1	Meta	0
 CodeSystem.implicitRules	1	uri	0
 CodeSystem.language	1	code	0
@@ -1139,7 +1139,7 @@ CodeSystem.concept.property.modifierExtension	*	Extension	0
 CodeSystem.concept.property.code	1	code	1
 CodeSystem.concept.property.value[x]	1	code,Coding,string,integer,boolean,dateTime,decimal	1
 CodeSystem.concept.concept	*	@CodeSystem.concept	0
-Communication.id	1	string	0
+Communication.id	1	id	0
 Communication.meta	1	Meta	0
 Communication.implicitRules	1	uri	0
 Communication.language	1	code	0
@@ -1174,7 +1174,7 @@ Communication.payload.extension	*	Extension	0
 Communication.payload.modifierExtension	*	Extension	0
 Communication.payload.content[x]	1	string,Attachment,Reference	1
 Communication.note	*	Annotation	0
-CommunicationRequest.id	1	string	0
+CommunicationRequest.id	1	id	0
 CommunicationRequest.meta	1	Meta	0
 CommunicationRequest.implicitRules	1	uri	0
 CommunicationRequest.language	1	code	0
@@ -1208,7 +1208,7 @@ CommunicationRequest.sender	1	Reference	0
 CommunicationRequest.reasonCode	*	CodeableConcept	0
 CommunicationRequest.reasonReference	*	Reference	0
 CommunicationRequest.note	*	Annotation	0
-CompartmentDefinition.id	1	string	0
+CompartmentDefinition.id	1	id	0
 CompartmentDefinition.meta	1	Meta	0
 CompartmentDefinition.implicitRules	1	uri	0
 CompartmentDefinition.language	1	code	0
@@ -1236,7 +1236,7 @@ CompartmentDefinition.resource.modifierExtension	*	Extension	0
 CompartmentDefinition.resource.code	1	code	1
 CompartmentDefinition.resource.param	*	string	0
 CompartmentDefinition.resource.documentation	1	string	0
-Composition.id	1	string	0
+Composition.id	1	id	0
 Composition.meta	1	Meta	0
 Composition.implicitRules	1	uri	0
 Composition.language	1	code	0
@@ -1289,7 +1289,7 @@ Composition.section.orderedBy	1	CodeableConcept	0
 Composition.section.entry	*	Reference	0
 Composition.section.emptyReason	1	CodeableConcept	0
 Composition.section.section	*	@Composition.section	0
-ConceptMap.id	1	string	0
+ConceptMap.id	1	id	0
 ConceptMap.meta	1	Meta	0
 ConceptMap.implicitRules	1	uri	0
 ConceptMap.language	1	code	0
@@ -1353,7 +1353,7 @@ ConceptMap.group.unmapped.mode	1	code	1
 ConceptMap.group.unmapped.code	1	code	0
 ConceptMap.group.unmapped.display	1	string	0
 ConceptMap.group.unmapped.url	1	canonical	0
-Condition.id	1	string	0
+Condition.id	1	id	0
 Condition.meta	1	Meta	0
 Condition.implicitRules	1	uri	0
 Condition.language	1	code	0
@@ -1389,7 +1389,7 @@ Condition.evidence.modifierExtension	*	Extension	0
 Condition.evidence.code	*	CodeableConcept	0
 Condition.evidence.detail	*	Reference	0
 Condition.note	*	Annotation	0
-Consent.id	1	string	0
+Consent.id	1	id	0
 Consent.meta	1	Meta	0
 Consent.implicitRules	1	uri	0
 Consent.language	1	code	0
@@ -1445,7 +1445,7 @@ Consent.provision.data.modifierExtension	*	Extension	0
 Consent.provision.data.meaning	1	code	1
 Consent.provision.data.reference	1	Reference	1
 Consent.provision.provision	*	@Consent.provision	0
-Contract.id	1	string	0
+Contract.id	1	id	0
 Contract.meta	1	Meta	0
 Contract.implicitRules	1	uri	0
 Contract.language	1	code	0
@@ -1627,7 +1627,7 @@ Contract.rule.extension	*	Extension	0
 Contract.rule.modifierExtension	*	Extension	0
 Contract.rule.content[x]	1	Attachment,Reference	1
 Contract.legallyBinding[x]	1	Attachment,Reference	0
-Coverage.id	1	string	0
+Coverage.id	1	id	0
 Coverage.meta	1	Meta	0
 Coverage.implicitRules	1	uri	0
 Coverage.language	1	code	0
@@ -1669,7 +1669,7 @@ Coverage.costToBeneficiary.exception.type	1	CodeableConcept	1
 Coverage.costToBeneficiary.exception.period	1	Period	0
 Coverage.subrogation	1	boolean	0
 Coverage.contract	*	Reference	0
-CoverageEligibilityRequest.id	1	string	0
+CoverageEligibilityRequest.id	1	id	0
 CoverageEligibilityRequest.meta	1	Meta	0
 CoverageEligibilityRequest.implicitRules	1	uri	0
 CoverageEligibilityRequest.language	1	code	0
@@ -1720,7 +1720,7 @@ CoverageEligibilityRequest.item.diagnosis.extension	*	Extension	0
 CoverageEligibilityRequest.item.diagnosis.modifierExtension	*	Extension	0
 CoverageEligibilityRequest.item.diagnosis.diagnosis[x]	1	CodeableConcept,Reference	0
 CoverageEligibilityRequest.item.detail	*	Reference	0
-CoverageEligibilityResponse.id	1	string	0
+CoverageEligibilityResponse.id	1	id	0
 CoverageEligibilityResponse.meta	1	Meta	0
 CoverageEligibilityResponse.implicitRules	1	uri	0
 CoverageEligibilityResponse.language	1	code	0
@@ -1777,7 +1777,7 @@ CoverageEligibilityResponse.error.id	1	string	0
 CoverageEligibilityResponse.error.extension	*	Extension	0
 CoverageEligibilityResponse.error.modifierExtension	*	Extension	0
 CoverageEligibilityResponse.error.code	1	CodeableConcept	1
-DetectedIssue.id	1	string	0
+DetectedIssue.id	1	id	0
 DetectedIssue.meta	1	Meta	0
 DetectedIssue.implicitRules	1	uri	0
 DetectedIssue.language	1	code	0
@@ -1808,7 +1808,7 @@ DetectedIssue.mitigation.modifierExtension	*	Extension	0
 DetectedIssue.mitigation.action	1	CodeableConcept	1
 DetectedIssue.mitigation.date	1	dateTime	0
 DetectedIssue.mitigation.author	1	Reference	0
-Device.id	1	string	0
+Device.id	1	id	0
 Device.meta	1	Meta	0
 Device.implicitRules	1	uri	0
 Device.language	1	code	0
@@ -1873,7 +1873,7 @@ Device.url	1	uri	0
 Device.note	*	Annotation	0
 Device.safety	*	CodeableConcept	0
 Device.parent	1	Reference	0
-DeviceDefinition.id	1	string	0
+DeviceDefinition.id	1	id	0
 DeviceDefinition.meta	1	Meta	0
 DeviceDefinition.implicitRules	1	uri	0
 DeviceDefinition.language	1	code	0
@@ -1936,7 +1936,7 @@ DeviceDefinition.material.modifierExtension	*	Extension	0
 DeviceDefinition.material.substance	1	CodeableConcept	1
 DeviceDefinition.material.alternate	1	boolean	0
 DeviceDefinition.material.allergenicIndicator	1	boolean	0
-DeviceMetric.id	1	string	0
+DeviceMetric.id	1	id	0
 DeviceMetric.meta	1	Meta	0
 DeviceMetric.implicitRules	1	uri	0
 DeviceMetric.language	1	code	0
@@ -1960,7 +1960,7 @@ DeviceMetric.calibration.modifierExtension	*	Extension	0
 DeviceMetric.calibration.type	1	code	0
 DeviceMetric.calibration.state	1	code	0
 DeviceMetric.calibration.time	1	instant	0
-DeviceRequest.id	1	string	0
+DeviceRequest.id	1	id	0
 DeviceRequest.meta	1	Meta	0
 DeviceRequest.implicitRules	1	uri	0
 DeviceRequest.language	1	code	0
@@ -1997,7 +1997,7 @@ DeviceRequest.insurance	*	Reference	0
 DeviceRequest.supportingInfo	*	Reference	0
 DeviceRequest.note	*	Annotation	0
 DeviceRequest.relevantHistory	*	Reference	0
-DeviceUseStatement.id	1	string	0
+DeviceUseStatement.id	1	id	0
 DeviceUseStatement.meta	1	Meta	0
 DeviceUseStatement.implicitRules	1	uri	0
 DeviceUseStatement.language	1	code	0
@@ -2018,7 +2018,7 @@ DeviceUseStatement.reasonCode	*	CodeableConcept	0
 DeviceUseStatement.reasonReference	*	Reference	0
 DeviceUseStatement.bodySite	1	CodeableConcept	0
 DeviceUseStatement.note	*	Annotation	0
-DiagnosticReport.id	1	string	0
+DiagnosticReport.id	1	id	0
 DiagnosticReport.meta	1	Meta	0
 DiagnosticReport.implicitRules	1	uri	0
 DiagnosticReport.language	1	code	0
@@ -2049,7 +2049,7 @@ DiagnosticReport.media.link	1	Reference	1
 DiagnosticReport.conclusion	1	string	0
 DiagnosticReport.conclusionCode	*	CodeableConcept	0
 DiagnosticReport.presentedForm	*	Attachment	0
-DocumentManifest.id	1	string	0
+DocumentManifest.id	1	id	0
 DocumentManifest.meta	1	Meta	0
 DocumentManifest.implicitRules	1	uri	0
 DocumentManifest.language	1	code	0
@@ -2074,7 +2074,7 @@ DocumentManifest.related.extension	*	Extension	0
 DocumentManifest.related.modifierExtension	*	Extension	0
 DocumentManifest.related.identifier	1	Identifier	0
 DocumentManifest.related.ref	1	Reference	0
-DocumentReference.id	1	string	0
+DocumentReference.id	1	id	0
 DocumentReference.meta	1	Meta	0
 DocumentReference.implicitRules	1	uri	0
 DocumentReference.language	1	code	0
@@ -2118,7 +2118,7 @@ DocumentReference.context.facilityType	1	CodeableConcept	0
 DocumentReference.context.practiceSetting	1	CodeableConcept	0
 DocumentReference.context.sourcePatientInfo	1	Reference	0
 DocumentReference.context.related	*	Reference	0
-DomainResource.id	1	string	0
+DomainResource.id	1	id	0
 DomainResource.meta	1	Meta	0
 DomainResource.implicitRules	1	uri	0
 DomainResource.language	1	code	0
@@ -2126,7 +2126,7 @@ DomainResource.text	1	Narrative	0
 DomainResource.contained	*	Resource	0
 DomainResource.extension	*	Extension	0
 DomainResource.modifierExtension	*	Extension	0
-EffectEvidenceSynthesis.id	1	string	0
+EffectEvidenceSynthesis.id	1	id	0
 EffectEvidenceSynthesis.meta	1	Meta	0
 EffectEvidenceSynthesis.implicitRules	1	uri	0
 EffectEvidenceSynthesis.language	1	code	0
@@ -2208,7 +2208,7 @@ EffectEvidenceSynthesis.certainty.certaintySubcomponent.modifierExtension	*	Exte
 EffectEvidenceSynthesis.certainty.certaintySubcomponent.type	1	CodeableConcept	0
 EffectEvidenceSynthesis.certainty.certaintySubcomponent.rating	*	CodeableConcept	0
 EffectEvidenceSynthesis.certainty.certaintySubcomponent.note	*	Annotation	0
-Encounter.id	1	string	0
+Encounter.id	1	id	0
 Encounter.meta	1	Meta	0
 Encounter.implicitRules	1	uri	0
 Encounter.language	1	code	0
@@ -2280,7 +2280,7 @@ Encounter.location.physicalType	1	CodeableConcept	0
 Encounter.location.period	1	Period	0
 Encounter.serviceProvider	1	Reference	0
 Encounter.partOf	1	Reference	0
-Endpoint.id	1	string	0
+Endpoint.id	1	id	0
 Endpoint.meta	1	Meta	0
 Endpoint.implicitRules	1	uri	0
 Endpoint.language	1	code	0
@@ -2299,7 +2299,7 @@ Endpoint.payloadType	*	CodeableConcept	1
 Endpoint.payloadMimeType	*	code	0
 Endpoint.address	1	url	1
 Endpoint.header	*	string	0
-EnrollmentRequest.id	1	string	0
+EnrollmentRequest.id	1	id	0
 EnrollmentRequest.meta	1	Meta	0
 EnrollmentRequest.implicitRules	1	uri	0
 EnrollmentRequest.language	1	code	0
@@ -2314,7 +2314,7 @@ EnrollmentRequest.insurer	1	Reference	0
 EnrollmentRequest.provider	1	Reference	0
 EnrollmentRequest.candidate	1	Reference	0
 EnrollmentRequest.coverage	1	Reference	0
-EnrollmentResponse.id	1	string	0
+EnrollmentResponse.id	1	id	0
 EnrollmentResponse.meta	1	Meta	0
 EnrollmentResponse.implicitRules	1	uri	0
 EnrollmentResponse.language	1	code	0
@@ -2330,7 +2330,7 @@ EnrollmentResponse.disposition	1	string	0
 EnrollmentResponse.created	1	dateTime	0
 EnrollmentResponse.organization	1	Reference	0
 EnrollmentResponse.requestProvider	1	Reference	0
-EpisodeOfCare.id	1	string	0
+EpisodeOfCare.id	1	id	0
 EpisodeOfCare.meta	1	Meta	0
 EpisodeOfCare.implicitRules	1	uri	0
 EpisodeOfCare.language	1	code	0
@@ -2361,7 +2361,7 @@ EpisodeOfCare.referralRequest	*	Reference	0
 EpisodeOfCare.careManager	1	Reference	0
 EpisodeOfCare.team	*	Reference	0
 EpisodeOfCare.account	*	Reference	0
-EventDefinition.id	1	string	0
+EventDefinition.id	1	id	0
 EventDefinition.meta	1	Meta	0
 EventDefinition.implicitRules	1	uri	0
 EventDefinition.language	1	code	0
@@ -2397,7 +2397,7 @@ EventDefinition.reviewer	*	ContactDetail	0
 EventDefinition.endorser	*	ContactDetail	0
 EventDefinition.relatedArtifact	*	RelatedArtifact	0
 EventDefinition.trigger	*	TriggerDefinition	1
-Evidence.id	1	string	0
+Evidence.id	1	id	0
 Evidence.meta	1	Meta	0
 Evidence.implicitRules	1	uri	0
 Evidence.language	1	code	0
@@ -2433,7 +2433,7 @@ Evidence.relatedArtifact	*	RelatedArtifact	0
 Evidence.exposureBackground	1	Reference	1
 Evidence.exposureVariant	*	Reference	0
 Evidence.outcome	*	Reference	0
-EvidenceVariable.id	1	string	0
+EvidenceVariable.id	1	id	0
 EvidenceVariable.meta	1	Meta	0
 EvidenceVariable.implicitRules	1	uri	0
 EvidenceVariable.language	1	code	0
@@ -2478,7 +2478,7 @@ EvidenceVariable.characteristic.exclude	1	boolean	0
 EvidenceVariable.characteristic.participantEffective[x]	1	dateTime,Period,Duration,Timing	0
 EvidenceVariable.characteristic.timeFromStart	1	Duration	0
 EvidenceVariable.characteristic.groupMeasure	1	code	0
-ExampleScenario.id	1	string	0
+ExampleScenario.id	1	id	0
 ExampleScenario.meta	1	Meta	0
 ExampleScenario.implicitRules	1	uri	0
 ExampleScenario.language	1	code	0
@@ -2563,7 +2563,7 @@ ExampleScenario.process.step.alternative.title	1	string	1
 ExampleScenario.process.step.alternative.description	1	markdown	0
 ExampleScenario.process.step.alternative.step	*	@ExampleScenario.process.step	0
 ExampleScenario.workflow	*	canonical	0
-ExplanationOfBenefit.id	1	string	0
+ExplanationOfBenefit.id	1	id	0
 ExplanationOfBenefit.meta	1	Meta	0
 ExplanationOfBenefit.implicitRules	1	uri	0
 ExplanationOfBenefit.language	1	code	0
@@ -2818,7 +2818,7 @@ ExplanationOfBenefit.benefitBalance.financial.modifierExtension	*	Extension	0
 ExplanationOfBenefit.benefitBalance.financial.type	1	CodeableConcept	1
 ExplanationOfBenefit.benefitBalance.financial.allowed[x]	1	unsignedInt,string,Money	0
 ExplanationOfBenefit.benefitBalance.financial.used[x]	1	unsignedInt,Money	0
-FamilyMemberHistory.id	1	string	0
+FamilyMemberHistory.id	1	id	0
 FamilyMemberHistory.meta	1	Meta	0
 FamilyMemberHistory.implicitRules	1	uri	0
 FamilyMemberHistory.language	1	code	0
@@ -2852,7 +2852,7 @@ FamilyMemberHistory.condition.outcome	1	CodeableConcept	0
 FamilyMemberHistory.condition.contributedToDeath	1	boolean	0
 FamilyMemberHistory.condition.onset[x]	1	Age,Range,Period,string	0
 FamilyMemberHistory.condition.note	*	Annotation	0
-Flag.id	1	string	0
+Flag.id	1	id	0
 Flag.meta	1	Meta	0
 Flag.implicitRules	1	uri	0
 Flag.language	1	code	0
@@ -2868,7 +2868,7 @@ Flag.subject	1	Reference	1
 Flag.period	1	Period	0
 Flag.encounter	1	Reference	0
 Flag.author	1	Reference	0
-Goal.id	1	string	0
+Goal.id	1	id	0
 Goal.meta	1	Meta	0
 Goal.implicitRules	1	uri	0
 Goal.language	1	code	0
@@ -2898,7 +2898,7 @@ Goal.addresses	*	Reference	0
 Goal.note	*	Annotation	0
 Goal.outcomeCode	*	CodeableConcept	0
 Goal.outcomeReference	*	Reference	0
-GraphDefinition.id	1	string	0
+GraphDefinition.id	1	id	0
 GraphDefinition.meta	1	Meta	0
 GraphDefinition.implicitRules	1	uri	0
 GraphDefinition.language	1	code	0
@@ -2946,7 +2946,7 @@ GraphDefinition.link.target.compartment.rule	1	code	1
 GraphDefinition.link.target.compartment.expression	1	string	0
 GraphDefinition.link.target.compartment.description	1	string	0
 GraphDefinition.link.target.link	*	@GraphDefinition.link	0
-Group.id	1	string	0
+Group.id	1	id	0
 Group.meta	1	Meta	0
 Group.implicitRules	1	uri	0
 Group.language	1	code	0
@@ -2977,7 +2977,7 @@ Group.member.modifierExtension	*	Extension	0
 Group.member.entity	1	Reference	1
 Group.member.period	1	Period	0
 Group.member.inactive	1	boolean	0
-GuidanceResponse.id	1	string	0
+GuidanceResponse.id	1	id	0
 GuidanceResponse.meta	1	Meta	0
 GuidanceResponse.implicitRules	1	uri	0
 GuidanceResponse.language	1	code	0
@@ -3000,7 +3000,7 @@ GuidanceResponse.evaluationMessage	*	Reference	0
 GuidanceResponse.outputParameters	1	Reference	0
 GuidanceResponse.result	1	Reference	0
 GuidanceResponse.dataRequirement	*	DataRequirement	0
-HealthcareService.id	1	string	0
+HealthcareService.id	1	id	0
 HealthcareService.meta	1	Meta	0
 HealthcareService.implicitRules	1	uri	0
 HealthcareService.language	1	code	0
@@ -3049,7 +3049,7 @@ HealthcareService.notAvailable.description	1	string	1
 HealthcareService.notAvailable.during	1	Period	0
 HealthcareService.availabilityExceptions	1	string	0
 HealthcareService.endpoint	*	Reference	0
-ImagingStudy.id	1	string	0
+ImagingStudy.id	1	id	0
 ImagingStudy.meta	1	Meta	0
 ImagingStudy.implicitRules	1	uri	0
 ImagingStudy.language	1	code	0
@@ -3104,7 +3104,7 @@ ImagingStudy.series.instance.uid	1	id	1
 ImagingStudy.series.instance.sopClass	1	Coding	1
 ImagingStudy.series.instance.number	1	unsignedInt	0
 ImagingStudy.series.instance.title	1	string	0
-Immunization.id	1	string	0
+Immunization.id	1	id	0
 Immunization.meta	1	Meta	0
 Immunization.implicitRules	1	uri	0
 Immunization.language	1	code	0
@@ -3166,7 +3166,7 @@ Immunization.protocolApplied.authority	1	Reference	0
 Immunization.protocolApplied.targetDisease	*	CodeableConcept	0
 Immunization.protocolApplied.doseNumber[x]	1	positiveInt,string	1
 Immunization.protocolApplied.seriesDoses[x]	1	positiveInt,string	0
-ImmunizationEvaluation.id	1	string	0
+ImmunizationEvaluation.id	1	id	0
 ImmunizationEvaluation.meta	1	Meta	0
 ImmunizationEvaluation.implicitRules	1	uri	0
 ImmunizationEvaluation.language	1	code	0
@@ -3187,7 +3187,7 @@ ImmunizationEvaluation.description	1	string	0
 ImmunizationEvaluation.series	1	string	0
 ImmunizationEvaluation.doseNumber[x]	1	positiveInt,string	0
 ImmunizationEvaluation.seriesDoses[x]	1	positiveInt,string	0
-ImmunizationRecommendation.id	1	string	0
+ImmunizationRecommendation.id	1	id	0
 ImmunizationRecommendation.meta	1	Meta	0
 ImmunizationRecommendation.implicitRules	1	uri	0
 ImmunizationRecommendation.language	1	code	0
@@ -3220,7 +3220,7 @@ ImmunizationRecommendation.recommendation.doseNumber[x]	1	positiveInt,string	0
 ImmunizationRecommendation.recommendation.seriesDoses[x]	1	positiveInt,string	0
 ImmunizationRecommendation.recommendation.supportingImmunization	*	Reference	0
 ImmunizationRecommendation.recommendation.supportingPatientInformation	*	Reference	0
-ImplementationGuide.id	1	string	0
+ImplementationGuide.id	1	id	0
 ImplementationGuide.meta	1	Meta	0
 ImplementationGuide.implicitRules	1	uri	0
 ImplementationGuide.language	1	code	0
@@ -3319,7 +3319,7 @@ ImplementationGuide.manifest.page.title	1	string	0
 ImplementationGuide.manifest.page.anchor	*	string	0
 ImplementationGuide.manifest.image	*	string	0
 ImplementationGuide.manifest.other	*	string	0
-InsurancePlan.id	1	string	0
+InsurancePlan.id	1	id	0
 InsurancePlan.meta	1	Meta	0
 InsurancePlan.implicitRules	1	uri	0
 InsurancePlan.language	1	code	0
@@ -3398,7 +3398,7 @@ InsurancePlan.plan.specificCost.benefit.cost.type	1	CodeableConcept	1
 InsurancePlan.plan.specificCost.benefit.cost.applicability	1	CodeableConcept	0
 InsurancePlan.plan.specificCost.benefit.cost.qualifiers	*	CodeableConcept	0
 InsurancePlan.plan.specificCost.benefit.cost.value	1	Quantity	0
-Invoice.id	1	string	0
+Invoice.id	1	id	0
 Invoice.meta	1	Meta	0
 Invoice.implicitRules	1	uri	0
 Invoice.language	1	code	0
@@ -3440,7 +3440,7 @@ Invoice.totalNet	1	Money	0
 Invoice.totalGross	1	Money	0
 Invoice.paymentTerms	1	markdown	0
 Invoice.note	*	Annotation	0
-Library.id	1	string	0
+Library.id	1	id	0
 Library.meta	1	Meta	0
 Library.implicitRules	1	uri	0
 Library.language	1	code	0
@@ -3479,7 +3479,7 @@ Library.relatedArtifact	*	RelatedArtifact	0
 Library.parameter	*	ParameterDefinition	0
 Library.dataRequirement	*	DataRequirement	0
 Library.content	*	Attachment	0
-Linkage.id	1	string	0
+Linkage.id	1	id	0
 Linkage.meta	1	Meta	0
 Linkage.implicitRules	1	uri	0
 Linkage.language	1	code	0
@@ -3495,7 +3495,7 @@ Linkage.item.extension	*	Extension	0
 Linkage.item.modifierExtension	*	Extension	0
 Linkage.item.type	1	code	1
 Linkage.item.resource	1	Reference	1
-List.id	1	string	0
+List.id	1	id	0
 List.meta	1	Meta	0
 List.implicitRules	1	uri	0
 List.language	1	code	0
@@ -3523,7 +3523,7 @@ List.entry.deleted	1	boolean	0
 List.entry.date	1	dateTime	0
 List.entry.item	1	Reference	1
 List.emptyReason	1	CodeableConcept	0
-Location.id	1	string	0
+Location.id	1	id	0
 Location.meta	1	Meta	0
 Location.implicitRules	1	uri	0
 Location.language	1	code	0
@@ -3561,7 +3561,7 @@ Location.hoursOfOperation.openingTime	1	time	0
 Location.hoursOfOperation.closingTime	1	time	0
 Location.availabilityExceptions	1	string	0
 Location.endpoint	*	Reference	0
-Measure.id	1	string	0
+Measure.id	1	id	0
 Measure.meta	1	Meta	0
 Measure.implicitRules	1	uri	0
 Measure.language	1	code	0
@@ -3643,7 +3643,7 @@ Measure.supplementalData.code	1	CodeableConcept	0
 Measure.supplementalData.usage	*	CodeableConcept	0
 Measure.supplementalData.description	1	string	0
 Measure.supplementalData.criteria	1	Expression	1
-MeasureReport.id	1	string	0
+MeasureReport.id	1	id	0
 MeasureReport.meta	1	Meta	0
 MeasureReport.implicitRules	1	uri	0
 MeasureReport.language	1	code	0
@@ -3698,7 +3698,7 @@ MeasureReport.group.stratifier.stratum.population.count	1	integer	0
 MeasureReport.group.stratifier.stratum.population.subjectResults	1	Reference	0
 MeasureReport.group.stratifier.stratum.measureScore	1	Quantity	0
 MeasureReport.evaluatedResource	*	Reference	0
-Media.id	1	string	0
+Media.id	1	id	0
 Media.meta	1	Meta	0
 Media.implicitRules	1	uri	0
 Media.language	1	code	0
@@ -3728,7 +3728,7 @@ Media.frames	1	positiveInt	0
 Media.duration	1	decimal	0
 Media.content	1	Attachment	1
 Media.note	*	Annotation	0
-Medication.id	1	string	0
+Medication.id	1	id	0
 Medication.meta	1	Meta	0
 Medication.implicitRules	1	uri	0
 Medication.language	1	code	0
@@ -3755,7 +3755,7 @@ Medication.batch.extension	*	Extension	0
 Medication.batch.modifierExtension	*	Extension	0
 Medication.batch.lotNumber	1	string	0
 Medication.batch.expirationDate	1	dateTime	0
-MedicationAdministration.id	1	string	0
+MedicationAdministration.id	1	id	0
 MedicationAdministration.meta	1	Meta	0
 MedicationAdministration.implicitRules	1	uri	0
 MedicationAdministration.language	1	code	0
@@ -3796,7 +3796,7 @@ MedicationAdministration.dosage.method	1	CodeableConcept	0
 MedicationAdministration.dosage.dose	1	Quantity	0
 MedicationAdministration.dosage.rate[x]	1	Ratio,Quantity	0
 MedicationAdministration.eventHistory	*	Reference	0
-MedicationDispense.id	1	string	0
+MedicationDispense.id	1	id	0
 MedicationDispense.meta	1	Meta	0
 MedicationDispense.implicitRules	1	uri	0
 MedicationDispense.language	1	code	0
@@ -3840,7 +3840,7 @@ MedicationDispense.substitution.reason	*	CodeableConcept	0
 MedicationDispense.substitution.responsibleParty	*	Reference	0
 MedicationDispense.detectedIssue	*	Reference	0
 MedicationDispense.eventHistory	*	Reference	0
-MedicationKnowledge.id	1	string	0
+MedicationKnowledge.id	1	id	0
 MedicationKnowledge.meta	1	Meta	0
 MedicationKnowledge.implicitRules	1	uri	0
 MedicationKnowledge.language	1	code	0
@@ -3955,7 +3955,7 @@ MedicationKnowledge.kinetics.modifierExtension	*	Extension	0
 MedicationKnowledge.kinetics.areaUnderCurve	*	Quantity	0
 MedicationKnowledge.kinetics.lethalDose50	*	Quantity	0
 MedicationKnowledge.kinetics.halfLifePeriod	1	Duration	0
-MedicationRequest.id	1	string	0
+MedicationRequest.id	1	id	0
 MedicationRequest.meta	1	Meta	0
 MedicationRequest.implicitRules	1	uri	0
 MedicationRequest.language	1	code	0
@@ -4015,7 +4015,7 @@ MedicationRequest.substitution.reason	1	CodeableConcept	0
 MedicationRequest.priorPrescription	1	Reference	0
 MedicationRequest.detectedIssue	*	Reference	0
 MedicationRequest.eventHistory	*	Reference	0
-MedicationStatement.id	1	string	0
+MedicationStatement.id	1	id	0
 MedicationStatement.meta	1	Meta	0
 MedicationStatement.implicitRules	1	uri	0
 MedicationStatement.language	1	code	0
@@ -4040,7 +4040,7 @@ MedicationStatement.reasonCode	*	CodeableConcept	0
 MedicationStatement.reasonReference	*	Reference	0
 MedicationStatement.note	*	Annotation	0
 MedicationStatement.dosage	*	Dosage	0
-MedicinalProduct.id	1	string	0
+MedicinalProduct.id	1	id	0
 MedicinalProduct.meta	1	Meta	0
 MedicinalProduct.implicitRules	1	uri	0
 MedicinalProduct.language	1	code	0
@@ -4104,7 +4104,7 @@ MedicinalProduct.specialDesignation.indication[x]	1	CodeableConcept,Reference	0
 MedicinalProduct.specialDesignation.status	1	CodeableConcept	0
 MedicinalProduct.specialDesignation.date	1	dateTime	0
 MedicinalProduct.specialDesignation.species	1	CodeableConcept	0
-MedicinalProductAuthorization.id	1	string	0
+MedicinalProductAuthorization.id	1	id	0
 MedicinalProductAuthorization.meta	1	Meta	0
 MedicinalProductAuthorization.implicitRules	1	uri	0
 MedicinalProductAuthorization.language	1	code	0
@@ -4143,7 +4143,7 @@ MedicinalProductAuthorization.procedure.identifier	1	Identifier	0
 MedicinalProductAuthorization.procedure.type	1	CodeableConcept	1
 MedicinalProductAuthorization.procedure.date[x]	1	Period,dateTime	0
 MedicinalProductAuthorization.procedure.application	*	@MedicinalProductAuthorization.procedure	0
-MedicinalProductContraindication.id	1	string	0
+MedicinalProductContraindication.id	1	id	0
 MedicinalProductContraindication.meta	1	Meta	0
 MedicinalProductContraindication.implicitRules	1	uri	0
 MedicinalProductContraindication.language	1	code	0
@@ -4163,7 +4163,7 @@ MedicinalProductContraindication.otherTherapy.modifierExtension	*	Extension	0
 MedicinalProductContraindication.otherTherapy.therapyRelationshipType	1	CodeableConcept	1
 MedicinalProductContraindication.otherTherapy.medication[x]	1	CodeableConcept,Reference	1
 MedicinalProductContraindication.population	*	Population	0
-MedicinalProductIndication.id	1	string	0
+MedicinalProductIndication.id	1	id	0
 MedicinalProductIndication.meta	1	Meta	0
 MedicinalProductIndication.implicitRules	1	uri	0
 MedicinalProductIndication.language	1	code	0
@@ -4185,7 +4185,7 @@ MedicinalProductIndication.otherTherapy.therapyRelationshipType	1	CodeableConcep
 MedicinalProductIndication.otherTherapy.medication[x]	1	CodeableConcept,Reference	1
 MedicinalProductIndication.undesirableEffect	*	Reference	0
 MedicinalProductIndication.population	*	Population	0
-MedicinalProductIngredient.id	1	string	0
+MedicinalProductIngredient.id	1	id	0
 MedicinalProductIngredient.meta	1	Meta	0
 MedicinalProductIngredient.implicitRules	1	uri	0
 MedicinalProductIngredient.language	1	code	0
@@ -4229,7 +4229,7 @@ MedicinalProductIngredient.substance.extension	*	Extension	0
 MedicinalProductIngredient.substance.modifierExtension	*	Extension	0
 MedicinalProductIngredient.substance.code	1	CodeableConcept	1
 MedicinalProductIngredient.substance.strength	*	@MedicinalProductIngredient.specifiedSubstance.strength	0
-MedicinalProductInteraction.id	1	string	0
+MedicinalProductInteraction.id	1	id	0
 MedicinalProductInteraction.meta	1	Meta	0
 MedicinalProductInteraction.implicitRules	1	uri	0
 MedicinalProductInteraction.language	1	code	0
@@ -4248,7 +4248,7 @@ MedicinalProductInteraction.type	1	CodeableConcept	0
 MedicinalProductInteraction.effect	1	CodeableConcept	0
 MedicinalProductInteraction.incidence	1	CodeableConcept	0
 MedicinalProductInteraction.management	1	CodeableConcept	0
-MedicinalProductManufactured.id	1	string	0
+MedicinalProductManufactured.id	1	id	0
 MedicinalProductManufactured.meta	1	Meta	0
 MedicinalProductManufactured.implicitRules	1	uri	0
 MedicinalProductManufactured.language	1	code	0
@@ -4263,7 +4263,7 @@ MedicinalProductManufactured.manufacturer	*	Reference	0
 MedicinalProductManufactured.ingredient	*	Reference	0
 MedicinalProductManufactured.physicalCharacteristics	1	ProdCharacteristic	0
 MedicinalProductManufactured.otherCharacteristics	*	CodeableConcept	0
-MedicinalProductPackaged.id	1	string	0
+MedicinalProductPackaged.id	1	id	0
 MedicinalProductPackaged.meta	1	Meta	0
 MedicinalProductPackaged.implicitRules	1	uri	0
 MedicinalProductPackaged.language	1	code	0
@@ -4300,7 +4300,7 @@ MedicinalProductPackaged.packageItem.physicalCharacteristics	1	ProdCharacteristi
 MedicinalProductPackaged.packageItem.otherCharacteristics	*	CodeableConcept	0
 MedicinalProductPackaged.packageItem.shelfLifeStorage	*	ProductShelfLife	0
 MedicinalProductPackaged.packageItem.manufacturer	*	Reference	0
-MedicinalProductPharmaceutical.id	1	string	0
+MedicinalProductPharmaceutical.id	1	id	0
 MedicinalProductPharmaceutical.meta	1	Meta	0
 MedicinalProductPharmaceutical.implicitRules	1	uri	0
 MedicinalProductPharmaceutical.language	1	code	0
@@ -4341,7 +4341,7 @@ MedicinalProductPharmaceutical.routeOfAdministration.targetSpecies.withdrawalPer
 MedicinalProductPharmaceutical.routeOfAdministration.targetSpecies.withdrawalPeriod.tissue	1	CodeableConcept	1
 MedicinalProductPharmaceutical.routeOfAdministration.targetSpecies.withdrawalPeriod.value	1	Quantity	1
 MedicinalProductPharmaceutical.routeOfAdministration.targetSpecies.withdrawalPeriod.supportingInformation	1	string	0
-MedicinalProductUndesirableEffect.id	1	string	0
+MedicinalProductUndesirableEffect.id	1	id	0
 MedicinalProductUndesirableEffect.meta	1	Meta	0
 MedicinalProductUndesirableEffect.implicitRules	1	uri	0
 MedicinalProductUndesirableEffect.language	1	code	0
@@ -4354,7 +4354,7 @@ MedicinalProductUndesirableEffect.symptomConditionEffect	1	CodeableConcept	0
 MedicinalProductUndesirableEffect.classification	1	CodeableConcept	0
 MedicinalProductUndesirableEffect.frequencyOfOccurrence	1	CodeableConcept	0
 MedicinalProductUndesirableEffect.population	*	Population	0
-MessageDefinition.id	1	string	0
+MessageDefinition.id	1	id	0
 MessageDefinition.meta	1	Meta	0
 MessageDefinition.implicitRules	1	uri	0
 MessageDefinition.language	1	code	0
@@ -4398,7 +4398,7 @@ MessageDefinition.allowedResponse.modifierExtension	*	Extension	0
 MessageDefinition.allowedResponse.message	1	canonical	1
 MessageDefinition.allowedResponse.situation	1	markdown	0
 MessageDefinition.graph	*	canonical	0
-MessageHeader.id	1	string	0
+MessageHeader.id	1	id	0
 MessageHeader.meta	1	Meta	0
 MessageHeader.implicitRules	1	uri	0
 MessageHeader.language	1	code	0
@@ -4438,7 +4438,7 @@ MessageHeader.response.code	1	code	1
 MessageHeader.response.details	1	Reference	0
 MessageHeader.focus	*	Reference	0
 MessageHeader.definition	1	canonical	0
-MolecularSequence.id	1	string	0
+MolecularSequence.id	1	id	0
 MolecularSequence.meta	1	Meta	0
 MolecularSequence.implicitRules	1	uri	0
 MolecularSequence.language	1	code	0
@@ -4538,7 +4538,7 @@ MolecularSequence.structureVariant.inner.extension	*	Extension	0
 MolecularSequence.structureVariant.inner.modifierExtension	*	Extension	0
 MolecularSequence.structureVariant.inner.start	1	integer	0
 MolecularSequence.structureVariant.inner.end	1	integer	0
-NamingSystem.id	1	string	0
+NamingSystem.id	1	id	0
 NamingSystem.meta	1	Meta	0
 NamingSystem.implicitRules	1	uri	0
 NamingSystem.language	1	code	0
@@ -4567,7 +4567,7 @@ NamingSystem.uniqueId.value	1	string	1
 NamingSystem.uniqueId.preferred	1	boolean	0
 NamingSystem.uniqueId.comment	1	string	0
 NamingSystem.uniqueId.period	1	Period	0
-NutritionOrder.id	1	string	0
+NutritionOrder.id	1	id	0
 NutritionOrder.meta	1	Meta	0
 NutritionOrder.implicitRules	1	uri	0
 NutritionOrder.language	1	code	0
@@ -4637,7 +4637,7 @@ NutritionOrder.enteralFormula.administration.rate[x]	1	Quantity,Ratio	0
 NutritionOrder.enteralFormula.maxVolumeToDeliver	1	Quantity	0
 NutritionOrder.enteralFormula.administrationInstruction	1	string	0
 NutritionOrder.note	*	Annotation	0
-Observation.id	1	string	0
+Observation.id	1	id	0
 Observation.meta	1	Meta	0
 Observation.implicitRules	1	uri	0
 Observation.language	1	code	0
@@ -4686,7 +4686,7 @@ Observation.component.value[x]	1	Quantity,CodeableConcept,string,boolean,integer
 Observation.component.dataAbsentReason	1	CodeableConcept	0
 Observation.component.interpretation	*	CodeableConcept	0
 Observation.component.referenceRange	*	@Observation.referenceRange	0
-ObservationDefinition.id	1	string	0
+ObservationDefinition.id	1	id	0
 ObservationDefinition.meta	1	Meta	0
 ObservationDefinition.implicitRules	1	uri	0
 ObservationDefinition.language	1	code	0
@@ -4725,7 +4725,7 @@ ObservationDefinition.validCodedValueSet	1	Reference	0
 ObservationDefinition.normalCodedValueSet	1	Reference	0
 ObservationDefinition.abnormalCodedValueSet	1	Reference	0
 ObservationDefinition.criticalCodedValueSet	1	Reference	0
-OperationDefinition.id	1	string	0
+OperationDefinition.id	1	id	0
 OperationDefinition.meta	1	Meta	0
 OperationDefinition.implicitRules	1	uri	0
 OperationDefinition.language	1	code	0
@@ -4788,7 +4788,7 @@ OperationDefinition.overload.extension	*	Extension	0
 OperationDefinition.overload.modifierExtension	*	Extension	0
 OperationDefinition.overload.parameterName	*	string	0
 OperationDefinition.overload.comment	1	string	0
-OperationOutcome.id	1	string	0
+OperationOutcome.id	1	id	0
 OperationOutcome.meta	1	Meta	0
 OperationOutcome.implicitRules	1	uri	0
 OperationOutcome.language	1	code	0
@@ -4806,7 +4806,7 @@ OperationOutcome.issue.details	1	CodeableConcept	0
 OperationOutcome.issue.diagnostics	1	string	0
 OperationOutcome.issue.location	*	string	0
 OperationOutcome.issue.expression	*	string	0
-Organization.id	1	string	0
+Organization.id	1	id	0
 Organization.meta	1	Meta	0
 Organization.implicitRules	1	uri	0
 Organization.language	1	code	0
@@ -4831,7 +4831,7 @@ Organization.contact.name	1	HumanName	0
 Organization.contact.telecom	*	ContactPoint	0
 Organization.contact.address	1	Address	0
 Organization.endpoint	*	Reference	0
-OrganizationAffiliation.id	1	string	0
+OrganizationAffiliation.id	1	id	0
 OrganizationAffiliation.meta	1	Meta	0
 OrganizationAffiliation.implicitRules	1	uri	0
 OrganizationAffiliation.language	1	code	0
@@ -4851,7 +4851,7 @@ OrganizationAffiliation.location	*	Reference	0
 OrganizationAffiliation.healthcareService	*	Reference	0
 OrganizationAffiliation.telecom	*	ContactPoint	0
 OrganizationAffiliation.endpoint	*	Reference	0
-Parameters.id	1	string	0
+Parameters.id	1	id	0
 Parameters.meta	1	Meta	0
 Parameters.implicitRules	1	uri	0
 Parameters.language	1	code	0
@@ -4863,7 +4863,7 @@ Parameters.parameter.name	1	string	1
 Parameters.parameter.value[x]	1	base64Binary,boolean,canonical,code,date,dateTime,decimal,id,instant,integer,markdown,oid,positiveInt,string,time,unsignedInt,uri,url,uuid,Address,Age,Annotation,Attachment,CodeableConcept,Coding,ContactPoint,Count,Distance,Duration,HumanName,Identifier,Money,Period,Quantity,Range,Ratio,Reference,SampledData,Signature,Timing,ContactDetail,Contributor,DataRequirement,Expression,ParameterDefinition,RelatedArtifact,TriggerDefinition,UsageContext,Dosage,Meta	0
 Parameters.parameter.resource	1	Resource	0
 Parameters.parameter.part	*	@Parameters.parameter	0
-Patient.id	1	string	0
+Patient.id	1	id	0
 Patient.meta	1	Meta	0
 Patient.implicitRules	1	uri	0
 Patient.language	1	code	0
@@ -4907,7 +4907,7 @@ Patient.link.extension	*	Extension	0
 Patient.link.modifierExtension	*	Extension	0
 Patient.link.other	1	Reference	1
 Patient.link.type	1	code	1
-PaymentNotice.id	1	string	0
+PaymentNotice.id	1	id	0
 PaymentNotice.meta	1	Meta	0
 PaymentNotice.implicitRules	1	uri	0
 PaymentNotice.language	1	code	0
@@ -4927,7 +4927,7 @@ PaymentNotice.payee	1	Reference	0
 PaymentNotice.recipient	1	Reference	1
 PaymentNotice.amount	1	Money	1
 PaymentNotice.paymentStatus	1	CodeableConcept	0
-PaymentReconciliation.id	1	string	0
+PaymentReconciliation.id	1	id	0
 PaymentReconciliation.meta	1	Meta	0
 PaymentReconciliation.implicitRules	1	uri	0
 PaymentReconciliation.language	1	code	0
@@ -4968,7 +4968,7 @@ PaymentReconciliation.processNote.extension	*	Extension	0
 PaymentReconciliation.processNote.modifierExtension	*	Extension	0
 PaymentReconciliation.processNote.type	1	code	0
 PaymentReconciliation.processNote.text	1	string	0
-Person.id	1	string	0
+Person.id	1	id	0
 Person.meta	1	Meta	0
 Person.implicitRules	1	uri	0
 Person.language	1	code	0
@@ -4991,7 +4991,7 @@ Person.link.extension	*	Extension	0
 Person.link.modifierExtension	*	Extension	0
 Person.link.target	1	Reference	1
 Person.link.assurance	1	code	0
-PlanDefinition.id	1	string	0
+PlanDefinition.id	1	id	0
 PlanDefinition.meta	1	Meta	0
 PlanDefinition.implicitRules	1	uri	0
 PlanDefinition.language	1	code	0
@@ -5097,7 +5097,7 @@ PlanDefinition.action.dynamicValue.modifierExtension	*	Extension	0
 PlanDefinition.action.dynamicValue.path	1	string	0
 PlanDefinition.action.dynamicValue.expression	1	Expression	0
 PlanDefinition.action.action	*	@PlanDefinition.action	0
-Practitioner.id	1	string	0
+Practitioner.id	1	id	0
 Practitioner.meta	1	Meta	0
 Practitioner.implicitRules	1	uri	0
 Practitioner.language	1	code	0
@@ -5122,7 +5122,7 @@ Practitioner.qualification.code	1	CodeableConcept	1
 Practitioner.qualification.period	1	Period	0
 Practitioner.qualification.issuer	1	Reference	0
 Practitioner.communication	*	CodeableConcept	0
-PractitionerRole.id	1	string	0
+PractitionerRole.id	1	id	0
 PractitionerRole.meta	1	Meta	0
 PractitionerRole.implicitRules	1	uri	0
 PractitionerRole.language	1	code	0
@@ -5156,7 +5156,7 @@ PractitionerRole.notAvailable.description	1	string	1
 PractitionerRole.notAvailable.during	1	Period	0
 PractitionerRole.availabilityExceptions	1	string	0
 PractitionerRole.endpoint	*	Reference	0
-Procedure.id	1	string	0
+Procedure.id	1	id	0
 Procedure.meta	1	Meta	0
 Procedure.implicitRules	1	uri	0
 Procedure.language	1	code	0
@@ -5203,7 +5203,7 @@ Procedure.focalDevice.action	1	CodeableConcept	0
 Procedure.focalDevice.manipulated	1	Reference	1
 Procedure.usedReference	*	Reference	0
 Procedure.usedCode	*	CodeableConcept	0
-Provenance.id	1	string	0
+Provenance.id	1	id	0
 Provenance.meta	1	Meta	0
 Provenance.implicitRules	1	uri	0
 Provenance.language	1	code	0
@@ -5234,7 +5234,7 @@ Provenance.entity.role	1	code	1
 Provenance.entity.what	1	Reference	1
 Provenance.entity.agent	*	@Provenance.agent	0
 Provenance.signature	*	Signature	0
-Questionnaire.id	1	string	0
+Questionnaire.id	1	id	0
 Questionnaire.meta	1	Meta	0
 Questionnaire.implicitRules	1	uri	0
 Questionnaire.language	1	code	0
@@ -5298,7 +5298,7 @@ Questionnaire.item.initial.extension	*	Extension	0
 Questionnaire.item.initial.modifierExtension	*	Extension	0
 Questionnaire.item.initial.value[x]	1	boolean,decimal,integer,date,dateTime,time,string,uri,Attachment,Coding,Quantity,Reference	1
 Questionnaire.item.item	*	@Questionnaire.item	0
-QuestionnaireResponse.id	1	string	0
+QuestionnaireResponse.id	1	id	0
 QuestionnaireResponse.meta	1	Meta	0
 QuestionnaireResponse.implicitRules	1	uri	0
 QuestionnaireResponse.language	1	code	0
@@ -5330,7 +5330,7 @@ QuestionnaireResponse.item.answer.modifierExtension	*	Extension	0
 QuestionnaireResponse.item.answer.value[x]	1	boolean,decimal,integer,date,dateTime,time,string,uri,Attachment,Coding,Quantity,Reference	0
 QuestionnaireResponse.item.answer.item	*	@QuestionnaireResponse.item	0
 QuestionnaireResponse.item.item	*	@QuestionnaireResponse.item	0
-RelatedPerson.id	1	string	0
+RelatedPerson.id	1	id	0
 RelatedPerson.meta	1	Meta	0
 RelatedPerson.implicitRules	1	uri	0
 RelatedPerson.language	1	code	0
@@ -5355,7 +5355,7 @@ RelatedPerson.communication.extension	*	Extension	0
 RelatedPerson.communication.modifierExtension	*	Extension	0
 RelatedPerson.communication.language	1	CodeableConcept	1
 RelatedPerson.communication.preferred	1	boolean	0
-RequestGroup.id	1	string	0
+RequestGroup.id	1	id	0
 RequestGroup.meta	1	Meta	0
 RequestGroup.implicitRules	1	uri	0
 RequestGroup.language	1	code	0
@@ -5414,7 +5414,7 @@ RequestGroup.action.precheckBehavior	1	code	0
 RequestGroup.action.cardinalityBehavior	1	code	0
 RequestGroup.action.resource	1	Reference	0
 RequestGroup.action.action	*	@RequestGroup.action	0
-ResearchDefinition.id	1	string	0
+ResearchDefinition.id	1	id	0
 ResearchDefinition.meta	1	Meta	0
 ResearchDefinition.implicitRules	1	uri	0
 ResearchDefinition.language	1	code	0
@@ -5456,7 +5456,7 @@ ResearchDefinition.population	1	Reference	1
 ResearchDefinition.exposure	1	Reference	0
 ResearchDefinition.exposureAlternative	1	Reference	0
 ResearchDefinition.outcome	1	Reference	0
-ResearchElementDefinition.id	1	string	0
+ResearchElementDefinition.id	1	id	0
 ResearchElementDefinition.meta	1	Meta	0
 ResearchElementDefinition.implicitRules	1	uri	0
 ResearchElementDefinition.language	1	code	0
@@ -5512,7 +5512,7 @@ ResearchElementDefinition.characteristic.participantEffectiveDescription	1	strin
 ResearchElementDefinition.characteristic.participantEffective[x]	1	dateTime,Period,Duration,Timing	0
 ResearchElementDefinition.characteristic.participantEffectiveTimeFromStart	1	Duration	0
 ResearchElementDefinition.characteristic.participantEffectiveGroupMeasure	1	code	0
-ResearchStudy.id	1	string	0
+ResearchStudy.id	1	id	0
 ResearchStudy.meta	1	Meta	0
 ResearchStudy.implicitRules	1	uri	0
 ResearchStudy.language	1	code	0
@@ -5555,7 +5555,7 @@ ResearchStudy.objective.extension	*	Extension	0
 ResearchStudy.objective.modifierExtension	*	Extension	0
 ResearchStudy.objective.name	1	string	0
 ResearchStudy.objective.type	1	CodeableConcept	0
-ResearchSubject.id	1	string	0
+ResearchSubject.id	1	id	0
 ResearchSubject.meta	1	Meta	0
 ResearchSubject.implicitRules	1	uri	0
 ResearchSubject.language	1	code	0
@@ -5571,7 +5571,7 @@ ResearchSubject.individual	1	Reference	1
 ResearchSubject.assignedArm	1	string	0
 ResearchSubject.actualArm	1	string	0
 ResearchSubject.consent	1	Reference	0
-RiskAssessment.id	1	string	0
+RiskAssessment.id	1	id	0
 RiskAssessment.meta	1	Meta	0
 RiskAssessment.implicitRules	1	uri	0
 RiskAssessment.language	1	code	0
@@ -5605,7 +5605,7 @@ RiskAssessment.prediction.when[x]	1	Period,Range	0
 RiskAssessment.prediction.rationale	1	string	0
 RiskAssessment.mitigation	1	string	0
 RiskAssessment.note	*	Annotation	0
-RiskEvidenceSynthesis.id	1	string	0
+RiskEvidenceSynthesis.id	1	id	0
 RiskEvidenceSynthesis.meta	1	Meta	0
 RiskEvidenceSynthesis.implicitRules	1	uri	0
 RiskEvidenceSynthesis.language	1	code	0
@@ -5679,7 +5679,7 @@ RiskEvidenceSynthesis.certainty.certaintySubcomponent.modifierExtension	*	Extens
 RiskEvidenceSynthesis.certainty.certaintySubcomponent.type	1	CodeableConcept	0
 RiskEvidenceSynthesis.certainty.certaintySubcomponent.rating	*	CodeableConcept	0
 RiskEvidenceSynthesis.certainty.certaintySubcomponent.note	*	Annotation	0
-Schedule.id	1	string	0
+Schedule.id	1	id	0
 Schedule.meta	1	Meta	0
 Schedule.implicitRules	1	uri	0
 Schedule.language	1	code	0
@@ -5695,7 +5695,7 @@ Schedule.specialty	*	CodeableConcept	0
 Schedule.actor	*	Reference	1
 Schedule.planningHorizon	1	Period	0
 Schedule.comment	1	string	0
-SearchParameter.id	1	string	0
+SearchParameter.id	1	id	0
 SearchParameter.meta	1	Meta	0
 SearchParameter.implicitRules	1	uri	0
 SearchParameter.language	1	code	0
@@ -5734,7 +5734,7 @@ SearchParameter.component.extension	*	Extension	0
 SearchParameter.component.modifierExtension	*	Extension	0
 SearchParameter.component.definition	1	canonical	1
 SearchParameter.component.expression	1	string	1
-ServiceRequest.id	1	string	0
+ServiceRequest.id	1	id	0
 ServiceRequest.meta	1	Meta	0
 ServiceRequest.implicitRules	1	uri	0
 ServiceRequest.language	1	code	0
@@ -5775,7 +5775,7 @@ ServiceRequest.bodySite	*	CodeableConcept	0
 ServiceRequest.note	*	Annotation	0
 ServiceRequest.patientInstruction	1	string	0
 ServiceRequest.relevantHistory	*	Reference	0
-Slot.id	1	string	0
+Slot.id	1	id	0
 Slot.meta	1	Meta	0
 Slot.implicitRules	1	uri	0
 Slot.language	1	code	0
@@ -5794,7 +5794,7 @@ Slot.start	1	instant	1
 Slot.end	1	instant	1
 Slot.overbooked	1	boolean	0
 Slot.comment	1	string	0
-Specimen.id	1	string	0
+Specimen.id	1	id	0
 Specimen.meta	1	Meta	0
 Specimen.implicitRules	1	uri	0
 Specimen.language	1	code	0
@@ -5841,7 +5841,7 @@ Specimen.container.specimenQuantity	1	Quantity	0
 Specimen.container.additive[x]	1	CodeableConcept,Reference	0
 Specimen.condition	*	CodeableConcept	0
 Specimen.note	*	Annotation	0
-SpecimenDefinition.id	1	string	0
+SpecimenDefinition.id	1	id	0
 SpecimenDefinition.meta	1	Meta	0
 SpecimenDefinition.implicitRules	1	uri	0
 SpecimenDefinition.language	1	code	0
@@ -5888,7 +5888,7 @@ SpecimenDefinition.typeTested.handling.temperatureQualifier	1	CodeableConcept	0
 SpecimenDefinition.typeTested.handling.temperatureRange	1	Range	0
 SpecimenDefinition.typeTested.handling.maxDuration	1	Duration	0
 SpecimenDefinition.typeTested.handling.instruction	1	string	0
-StructureDefinition.id	1	string	0
+StructureDefinition.id	1	id	0
 StructureDefinition.meta	1	Meta	0
 StructureDefinition.implicitRules	1	uri	0
 StructureDefinition.language	1	code	0
@@ -5943,7 +5943,7 @@ StructureDefinition.differential.id	1	string	0
 StructureDefinition.differential.extension	*	Extension	0
 StructureDefinition.differential.modifierExtension	*	Extension	0
 StructureDefinition.differential.element	*	ElementDefinition	1
-StructureMap.id	1	string	0
+StructureMap.id	1	id	0
 StructureMap.meta	1	Meta	0
 StructureMap.implicitRules	1	uri	0
 StructureMap.language	1	code	0
@@ -6035,7 +6035,7 @@ StructureMap.group.rule.dependent.modifierExtension	*	Extension	0
 StructureMap.group.rule.dependent.name	1	id	1
 StructureMap.group.rule.dependent.variable	*	string	1
 StructureMap.group.rule.documentation	1	string	0
-Subscription.id	1	string	0
+Subscription.id	1	id	0
 Subscription.meta	1	Meta	0
 Subscription.implicitRules	1	uri	0
 Subscription.language	1	code	0
@@ -6057,7 +6057,7 @@ Subscription.channel.type	1	code	1
 Subscription.channel.endpoint	1	url	0
 Subscription.channel.payload	1	code	0
 Subscription.channel.header	*	string	0
-Substance.id	1	string	0
+Substance.id	1	id	0
 Substance.meta	1	Meta	0
 Substance.implicitRules	1	uri	0
 Substance.language	1	code	0
@@ -6083,7 +6083,7 @@ Substance.ingredient.extension	*	Extension	0
 Substance.ingredient.modifierExtension	*	Extension	0
 Substance.ingredient.quantity	1	Ratio	0
 Substance.ingredient.substance[x]	1	CodeableConcept,Reference	1
-SubstanceNucleicAcid.id	1	string	0
+SubstanceNucleicAcid.id	1	id	0
 SubstanceNucleicAcid.meta	1	Meta	0
 SubstanceNucleicAcid.implicitRules	1	uri	0
 SubstanceNucleicAcid.language	1	code	0
@@ -6120,7 +6120,7 @@ SubstanceNucleicAcid.subunit.sugar.modifierExtension	*	Extension	0
 SubstanceNucleicAcid.subunit.sugar.identifier	1	Identifier	0
 SubstanceNucleicAcid.subunit.sugar.name	1	string	0
 SubstanceNucleicAcid.subunit.sugar.residueSite	1	string	0
-SubstancePolymer.id	1	string	0
+SubstancePolymer.id	1	id	0
 SubstancePolymer.meta	1	Meta	0
 SubstancePolymer.implicitRules	1	uri	0
 SubstancePolymer.language	1	code	0
@@ -6172,7 +6172,7 @@ SubstancePolymer.repeat.repeatUnit.structuralRepresentation.modifierExtension	*	
 SubstancePolymer.repeat.repeatUnit.structuralRepresentation.type	1	CodeableConcept	0
 SubstancePolymer.repeat.repeatUnit.structuralRepresentation.representation	1	string	0
 SubstancePolymer.repeat.repeatUnit.structuralRepresentation.attachment	1	Attachment	0
-SubstanceProtein.id	1	string	0
+SubstanceProtein.id	1	id	0
 SubstanceProtein.meta	1	Meta	0
 SubstanceProtein.implicitRules	1	uri	0
 SubstanceProtein.language	1	code	0
@@ -6195,7 +6195,7 @@ SubstanceProtein.subunit.nTerminalModificationId	1	Identifier	0
 SubstanceProtein.subunit.nTerminalModification	1	string	0
 SubstanceProtein.subunit.cTerminalModificationId	1	Identifier	0
 SubstanceProtein.subunit.cTerminalModification	1	string	0
-SubstanceReferenceInformation.id	1	string	0
+SubstanceReferenceInformation.id	1	id	0
 SubstanceReferenceInformation.meta	1	Meta	0
 SubstanceReferenceInformation.implicitRules	1	uri	0
 SubstanceReferenceInformation.language	1	code	0
@@ -6238,7 +6238,7 @@ SubstanceReferenceInformation.target.organismType	1	CodeableConcept	0
 SubstanceReferenceInformation.target.amount[x]	1	Quantity,Range,string	0
 SubstanceReferenceInformation.target.amountType	1	CodeableConcept	0
 SubstanceReferenceInformation.target.source	*	Reference	0
-SubstanceSourceMaterial.id	1	string	0
+SubstanceSourceMaterial.id	1	id	0
 SubstanceSourceMaterial.meta	1	Meta	0
 SubstanceSourceMaterial.implicitRules	1	uri	0
 SubstanceSourceMaterial.language	1	code	0
@@ -6300,7 +6300,7 @@ SubstanceSourceMaterial.partDescription.extension	*	Extension	0
 SubstanceSourceMaterial.partDescription.modifierExtension	*	Extension	0
 SubstanceSourceMaterial.partDescription.part	1	CodeableConcept	0
 SubstanceSourceMaterial.partDescription.partLocation	1	CodeableConcept	0
-SubstanceSpecification.id	1	string	0
+SubstanceSpecification.id	1	id	0
 SubstanceSpecification.meta	1	Meta	0
 SubstanceSpecification.implicitRules	1	uri	0
 SubstanceSpecification.language	1	code	0
@@ -6414,7 +6414,7 @@ SubstanceSpecification.nucleicAcid	1	Reference	0
 SubstanceSpecification.polymer	1	Reference	0
 SubstanceSpecification.protein	1	Reference	0
 SubstanceSpecification.sourceMaterial	1	Reference	0
-SupplyDelivery.id	1	string	0
+SupplyDelivery.id	1	id	0
 SupplyDelivery.meta	1	Meta	0
 SupplyDelivery.implicitRules	1	uri	0
 SupplyDelivery.language	1	code	0
@@ -6438,7 +6438,7 @@ SupplyDelivery.occurrence[x]	1	dateTime,Period,Timing	0
 SupplyDelivery.supplier	1	Reference	0
 SupplyDelivery.destination	1	Reference	0
 SupplyDelivery.receiver	*	Reference	0
-SupplyRequest.id	1	string	0
+SupplyRequest.id	1	id	0
 SupplyRequest.meta	1	Meta	0
 SupplyRequest.implicitRules	1	uri	0
 SupplyRequest.language	1	code	0
@@ -6466,7 +6466,7 @@ SupplyRequest.reasonCode	*	CodeableConcept	0
 SupplyRequest.reasonReference	*	Reference	0
 SupplyRequest.deliverFrom	1	Reference	0
 SupplyRequest.deliverTo	1	Reference	0
-Task.id	1	string	0
+Task.id	1	id	0
 Task.meta	1	Meta	0
 Task.implicitRules	1	uri	0
 Task.language	1	code	0
@@ -6521,7 +6521,7 @@ Task.output.extension	*	Extension	0
 Task.output.modifierExtension	*	Extension	0
 Task.output.type	1	CodeableConcept	1
 Task.output.value[x]	1	base64Binary,boolean,canonical,code,date,dateTime,decimal,id,instant,integer,markdown,oid,positiveInt,string,time,unsignedInt,uri,url,uuid,Address,Age,Annotation,Attachment,CodeableConcept,Coding,ContactPoint,Count,Distance,Duration,HumanName,Identifier,Money,Period,Quantity,Range,Ratio,Reference,SampledData,Signature,Timing,ContactDetail,Contributor,DataRequirement,Expression,ParameterDefinition,RelatedArtifact,TriggerDefinition,UsageContext,Dosage,Meta	1
-TerminologyCapabilities.id	1	string	0
+TerminologyCapabilities.id	1	id	0
 TerminologyCapabilities.meta	1	Meta	0
 TerminologyCapabilities.implicitRules	1	uri	0
 TerminologyCapabilities.language	1	code	0
@@ -6608,7 +6608,7 @@ TerminologyCapabilities.closure.id	1	string	0
 TerminologyCapabilities.closure.extension	*	Extension	0
 TerminologyCapabilities.closure.modifierExtension	*	Extension	0
 TerminologyCapabilities.closure.translation	1	boolean	0
-TestReport.id	1	string	0
+TestReport.id	1	id	0
 TestReport.meta	1	Meta	0
 TestReport.implicitRules	1	uri	0
 TestReport.language	1	code	0
@@ -6674,7 +6674,7 @@ TestReport.teardown.action.id	1	string	0
 TestReport.teardown.action.extension	*	Extension	0
 TestReport.teardown.action.modifierExtension	*	Extension	0
 TestReport.teardown.action.operation	1	@TestReport.setup.action.operation	1
-TestScript.id	1	string	0
+TestScript.id	1	id	0
 TestScript.meta	1	Meta	0
 TestScript.implicitRules	1	uri	0
 TestScript.language	1	code	0
@@ -6831,7 +6831,7 @@ TestScript.teardown.action.id	1	string	0
 TestScript.teardown.action.extension	*	Extension	0
 TestScript.teardown.action.modifierExtension	*	Extension	0
 TestScript.teardown.action.operation	1	@TestScript.setup.action.operation	1
-ValueSet.id	1	string	0
+ValueSet.id	1	id	0
 ValueSet.meta	1	Meta	0
 ValueSet.implicitRules	1	uri	0
 ValueSet.language	1	code	0
@@ -6915,7 +6915,7 @@ ValueSet.expansion.contains.code	1	code	0
 ValueSet.expansion.contains.display	1	string	0
 ValueSet.expansion.contains.designation	*	@ValueSet.compose.include.concept.designation	0
 ValueSet.expansion.contains.contains	*	@ValueSet.expansion.contains	0
-VerificationResult.id	1	string	0
+VerificationResult.id	1	id	0
 VerificationResult.meta	1	Meta	0
 VerificationResult.implicitRules	1	uri	0
 VerificationResult.language	1	code	0
@@ -6964,7 +6964,7 @@ VerificationResult.validator.modifierExtension	*	Extension	0
 VerificationResult.validator.organization	1	Reference	1
 VerificationResult.validator.identityCertificate	1	string	0
 VerificationResult.validator.attestationSignature	1	Signature	0
-VisionPrescription.id	1	string	0
+VisionPrescription.id	1	id	0
 VisionPrescription.meta	1	Meta	0
 VisionPrescription.implicitRules	1	uri	0
 VisionPrescription.language	1	code	0
@@ -7227,7 +7227,7 @@ Expression.expression	1	string	0
 Expression.reference	1	uri	0
 Extension.id	1	string	0
 Extension.extension	*	Extension	0
-Extension.url	1	string	1
+Extension.url	1	uri	1
 Extension.value[x]	1	base64Binary,boolean,canonical,code,date,dateTime,decimal,id,instant,integer,markdown,oid,positiveInt,string,time,unsignedInt,uri,url,uuid,Address,Age,Annotation,Attachment,CodeableConcept,Coding,ContactPoint,Count,Distance,Duration,HumanName,Identifier,Money,Period,Quantity,Range,Ratio,Reference,SampledData,Signature,Timing,ContactDetail,Contributor,DataRequirement,Expression,ParameterDefinition,RelatedArtifact,TriggerDefinition,UsageContext,Dosage,Meta	0
 HumanName.id	1	string	0
 HumanName.extension	*	Extension	0

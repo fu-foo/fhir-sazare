@@ -5,6 +5,7 @@ pub mod fhirpath;
 pub mod operation_outcome;
 pub mod profile_loader;
 pub mod r4_types;
+pub mod reference;
 pub mod resource;
 pub mod resource_filter;
 pub mod search_param;

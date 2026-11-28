@@ -9,7 +9,6 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use sazare_core::validation::validate_resource_all_phases;
 use serde_json::{json, Value};
 use std::sync::Arc;
 
@@ -24,6 +23,10 @@ pub(super) async fn process_batch(
     let mut response_entries: Vec<Value> = Vec::with_capacity(entries.len());
 
     for (i, entry) in entries.iter_mut().enumerate() {
+        if let Some(refused) = entry.refused.take() {
+            response_entries.push(refused);
+            continue;
+        }
         if entry.method == "GET" && entry.id.is_none() {
             response_entries.push(batch_search(state, audit_ctx, auth_user, entry, base_url).await);
             continue;
@@ -148,18 +151,8 @@ async fn process_batch_entry(
                 return error_entry("400 Bad Request", &format!("entry[{index}]: {e}"));
             }
 
-            if let Err(outcome) = validate_resource_all_phases(
-                resource,
-                &state.profile_registry,
-                &state.terminology_registry,
-            ) {
-                return json!({
-                    "response": {
-                        "status": "400 Bad Request",
-                        "outcome": outcome
-                    }
-                });
-            }
+            // Validated (with its conditional references resolved) by
+            // `write::prepare` before the entries were authorized.
 
             let id = uuid::Uuid::new_v4().to_string();
             let version_id = "1".to_string();
@@ -227,18 +220,8 @@ async fn process_batch_entry(
                 return error_entry("400 Bad Request", &format!("entry[{index}]: {e}"));
             }
 
-            if let Err(outcome) = validate_resource_all_phases(
-                resource,
-                &state.profile_registry,
-                &state.terminology_registry,
-            ) {
-                return json!({
-                    "response": {
-                        "status": "400 Bad Request",
-                        "outcome": outcome
-                    }
-                });
-            }
+            // Validated (with its conditional references resolved) by
+            // `write::prepare` before the entries were authorized.
 
             // Determine version
             let (is_create, version_id) = match state.store.get(&entry.resource_type, &id) {

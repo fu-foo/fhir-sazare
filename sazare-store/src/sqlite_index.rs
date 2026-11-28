@@ -981,7 +981,11 @@ fn number_with_precision(value: &str) -> Option<(f64, f64)> {
         None => (lower.as_str(), 0),
     };
     let decimals = mantissa.split_once('.').map_or(0, |(_, frac)| frac.len() as i32);
-    Some((v, 0.5 * 10f64.powi(exp - decimals)))
+    // At least the spacing of floats near `v`: beyond 2^53 the half unit is
+    // below it, `v ± half` is `v`, and `eq` (`[v - half, v + half)`) was
+    // empty — `value-quantity=123456789012345678901234567890` found nothing.
+    let ulp = f64::from_bits(v.abs().to_bits() + 1) - v.abs();
+    Some((v, (0.5 * 10f64.powi(exp - decimals)).max(ulp)))
 }
 
 #[cfg(test)]

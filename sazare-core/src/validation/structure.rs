@@ -142,6 +142,9 @@ fn check_object(obj: &Map<String, Value>, base: &str, loc: &str, is_resource: bo
                 continue;
             };
             match (repeats, value) {
+                (true, Value::Array(items)) if items.is_empty() => {
+                    issues.push((here.clone(), format!("'{here}' is an empty array (leave the element out)")));
+                }
                 (true, Value::Array(items)) => {
                     for (i, item) in items.iter().enumerate().filter(|(_, v)| !v.is_null()) {
                         check_value(item, "Element", &["Element"], &format!("{here}[{i}]"), depth, issues);
@@ -183,6 +186,13 @@ fn check_object(obj: &Map<String, Value>, base: &str, loc: &str, is_resource: bo
         }
     }
     check_required(obj, base, loc, issues);
+    // ext-1: an extension has a value or extensions, not both.
+    if base == "Extension"
+        && obj.get("extension").and_then(|e| e.as_array()).is_some_and(|e| !e.is_empty())
+        && obj.keys().any(|k| k.starts_with("value") && resolve("Extension", k).is_some())
+    {
+        issues.push((loc.to_string(), format!("'{loc}' has a value and extensions: an extension has one or the other (ext-1)")));
+    }
 }
 
 /// The required children of `base` missing from `obj`: a value, or `_name`
@@ -322,6 +332,7 @@ fn primitive_format(ty: &str, value: &Value) -> Result<(), String> {
         });
     }
     match ty {
+        "xhtml" => return narrative(&text),
         "date" | "dateTime" | "instant" if text.len() >= 10 => {
             let ymd = &text[..10];
             let ok = chrono::NaiveDate::parse_from_str(ymd, "%Y-%m-%d").is_ok();
@@ -348,6 +359,48 @@ fn primitive_format(ty: &str, value: &Value) -> Result<(), String> {
 /// "a" or "an" before a type name (`an integer`, `an Identifier`).
 fn article(ty: &str) -> &'static str {
     if ty.starts_with(['a', 'e', 'i', 'o', 'u', 'A', 'E', 'I', 'O', 'U']) { "an" } else { "a" }
+}
+
+/// A narrative's div, in part (R4 txt-1, txt-2): a `<div>` in the XHTML
+/// namespace with content, and none of what can run or submit — script,
+/// object, embed, iframe, form and its inputs, style elements, `on…`
+/// attributes, `javascript:` URLs. The full rule (only HTML 4 formatting
+/// elements) is the HL7 validator's.
+fn narrative(div: &str) -> Result<(), String> {
+    let t = div.trim();
+    let lower = t.to_ascii_lowercase();
+    if !lower.starts_with("<div") || !(lower.ends_with("</div>") || lower.ends_with("/>")) {
+        return Err("a narrative is one <div> element".into());
+    }
+    let head = &lower[..lower.find('>').unwrap_or(lower.len())];
+    if !head.contains("xmlns=\"http://www.w3.org/1999/xhtml\"") && !head.contains("xmlns='http://www.w3.org/1999/xhtml'") {
+        return Err("the <div> is in the XHTML namespace: xmlns=\"http://www.w3.org/1999/xhtml\"".into());
+    }
+    for tag in ["script", "object", "embed", "iframe", "frame", "form", "input", "button", "textarea", "select", "style", "link", "meta", "base", "applet"] {
+        if lower.contains(&format!("<{tag}")) && lower[lower.find(&format!("<{tag}")).unwrap() + tag.len() + 1..].starts_with([' ', '>', '/', '\t', '\n', '\r']) {
+            return Err(format!("<{tag}> is not allowed in a narrative (txt-1)"));
+        }
+    }
+    let on_attr = lower.match_indices(" on").any(|(i, _)| {
+        let rest = &lower[i + 3..];
+        let name: String = rest.chars().take_while(|c| c.is_ascii_alphabetic()).collect();
+        !name.is_empty() && rest[name.len()..].trim_start().starts_with('=') && lower[..i].rfind('<') > lower[..i].rfind('>')
+    });
+    if on_attr || lower.contains("javascript:") {
+        return Err("event attributes (on…) and javascript: URLs are not allowed in a narrative (txt-1)".into());
+    }
+    let text: String = {
+        let mut inside = false;
+        t.chars().filter(|c| match c {
+            '<' => { inside = true; false }
+            '>' => { inside = false; false }
+            _ => !inside,
+        }).collect()
+    };
+    if text.trim().is_empty() && !lower.contains("<img") {
+        return Err("a narrative has some content (txt-2)".into());
+    }
+    Ok(())
 }
 
 fn kind(v: &Value) -> &'static str {
@@ -476,10 +529,14 @@ mod tests {
         assert!(p.iter().any(|m| m.contains("'Patient.birthDate' is not a valid date")), "{p:?}");
         assert!(p.iter().any(|m| m.contains("'Patient.identifier[0].system' is not a valid uri")), "{p:?}");
         assert!(p.iter().any(|m| m.contains("'Patient.contact[0].gender' is not a valid code")), "{p:?}");
-        // positiveInt / unsignedInt bounds.
-        let p = problems(json!({"resourceType": "Questionnaire", "status": "draft",
-            "item": [{"linkId": "1", "type": "string", "maxLength": 0}]}));
-        assert!(p.iter().any(|m| m.contains("maxLength' is not a valid integer")) || p.is_empty(), "{p:?}");
+        // positiveInt (≥ 1) and unsignedInt (≥ 0) bounds.
+        let appt = |minutes: i64, priority: i64| problems(json!({"resourceType": "Appointment", "status": "booked",
+            "participant": [{"status": "accepted", "actor": {"reference": "Patient/p"}}],
+            "minutesDuration": minutes, "priority": priority}));
+        let p = appt(0, -1);
+        assert!(p.iter().any(|m| m.contains("'Appointment.minutesDuration' is not a valid positiveInt")), "{p:?}");
+        assert!(p.iter().any(|m| m.contains("'Appointment.priority' is not a valid unsignedInt")), "{p:?}");
+        assert!(appt(1, 0).is_empty(), "{:?}", appt(1, 0));
     }
 
     #[test]
@@ -499,6 +556,34 @@ mod tests {
         assert!(p.iter().any(|m| m.contains("Unknown element 'Patient._gender.bogus'")), "{p:?}");
     }
 
+    #[test]
+    fn ids_urls_extensions_and_narratives() {
+        let p = problems(json!({"resourceType": "Patient",
+            "contained": [{"resourceType": "Organization", "id": "a b"}],
+            "extension": [{"url": "http://x y", "valueString": "a"},
+                          {"url": "http://x", "valueString": "a", "extension": [{"url": "b", "valueString": "c"}]}],
+            "name": [{"given": ["a"], "_given": []}]}));
+        let has = |s: &str| p.iter().any(|m| m.contains(s));
+        assert!(has("'Patient.contained[0].id' is not a valid id"), "{p:?}");
+        assert!(has("'Patient.extension[0].url' is not a valid uri"), "{p:?}");
+        assert!(has("'Patient.extension[1]' has a value and extensions"), "{p:?}");
+        assert!(has("'Patient.name[0]._given' is an empty array"), "{p:?}");
+        let div = |d: &str| problems(json!({"resourceType": "Patient", "text": {"status": "generated", "div": d}}));
+        assert!(div(r#"<div xmlns="http://www.w3.org/1999/xhtml"><p>Jo <b>Doe</b></p><a href="http://x">x</a></div>"#).is_empty());
+        for bad in [
+            "plain",
+            "<div>no namespace</div>",
+            r#"<div xmlns="http://www.w3.org/1999/xhtml"><script>x()</script></div>"#,
+            r#"<div xmlns="http://www.w3.org/1999/xhtml"><p onclick="x()">a</p></div>"#,
+            r#"<div xmlns="http://www.w3.org/1999/xhtml"><a href="javascript:x()">a</a></div>"#,
+            r#"<div xmlns="http://www.w3.org/1999/xhtml"> </div>"#,
+        ] {
+            assert!(!div(bad).is_empty(), "{bad}");
+        }
+        // Words that merely start with "on" are text, not attributes.
+        assert!(div(r#"<div xmlns="http://www.w3.org/1999/xhtml">one onset only</div>"#).is_empty());
+    }
+
     /// Official R4 examples with errors of their own: each still fails (so the
     /// list can't go stale), and every other example fits.
     const KNOWN_INVALID: &[(&str, &str)] = &[
@@ -513,6 +598,11 @@ mod tests {
         ("SearchParameter/valueset-extensions-ValueSet-end", "no base (required)"),
         ("SearchParameter/valueset-extensions-ValueSet-keyword", "no base (required)"),
         ("SearchParameter/valueset-extensions-ValueSet-workflow", "no base (required)"),
+        ("SearchParameter/questionnaireresponse-extensions-QuestionnaireResponse-item-subject", "an id of 67 characters (64 at most)"),
+        ("ActivityDefinition/heart-valve-replacement", "a narrative without content (txt-2)"),
+        ("ActivityDefinition/blood-tubes-supply", "a narrative without content (txt-2)"),
+        ("EventDefinition/example", "a narrative without content (txt-2)"),
+        ("Questionnaire/zika-virus-exposure-assessment", "a narrative without content (txt-2)"),
     ];
 
     /// The R4 examples (examples-json.zip, as NDJSON in `R4_EXAMPLES`) fit,

@@ -6,7 +6,6 @@ use axum::{
 use http_body_util::BodyExt;
 use sazare_core::{
     operation_outcome::IssueType,
-    validation::validate_resource_all_phases,
     OperationOutcome, Resource,
 };
 use serde_json::{json, Value};
@@ -15,7 +14,7 @@ use std::sync::Arc;
 use crate::audit::{self, AuditContext};
 use crate::auth::AuthUser;
 use crate::compartment_check::{check_compartment_access, check_compartment_write};
-use crate::subscription::{self, SubscriptionManager};
+use crate::subscription::SubscriptionManager;
 use crate::{AppState, ConditionalResult};
 use super::{
     base_url_from_headers, extract_version, response_with_etag, response_with_headers,
@@ -55,11 +54,9 @@ pub async fn create(
     let audit_ctx = AuditContext::from_request(&request);
     let auth_user = request.extensions().get::<AuthUser>().cloned();
     let (headers, mut body) = extract_body(request).await?;
-    // `Patient?identifier=…` references become the resource they find (or
-    // the write fails): judged, validated and stored as resolved.
-    crate::resolve_conditional_references(&state, auth_user.as_ref(), &mut body)
-        .await
-        .map_err(|(status, msg)| (status, Json(json!(OperationOutcome::error(IssueType::Processing, msg)))))?;
+    // Conditional references resolved, then validated — as on every write
+    // path; compartments below judge it as stored.
+    crate::write::prepare(&state, auth_user.as_ref(), &mut body).await.map_err(|r| r.into_error())?;
     // Index and store writes happen under the write gate (shared), so an index
     // switch never finds a write between its two steps. Taken once the body
     // is in: a slow upload must not hold up a switch (or, behind a waiting
@@ -100,26 +97,8 @@ pub async fn create(
         }
     }
 
-    // Validate
-    if let Err(outcome) = validate_resource_all_phases(
-        &body,
-        &state.profile_registry,
-        &state.terminology_registry,
-    ) {
-        return Err((StatusCode::BAD_REQUEST, Json(json!(outcome))));
-    }
 
-    // Subscription-specific validation
-    if resource_type == "Subscription"
-        && let Err(e) = subscription::validate_subscription(&body, &state.search_param_registry)
-    {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            Json(json!(OperationOutcome::error(IssueType::Invalid, e))),
-        ));
-    }
-
-    let mut resource: Resource = serde_json::from_value(body).map_err(|e| {
+    let mut resource: Resource = Resource::from_value(body).map_err(|e| {
         (
             StatusCode::BAD_REQUEST,
             Json(json!(OperationOutcome::error(IssueType::Invalid, e.to_string()))),
@@ -280,11 +259,9 @@ pub async fn update(
     let audit_ctx = AuditContext::from_request(&request);
     let auth_user = request.extensions().get::<AuthUser>().cloned();
     let (headers, mut body) = extract_body(request).await?;
-    // `Patient?identifier=…` references become the resource they find (or
-    // the write fails): judged, validated and stored as resolved.
-    crate::resolve_conditional_references(&state, auth_user.as_ref(), &mut body)
-        .await
-        .map_err(|(status, msg)| (status, Json(json!(OperationOutcome::error(IssueType::Processing, msg)))))?;
+    // Conditional references resolved, then validated — as on every write
+    // path; compartments below judge it as stored.
+    crate::write::prepare(&state, auth_user.as_ref(), &mut body).await.map_err(|r| r.into_error())?;
     // Index and store writes happen under the write gate (shared), so an index
     // switch never finds a write between its two steps. Taken once the body
     // is in: a slow upload must not hold up a switch (or, behind a waiting
@@ -300,26 +277,8 @@ pub async fn update(
     }
     check_compartment_write(auth_user.as_ref(), &state.compartment_def, &resource_type, &as_stored, 'u')?;
 
-    // Validate
-    if let Err(outcome) = validate_resource_all_phases(
-        &body,
-        &state.profile_registry,
-        &state.terminology_registry,
-    ) {
-        return Err((StatusCode::BAD_REQUEST, Json(json!(outcome))));
-    }
 
-    // Subscription-specific validation
-    if resource_type == "Subscription"
-        && let Err(e) = subscription::validate_subscription(&body, &state.search_param_registry)
-    {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            Json(json!(OperationOutcome::error(IssueType::Invalid, e))),
-        ));
-    }
-
-    let resource: Resource = serde_json::from_value(body).map_err(|e| {
+    let resource: Resource = Resource::from_value(body).map_err(|e| {
         (
             StatusCode::BAD_REQUEST,
             Json(json!(OperationOutcome::error(IssueType::Invalid, e.to_string()))),
@@ -615,7 +574,9 @@ pub async fn patch_resource(
         }
 
         // Apply JSON Patch
-        let patch_ops: json_patch::Patch = serde_json::from_value(patch_body.clone()).map_err(|e| {
+        // From the text, not `from_value`: that re-reads numbers, turning some
+        // into floats (see `Resource::from_value`).
+        let patch_ops: json_patch::Patch = serde_json::from_str(&patch_body.to_string()).map_err(|e| {
             (
                 StatusCode::BAD_REQUEST,
                 Json(json!(OperationOutcome::error(
@@ -648,27 +609,11 @@ pub async fn patch_resource(
             ));
         }
 
-        // The patched result must stay in the caller's compartment.
+        // The patched result goes the way of every write (its conditional
+        // references resolved, then validated) and must stay in the
+        // caller's compartment.
+        crate::write::prepare(&state, auth_user.as_ref(), &mut resource).await.map_err(|r| r.into_error())?;
         check_compartment_write(auth_user.as_ref(), &state.compartment_def, &resource_type, &resource, 'u')?;
-
-        // Same rules for a patched Subscription as for a PUT one.
-        if resource_type == "Subscription"
-            && let Err(e) = subscription::validate_subscription(&resource, &state.search_param_registry)
-        {
-            return Err((
-                StatusCode::BAD_REQUEST,
-                Json(json!(OperationOutcome::error(IssueType::Invalid, e))),
-            ));
-        }
-
-        // Validate patched resource
-        if let Err(outcome) = validate_resource_all_phases(
-            &resource,
-            &state.profile_registry,
-            &state.terminology_registry,
-        ) {
-            return Err((StatusCode::BAD_REQUEST, Json(json!(outcome))));
-        }
 
         // Update version
         let current_ver: i32 = current_ver_str.parse().unwrap_or(0);

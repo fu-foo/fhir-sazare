@@ -2810,7 +2810,8 @@ async fn test_prefer_history_method_and_conditional_references() {
 async fn test_decimals_keep_their_precision() {
     let (base, _dir) = start_test_server().await;
     let c = reqwest::Client::new();
-    let values = ["5.40", "1.000000000000000000001", "1.0e2", "0.0", "-0.00", "123456789012345678901234567890"];
+    let values = ["5.40", "1.000000000000000000001", "0.000000000000000000001", "1.0e2", "0.0", "-0.00",
+        "123456789012345678901234567890", "1e-400"];
     let obs = |id: &str, v: &str| {
         format!(r#"{{"resourceType":"Observation","id":"{id}","status":"final","code":{{"text":"x"}},"valueQuantity":{{"value":{v},"unit":"mg"}}}}"#)
     };
@@ -2843,7 +2844,68 @@ async fn test_decimals_keep_their_precision() {
     assert_eq!(raw(s), "5.40");
     let e = c.get(format!("{base}/$export?_type=Observation")).send().await.unwrap().text().await.unwrap();
     assert!(e.contains(r#""value":5.40"#) && e.contains(r#""value":7.250"#), "{e}");
+    // PATCH and conditional update keep them too (they parse a Value once;
+    // `from_value` re-read numbers as floats: 1e-21).
+    let r = c.patch(format!("{base}/Observation/d4")).header("Content-Type", "application/json-patch+json")
+        .body(r#"[{"op":"replace","path":"/valueQuantity/value","value":0.000000000000000000001}]"#).send().await.unwrap();
+    assert_eq!(r.status(), 200);
+    assert_eq!(raw(c.get(format!("{base}/Observation/d4")).send().await.unwrap().text().await.unwrap()), "0.000000000000000000001");
+    let r = c.put(format!("{base}/Observation?_id=cu")).header("Content-Type", "application/fhir+json")
+        .body(obs("cu", "0.000000000000000000001")).send().await.unwrap();
+    assert!(r.status().is_success());
+    assert_eq!(raw(c.get(format!("{base}/Observation/cu")).send().await.unwrap().text().await.unwrap()), "0.000000000000000000001");
     // Searching by quantity still compares values, not text.
     let n: Value = c.get(format!("{base}/Observation?value-quantity=5.4")).send().await.unwrap().json().await.unwrap();
     assert_eq!(n["total"], 1, "{n}");
+    // Beyond 2^53 the implicit range is below the float spacing: still found.
+    let n: Value = c.get(format!("{base}/Observation?value-quantity=123456789012345678901234567890")).send().await.unwrap().json().await.unwrap();
+    assert_eq!(n["total"], 1, "{n}");
+    // Not numbers: refused, not searched.
+    for q in ["NaN", "inf", "1e400", "-inf"] {
+        let r = c.get(format!("{base}/Observation?value-quantity={q}")).send().await.unwrap();
+        assert_eq!(r.status(), 400, "{q}");
+    }
+}
+
+/// Conditional references resolve on every write path, not only create,
+/// update and transaction: batch entries, PATCH, conditional update, $import.
+#[tokio::test]
+async fn test_conditional_references_on_every_write_path() {
+    let (base, _dir) = start_test_server().await;
+    let c = reqwest::Client::new();
+    create(&c, &base, "Patient", &json!({"resourceType": "Patient", "id": "m1",
+        "identifier": [{"system": "urn:mrn", "value": "A"}]})).await;
+    let cref = json!({"reference": "Patient?identifier=urn:mrn|A"});
+    let obs = |id: &str| json!({"resourceType": "Observation", "id": id, "status": "final", "code": {"text": "x"}, "subject": cref});
+    let subject = |id: &str| {
+        let c = c.clone();
+        let url = format!("{base}/Observation/{id}");
+        async move { c.get(url).send().await.unwrap().json::<Value>().await.unwrap()["subject"]["reference"].clone() }
+    };
+    // Batch, POST and PUT entries.
+    let batch = json!({"resourceType": "Bundle", "type": "batch", "entry": [
+        {"resource": obs("b1"), "request": {"method": "PUT", "url": "Observation/b1"}},
+        {"resource": obs("b2"), "request": {"method": "PUT", "url": "Observation/b2"}},
+        {"resource": {"resourceType": "Observation", "status": "final", "code": {"text": "x"},
+                      "subject": {"reference": "Patient?identifier=urn:mrn|none"}},
+         "request": {"method": "POST", "url": "Observation"}}]});
+    let r: Value = c.post(&base).json(&batch).send().await.unwrap().json().await.unwrap();
+    assert!(r["entry"][0]["response"]["status"].as_str().unwrap().starts_with("201"), "{r}");
+    assert!(r["entry"][2]["response"]["status"].as_str().unwrap().starts_with("412"), "{r}");
+    assert_eq!(subject("b1").await, "Patient/m1");
+    // PATCH.
+    create(&c, &base, "Observation", &json!({"resourceType": "Observation", "id": "p1", "status": "final", "code": {"text": "x"}})).await;
+    let r = c.patch(format!("{base}/Observation/p1")).header("Content-Type", "application/json-patch+json")
+        .body(json!([{"op": "add", "path": "/subject", "value": cref}]).to_string()).send().await.unwrap();
+    assert_eq!(r.status(), 200);
+    assert_eq!(subject("p1").await, "Patient/m1");
+    // Conditional update (creates when nothing matches).
+    let r = c.put(format!("{base}/Observation?_id=cu1")).json(&obs("cu1")).send().await.unwrap();
+    assert!(r.status().is_success(), "{}", r.status());
+    assert_eq!(subject("cu1").await, "Patient/m1");
+    // $import.
+    let r = c.post(format!("{base}/$import")).header("Content-Type", "application/fhir+ndjson")
+        .body(format!("{}\n", obs("i1"))).send().await.unwrap();
+    assert_eq!(r.status(), 200);
+    assert_eq!(subject("i1").await, "Patient/m1");
 }
